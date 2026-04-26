@@ -61,7 +61,7 @@ class _VendorVerifyPhoneScreenState extends State<VendorVerifyPhoneScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => isProvider
-              ? const ProviderPhoneVerifiedScreen()
+              ? ProviderPhoneVerifiedScreen(phoneNumber: widget.phoneNumber)
               : const VendorVerifiedSuccessScreen(),
         ),
       );

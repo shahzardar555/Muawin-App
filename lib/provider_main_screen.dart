@@ -50,13 +50,16 @@ class _ProviderMainScreenState extends State<ProviderMainScreen> {
             child: _screens[_currentIndex],
           ),
           // Sticky bottom navigation bar
-          MuawinBottomNavigationBar(
-            currentIndex: _currentIndex,
-            onItemTapped: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: MuawinBottomNavigationBar(
+              currentIndex: _currentIndex,
+              onItemTapped: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+            ),
           ),
         ],
       ),

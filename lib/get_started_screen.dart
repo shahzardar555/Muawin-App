@@ -13,79 +13,94 @@ class GetStartedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(context).colorScheme.surface;
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
     return Scaffold(
-      backgroundColor: surface,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: surface,
+        backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.black87),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
-          child: Column(
-            children: [
-              const SizedBox(height: 16),
-              // Headline
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'How do you want to use Muawin?',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    fontSize: 30, // text-3xl
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-              // Centered content area (flex-1 justify-center)
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _RoleCard(
-                          icon: Icons.home_work_rounded,
-                          title: 'I need household help',
-                          description: 'Find verified professionals for cleaning, repairs, and daily tasks.',
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const CustomerRegisterScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        _RoleCard(
-                          icon: Icons.build_circle_rounded,
-                          title: 'I\'m a service professional',
-                          description: 'Offer your skills and get connected with clients across Pakistan.',
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const ProviderServiceScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+            child: Column(
+              children: [
+                const SizedBox(height: 24),
+
+                /// Headline
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    'How do you want to use Muawin?',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                      color: onSurface,
+                      height: 1.2,
                     ),
                   ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 12),
+
+                /// Centered content area
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _RoleCard(
+                            icon: Icons.home_work_rounded,
+                            title: 'I need household help',
+                            description:
+                                'Find verified professionals for cleaning, repairs, and daily tasks.',
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const CustomerRegisterScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          _RoleCard(
+                            icon: Icons.build_circle_rounded,
+                            title: 'I\'m a service professional',
+                            description:
+                                'Offer your skills and get connected with clients across Pakistan.',
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const ProviderServiceScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -93,7 +108,7 @@ class GetStartedScreen extends StatelessWidget {
   }
 }
 
-/// Interactive role card with squircle icon, hover and active states.
+/// Interactive role card with squircle icon and press animation.
 class _RoleCard extends StatefulWidget {
   const _RoleCard({
     required this.icon,
@@ -107,29 +122,31 @@ class _RoleCard extends StatefulWidget {
   final String description;
   final VoidCallback onTap;
 
-  static const double _padding = 32; // p-8
-  static const double _radius = 24; // rounded-[24px]
-  static const double _iconWrapperSize = 80; // w-20 h-20
-  static const double _iconSize = 40; // w-10 h-10
-  static const double _squircleRadius = 24; // rounded-3xl
-  static const double _descPadding = 16; // px-4
+  static const double _padding = 32;
+  static const double _radius = 24;
+  static const double _iconWrapperSize = 80;
+  static const double _iconSize = 40;
+  static const double _squircleRadius = 24;
+  static const double _descPadding = 16;
 
   @override
   State<_RoleCard> createState() => _RoleCardState();
 }
 
-class _RoleCardState extends State<_RoleCard> with SingleTickerProviderStateMixin {
-  bool _hovered = false;
+class _RoleCardState extends State<_RoleCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _scaleController;
   late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
+
     _scaleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 100),
     );
+
     _scaleAnimation = Tween<double>(begin: 1, end: 0.95).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
     );
@@ -147,85 +164,85 @@ class _RoleCardState extends State<_RoleCard> with SingleTickerProviderStateMixi
     final primary = theme.colorScheme.primary;
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTapDown: (_) => _scaleController.forward(),
-        onTapUp: (_) => _scaleController.reverse(),
-        onTapCancel: () => _scaleController.reverse(),
-        onTap: widget.onTap,
-        child: AnimatedBuilder(
-          animation: _scaleAnimation,
-          builder: (context, child) {
-            return Transform.scale(scale: _scaleAnimation.value, child: child);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-            padding: const EdgeInsets.all(_RoleCard._padding),
-            decoration: BoxDecoration(
-              color: _hovered ? primary.withValues(alpha: 0.05) : theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(_RoleCard._radius),
-              border: Border.all(
-                color: _hovered ? primary.withValues(alpha: 0.3) : Colors.transparent,
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+    return InkWell(
+      borderRadius: BorderRadius.circular(_RoleCard._radius),
+      onTap: widget.onTap,
+      onTapDown: (_) => _scaleController.forward(),
+      onTapUp: (_) => _scaleController.reverse(),
+      onTapCancel: () => _scaleController.reverse(),
+      child: AnimatedBuilder(
+        animation: _scaleAnimation,
+        builder: (context, child) {
+          return Transform.scale(scale: _scaleAnimation.value, child: child);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.all(_RoleCard._padding),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(_RoleCard._radius),
+            border: Border.all(
+              color: primary.withValues(alpha: 0.15),
+              width: 1.2,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Squircle icon wrapper (bg-primary/15, primary icon)
-                Container(
-                  width: _RoleCard._iconWrapperSize,
-                  height: _RoleCard._iconWrapperSize,
-                  decoration: BoxDecoration(
-                    color: primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(_RoleCard._squircleRadius),
-                  ),
-                  child: Icon(
-                    widget.icon,
-                    size: _RoleCard._iconSize,
-                    color: primary,
-                  ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              /// Icon container
+              Container(
+                width: _RoleCard._iconWrapperSize,
+                height: _RoleCard._iconWrapperSize,
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.15),
+                  borderRadius:
+                      BorderRadius.circular(_RoleCard._squircleRadius),
                 ),
-                const SizedBox(height: 20),
-                // Card title (text-xl font-bold)
-                Text(
-                  widget.title,
+                child: Icon(
+                  widget.icon,
+                  size: _RoleCard._iconSize,
+                  color: primary,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              /// Title
+              Text(
+                widget.title,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              /// Description
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: _RoleCard._descPadding),
+                child: Text(
+                  widget.description,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
+                    fontSize: 14,
+                    color: muted,
+                    height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Description (text-sm text-muted-foreground, px-4)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _RoleCard._descPadding),
-                  child: Text(
-                    widget.description,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                      color: muted,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

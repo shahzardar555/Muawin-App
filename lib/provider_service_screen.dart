@@ -17,7 +17,8 @@ class ProviderServiceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = Theme.of(context).colorScheme.surface;
-    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
 
     return Scaffold(
       backgroundColor: surface,
@@ -26,7 +27,8 @@ class ProviderServiceScreen extends StatelessWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.black87),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -69,14 +71,17 @@ class ProviderServiceScreen extends StatelessWidget {
                         _ProviderRoleCard(
                           icon: Icons.person_rounded,
                           title: 'Service Provider',
-                          description: 'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
-                          onTap: () => _onServiceSelected(context, 'Service Provider'),
+                          description:
+                              'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
+                          onTap: () =>
+                              _onServiceSelected(context, 'Service Provider'),
                         ),
                         const SizedBox(height: 16),
                         _ProviderRoleCard(
                           icon: Icons.store_rounded,
                           title: 'Vendor',
-                          description: 'Business or Shop (e.g SuperMarket , Milkshop , Meatshop , Water Plant)',
+                          description:
+                              'Business or Shop (e.g SuperMarket , Milkshop , Meatshop , Water Plant)',
                           onTap: () => _onServiceSelected(context, 'Vendor'),
                         ),
                       ],
@@ -223,8 +228,8 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
                   height: _ProviderRoleCard._iconSize,
                   decoration: BoxDecoration(
                     color: primary.withValues(alpha: 0.15),
-                    borderRadius:
-                        BorderRadius.circular(_ProviderRoleCard._squircleRadius),
+                    borderRadius: BorderRadius.circular(
+                        _ProviderRoleCard._squircleRadius),
                   ),
                   child: Icon(
                     widget.icon,

@@ -1,23 +1,70 @@
 name: muawin_app
 description: Muawin - Your Daily Household Helper. Splash screen and app.
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
   google_fonts: ^6.2.1
+  geolocator: ^11.0.0
+  geocoding: ^3.0.0
+  google_maps_flutter: ^2.6.0
+  shared_preferences: ^2.2.3
+  provider: ^6.1.2
+  intl: ^0.20.2
+  url_launcher: ^6.3.0
+  image_picker: ^1.1.2
+  speech_to_text: ^7.0.0
+  permission_handler: ^11.0.0
+  avatar_glow: ^2.0.2
+  shimmer: ^3.0.0
+  fluttertoast: ^9.0.0
+  flutter_secure_storage: ^9.2.2
+  bcrypt: ^1.1.1
+  flutter_svg: ^2.0.10
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Amiri
+      fonts:
+        - asset: test/Amiri-Regular.ttf
+    - family: AlFarsAban
+      fonts:
+        - asset: imagess/AlFars 18 Aban Regular.ttf
   assets:
     - assets/muawin_icon.png
     - assets/muawin_logo.png
+    - assets/cleaning_service.jpg
+    - assets/milk.jpg
+    - imagess/bot.png
+    - imagess/laundry.jpg
+    - imagess/bakery.jpg
+    - imagess/fruit.jpg
+    - imagess/gas.jpg
+    - imagess/meatshop.jpg
+    - imagess/milk.jpg
+    - imagess/logo.png
+    - imagess/robot.jpg
+    - imagess/supermarket.jpg
+    - imagess/water.jpg
+    - imagess/maid.webp
+    - imagess/muawin_m_logo.svg
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "imagess/mlogo.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#047A62"
+  adaptive_icon_foreground: "imagess/mlogo.png"

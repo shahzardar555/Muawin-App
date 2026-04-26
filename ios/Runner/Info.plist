@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Muawin App</string>
+	<string>Muawin</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -66,5 +66,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Muawin needs camera access to let you take a profile picture.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Muawin needs gallery access to let you pick a profile picture.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Muawin needs microphone access for voice search functionality.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Muawin uses voice recognition to search for services.</string>
 </dict>
 </plist>

@@ -1,15 +1,20 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:muawin_app/post_job_step1_screen.dart';
 
 class MuawinBottomNavigationBar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onItemTapped;
+  final bool isVendor;
+  final bool isProvider;
 
   const MuawinBottomNavigationBar({
     super.key,
     required this.currentIndex,
     required this.onItemTapped,
+    this.isVendor = false,
+    this.isProvider = false,
   });
 
   @override
@@ -22,8 +27,8 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
   late List<AnimationController> _itemAnimationControllers;
   late List<AnimationController> _pressControllers;
 
-  // Note: third item is a special center action button
-  final List<Map<String, dynamic>> navItems = [
+  // Note: third item is a special center action button (consumer mode only)
+  static const List<Map<String, dynamic>> _consumerNavItems = [
     {
       'label': 'Home',
       'icon': Icons.home,
@@ -46,6 +51,46 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
       'icon': Icons.person,
     },
   ];
+
+  static const List<Map<String, dynamic>> _vendorNavItems = [
+    {
+      'label': 'Home',
+      'icon': Icons.home,
+    },
+    {
+      'label': 'Chats',
+      'icon': Icons.message,
+    },
+    {
+      'label': 'Profile',
+      'icon': Icons.person,
+    },
+  ];
+
+  static const List<Map<String, dynamic>> _providerNavItems = [
+    {
+      'label': 'Home',
+      'icon': Icons.home,
+    },
+    {
+      'label': 'My Jobs',
+      'icon': Icons.assignment,
+    },
+    {
+      'label': 'Chats',
+      'icon': Icons.message,
+    },
+    {
+      'label': 'Profile',
+      'icon': Icons.person,
+    },
+  ];
+
+  List<Map<String, dynamic>> get navItems {
+    if (widget.isVendor) return _vendorNavItems;
+    if (widget.isProvider) return _providerNavItems;
+    return _consumerNavItems;
+  }
 
   @override
   void initState() {
@@ -94,6 +139,19 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
   }
 
   void _handleTap(int index) {
+    // Check if POST A JOB button (index 2) is tapped (consumer mode only)
+    if (!widget.isVendor && !widget.isProvider && index == 2) {
+      // Navigate to Post Job Step 1 screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const PostJobStep1Screen(),
+        ),
+      );
+      return; // Don't call onItemTapped for navigation
+    }
+
+    // Handle normal navigation for other items
     if (widget.currentIndex != index) {
       widget.onItemTapped(index);
     }
@@ -108,58 +166,52 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
     final primaryColor = Theme.of(context).colorScheme.primary;
     final mutedForeground = Colors.grey[600] ?? Colors.grey;
 
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey.withValues(alpha: 0.15),
-              width: 1,
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Colors.grey.withValues(alpha: 0.15),
+            width: 1,
           ),
         ),
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-            child: Container(
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 30,
-                    offset: const Offset(0, -8),
-                    spreadRadius: 0,
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: List.generate(
-                    navItems.length,
-                    (index) {
-                      final item = navItems[index];
-                      if (item.containsKey('center') &&
-                          item['center'] == true) {
-                        // reserve space for center action button
-                        return _buildCenterAction(
-                            context, index, item, primaryColor);
-                      }
-                      return _buildNavItem(
-                        context,
-                        index,
-                        item,
-                        primaryColor,
-                        mutedForeground,
-                      );
-                    },
-                  ),
+      ),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+          child: Container(
+            height: 80, // Back to normal height since button will be contained
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 30,
+                  offset: const Offset(0, -8),
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(
+                  navItems.length,
+                  (index) {
+                    final item = navItems[index];
+                    if (item.containsKey('center') && item['center'] == true) {
+                      // reserve space for center action button
+                      return _buildCenterAction(
+                          context, index, item, primaryColor);
+                    }
+                    return _buildNavItem(
+                      context,
+                      index,
+                      item,
+                      primaryColor,
+                      mutedForeground,
+                    );
+                  },
                 ),
               ),
             ),
@@ -261,28 +313,80 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
     Map<String, dynamic> item,
     Color primaryColor,
   ) {
-    // Elevated circular button that sits above the bar
+    final isActive = widget.currentIndex == index;
+
+    // Contained FAB button with label for navigation bar
     return GestureDetector(
       onTap: () => _handleTap(index),
-      child: Container(
-        width: 60,
-        height: 60,
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: primaryColor,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: primaryColor.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Icon(
-          item['icon'],
-          color: Colors.white,
-          size: 28,
+      child: MouseRegion(
+        onEnter: (_) {
+          // Handle hover enter (scale to 105%)
+          _pressControllers[index].value =
+              0.05; // This will trigger scale-105 effect
+        },
+        onExit: (_) {
+          // Handle hover exit (back to normal)
+          _pressControllers[index].value = 0.0;
+        },
+        child: AnimatedBuilder(
+          animation: _pressControllers[index],
+          builder: (context, child) {
+            final pressScale = 1.0 +
+                (_pressControllers[index].value * 0.05); // scale-105 on hover
+            final activeScale = isActive ? 1.05 : 1.0; // Subtle active scale
+            final combinedScale = pressScale * activeScale;
+
+            return Transform.scale(
+              scale: combinedScale,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 70, maxHeight: 65),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // FAB Button
+                    Container(
+                      width: 50, // Slightly smaller for nav bar containment
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: primaryColor, // Muawin Primary Teal
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryColor.withValues(alpha: 0.3),
+                            blurRadius:
+                                15, // Reduced shadow for contained design
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        item['icon'],
+                        color: Colors.white, // Pure white
+                        size: 28, // Slightly smaller for contained design
+                      ),
+                    ),
+                    const SizedBox(
+                        height:
+                            1), // Reduced from 2 to fit within 60px constraint
+                    // POST JOB Label
+                    Text(
+                      'POST JOB', // Text: "POST JOB"
+                      style: GoogleFonts.poppins(
+                        fontSize:
+                            8, // Smaller for nav bar containment (reduced from 10px)
+                        fontWeight:
+                            FontWeight.w800, // Extra bold (reduced from w900)
+                        color: primaryColor, // Solid Primary Teal
+                        letterSpacing: -0.3, // Tighter spacing
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
