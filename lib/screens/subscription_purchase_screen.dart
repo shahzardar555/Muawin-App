@@ -1146,129 +1146,100 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   Widget _buildSuccessScreen() {
     if (widget.purchaseType == 'featured_ad') {
       // Featured Ad Success Screen
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Spacer(),
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isSmallScreen = screenWidth < 360;
 
-            // Success animation
-            AnimatedBuilder(
-              animation: _scaleAnimation,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Megaphone icon
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.amber,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.amber.withValues(alpha: 0.3),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '📢',
-                            style: TextStyle(fontSize: 60),
+      return SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: 32,
+            horizontal: screenWidth * 0.05,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 24),
+
+              // Success animation
+              AnimatedBuilder(
+                animation: _scaleAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _scaleAnimation.value,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Megaphone icon
+                        Container(
+                          width: isSmallScreen
+                              ? screenWidth * 0.25
+                              : screenWidth * 0.3,
+                          height: isSmallScreen
+                              ? screenWidth * 0.25
+                              : screenWidth * 0.3,
+                          decoration: BoxDecoration(
+                            color: Colors.amber,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withValues(alpha: 0.3),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Green checkmark
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF047A62),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 40,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Success message
-                      Text(
-                        "You're Now Featured!",
-                        style: GoogleFonts.poppins(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF047A62),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Your profile is now live in customer feeds',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-
-                      // End date
-                      Text(
-                        'Your ad is active until ${_getEndDate()}',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Back to home button
-                      SizedBox(
-                        width: 200,
-                        height: 56,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop(); // Pop success screen
-                            Navigator.of(context).pop(); // Pop purchase screen
-                            Navigator.of(context)
-                                .pop(); // Pop get featured overlay
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF047A62),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: Text(
-                            'Back to Home',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                          child: Center(
+                            child: Text(
+                              '📢',
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 48 : 60,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                        SizedBox(height: isSmallScreen ? 20 : 32),
 
-            const Spacer(),
-          ],
+                        // Success message
+                        Text(
+                          "You're Now Featured!",
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 22 : 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Your profile is now live in customer feeds',
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 14 : 16,
+                            color: Colors.grey.shade600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: isSmallScreen ? 16 : 24),
+
+                        // End date
+                        Text(
+                          'Your ad is active until ${_getEndDate()}',
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 12 : 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: isSmallScreen ? 20 : 24),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       );
     } else {
@@ -1286,80 +1257,95 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
                 scale: _scaleAnimation.value,
                 child: Column(
                   children: [
-                    // Gold crown
+                    // Elegant success icon
                     Container(
-                      width: 120,
-                      height: 120,
+                      width: 100,
+                      height: 100,
                       decoration: BoxDecoration(
-                        color: Colors.amber,
+                        color: const Color(0xFF047A62),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.amber.withValues(alpha: 0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color:
+                                const Color(0xFF047A62).withValues(alpha: 0.2),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
                           ),
                         ],
-                      ),
-                      child: const Center(
-                        child: Text(
-                          '👑',
-                          style: TextStyle(fontSize: 60),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Green checkmark
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF047A62),
-                        shape: BoxShape.circle,
                       ),
                       child: const Icon(
                         Icons.check_rounded,
                         color: Colors.white,
-                        size: 40,
+                        size: 50,
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 40),
 
                     // Success message
                     Text(
-                      'Welcome to Muawin Pro!',
+                      'Welcome to Muawin Pro',
                       style: GoogleFonts.poppins(
-                        fontSize: 28,
+                        fontSize: 32,
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFF047A62),
+                        letterSpacing: -0.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Text(
                       'Your account has been successfully upgraded',
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         color: Colors.grey.shade600,
+                        letterSpacing: 0.2,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
 
-                    // Plan details
-                    Text(
-                      '${widget.planName.toUpperCase()} PLAN - Rs. ${widget.planPrice}/${widget.planPeriod}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                    // Plan details card
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.grey.shade200,
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            widget.planName.toUpperCase(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Rs. ${widget.planPrice}/${widget.planPeriod}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF047A62),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 40),
 
                     // Start button
                     SizedBox(
-                      width: 200,
+                      width: 240,
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
@@ -1371,15 +1357,17 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF047A62),
                           foregroundColor: Colors.white,
+                          elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: Text(
-                          'Start Exploring Pro Features',
+                          'Continue',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
                           ),
                         ),
                       ),
@@ -1389,7 +1377,6 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
               );
             },
           ),
-
           const Spacer(),
         ],
       );

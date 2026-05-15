@@ -8,10 +8,11 @@ import 'package:geocoding/geocoding.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'services/featured_ad_manager.dart';
-import 'services/provider_data_service.dart';
 import 'services/pro_status_checker.dart';
+import 'services/database_service.dart';
 import 'widgets/customer_notification_bell.dart';
 import 'customer_jobs_screen.dart';
 import 'customer_messages_screen.dart';
@@ -43,11 +44,22 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   // PRO status state
   bool _isProUser = false;
 
+  // Service categories state
+  List<Map<String, dynamic>> _providerCategories = [];
+  List<Map<String, dynamic>> _vendorCategories = [];
+  bool _providerCategoriesLoading = true;
+  bool _vendorCategoriesLoading = true;
+
+  // Featured ad state
+  Map<String, dynamic>? _featuredAd;
+
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _checkProStatus();
+    _loadCategories();
+    _loadFeaturedAd();
   }
 
   // Check if user is a PRO user
@@ -72,6 +84,58 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       setState(() {
         _customerName = 'Customer';
       });
+    }
+  }
+
+  // Load service categories from database
+  Future<void> _loadCategories() async {
+    try {
+      setState(() {
+        _providerCategoriesLoading = true;
+        _vendorCategoriesLoading = true;
+      });
+
+      // Load both in parallel
+      final results = await Future.wait([
+        DatabaseService().getProviderCategories(),
+        DatabaseService().getVendorCategories(),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _providerCategories = results[0];
+          _vendorCategories = results[1];
+          _providerCategoriesLoading = false;
+          _vendorCategoriesLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading categories: $e');
+      if (mounted) {
+        setState(() {
+          _providerCategoriesLoading = false;
+          _vendorCategoriesLoading = false;
+        });
+      }
+    }
+  }
+
+  // Load featured ad from database
+  Future<void> _loadFeaturedAd() async {
+    try {
+      final providers = await DatabaseService().getFeaturedProviders();
+      final vendors = await DatabaseService().getFeaturedVendors();
+
+      // Combine and pick first active ad
+      final allAds = [...providers, ...vendors];
+
+      if (mounted) {
+        setState(() {
+          _featuredAd = allAds.isNotEmpty ? allAds.first : null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading featured ad: $e');
     }
   }
 
@@ -524,70 +588,39 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Icons Row 1
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildServiceIcon(Icons.cleaning_services,
-                        const Color(0xFF1976D2), 'Maid'),
-                    _buildServiceIcon(
-                        Icons.yard, const Color(0xFF2E7D32), 'Gardener'),
-                    _buildServiceIcon(
-                        Icons.drive_eta, const Color(0xFFEA580C), 'Driver'),
-                  ],
-                ),
-                const SizedBox(height: 32), // 2rem = 32px vertical gap
-
-                // Icons Row 2
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    Expanded(
-                      flex: 1,
-                      child: _buildServiceIcon(Icons.home_work,
-                          const Color(0xFF7C3AED), 'Domestic_Helper'),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: _buildServiceIcon(Icons.security,
-                          const Color(0xFFDC2626), 'Security_Guard'),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Transform.translate(
-                        offset: const Offset(0, -4), // Move upwards by 4 pixels
-                        child: _buildServiceIcon(Icons.child_care,
-                            const Color(0xFFEC4899), 'Baby_Sitter'),
+                // Service Categories - Dynamic from Database
+                if (_providerCategoriesLoading)
+                  _buildCategoriesShimmer()
+                else if (_providerCategories.isEmpty)
+                  Center(
+                    child: Text(
+                      'No categories available',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        color: Colors.white.withValues(alpha: 0.7),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 32), // 2rem = 32px vertical gap
-
-                // Icons Row 3
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildServiceIcon(
-                        Icons.restaurant, const Color(0xFFF97316), 'Cook'),
-                    _buildServiceIcon(Icons.local_laundry_service,
-                        const Color(0xFF14B8A6), 'Washerman'),
-                    _buildServiceIcon(
-                        Icons.school, const Color(0xFF4F46E5), 'Tutor'),
-                  ],
-                ),
+                  )
+                else
+                  _buildProviderCategoriesList(),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
           // Local Vendors Section
-          _LocalVendorsSection(primary: primary),
+          _LocalVendorsSection(
+            primary: primary,
+            vendorCategories: _vendorCategories,
+            vendorCategoriesLoading: _vendorCategoriesLoading,
+          ),
           const SizedBox(height: 24),
 
-          // Featured Ads Section
-          const _FeaturedAdsSection(),
-          const SizedBox(height: 24),
+          // Featured Ads Section - Hide for PRO users
+          if (!_isProUser) ...[
+            _FeaturedAdsSection(featuredAd: _featuredAd),
+            const SizedBox(height: 24),
+          ],
 
           // Top Rated Pros Section - PRO only
           if (_isProUser) ...[
@@ -599,22 +632,125 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           _VendorsNearbySection(primary: primary),
           const SizedBox(height: 24),
 
-          // Muawin Pro Ad Section (always at bottom)
-          const _MuawinProAd(primary: Color(0xFF047A62)),
-          const SizedBox(height: 24),
+          // Muawin Pro Ad Section - Hide for PRO users
+          if (!_isProUser) ...[
+            const _MuawinProAd(primary: Color(0xFF047A62)),
+            const SizedBox(height: 24),
+          ],
         ],
       ),
     );
   }
 
-  // Helper method to build individual service icons
-  Widget _buildServiceIcon(IconData icon, Color iconColor, String label) {
+  // Build shimmer loading state for categories
+  Widget _buildCategoriesShimmer() {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(3, (index) => _buildShimmerIcon()),
+        ),
+        const SizedBox(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(3, (index) => _buildShimmerIcon()),
+        ),
+        const SizedBox(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(3, (index) => _buildShimmerIcon()),
+        ),
+      ],
+    );
+  }
+
+  // Single shimmer icon placeholder
+  Widget _buildShimmerIcon() {
+    return Column(
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.3),
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 60,
+          height: 12,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build provider categories list from database
+  Widget _buildProviderCategoriesList() {
+    // Define colors for categories in a cycle
+    final colors = [
+      const Color(0xFF1976D2),
+      const Color(0xFF2E7D32),
+      const Color(0xFFEA580C),
+      const Color(0xFF7C3AED),
+      const Color(0xFFDC2626),
+      const Color(0xFFEC4899),
+      const Color(0xFFF97316),
+      const Color(0xFF14B8A6),
+      const Color(0xFF4F46E5),
+    ];
+
+    // Split categories into rows of 3
+    final rows = <List<Map<String, dynamic>>>[];
+    for (int i = 0; i < _providerCategories.length; i += 3) {
+      rows.add(_providerCategories.skip(i).take(3).toList());
+    }
+
+    return Column(
+      children: rows.map((row) {
+        return Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: row.map((category) {
+                final colorIndex =
+                    (_providerCategories.indexOf(category)) % colors.length;
+                return Expanded(
+                  child:
+                      _buildProviderCategoryIcon(category, colors[colorIndex]),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 32),
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  // Build single provider category icon from database
+  Widget _buildProviderCategoryIcon(
+      Map<String, dynamic> category, Color iconColor) {
+    final name = category['name'] as String? ?? '';
+    final icon = category['icon'] as String? ?? '';
+
+    // Use icon emoji if available, otherwise use first letter of name
+    final displayIcon = icon.isNotEmpty
+        ? icon
+        : name.isNotEmpty
+            ? name[0].toUpperCase()
+            : '?';
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ServiceProvidersResultsScreen(category: label),
+            builder: (_) => ServiceProvidersResultsScreen(category: name),
           ),
         );
       },
@@ -627,21 +763,24 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: iconColor,
-              size: 32,
+            child: Center(
+              child: Text(
+                displayIcon,
+                style: const TextStyle(fontSize: 32),
+              ),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            Provider.of<LanguageProvider>(context).translate(label),
+            name,
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1121,256 +1260,24 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
   final SpeechToText _speechToText = SpeechToText();
   bool _speechAvailable = false;
 
+  // Urdu category mapping for voice search
+  Map<String, String> _urduCategoryMap = {};
+
   @override
   void initState() {
     super.initState();
     // Use addPostFrameCallback to avoid calling setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeSpeech();
+      _loadUrduCategoryMap();
     });
   }
 
   // Sample data for search results - ONLY allowed categories
+  // TODO: Load from Supabase
   final List<Map<String, dynamic>> _allResults = [
-    // Service Providers - Only: Maid, Tutor, Driver, Gardener, Security Guard, Babysitter, Domestic Helper, Washerman
-    {
-      'type': 'provider',
-      'name': 'Fatima Bibi',
-      'category': 'Maid',
-      'rating': 4.8,
-      'distance': '1.2 km',
-      'experience': '5 years',
-      'hourlyRate': 'Rs. 300',
-      'dailyRate': 'Rs. 2500',
-      'avatar': 'https://picsum.photos/seed/maid1/100/100',
-      'reviews': 142,
-      'about':
-          'Experienced maid specializing in household cleaning, laundry, and kitchen assistance. Reliable and trustworthy.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Ayesha Khan',
-      'category': 'Tutor',
-      'rating': 4.9,
-      'distance': '2.5 km',
-      'experience': '8 years',
-      'hourlyRate': 'Rs. 500',
-      'dailyRate': 'Rs. 4000',
-      'avatar': 'https://picsum.photos/seed/tutor1/100/100',
-      'reviews': 198,
-      'about':
-          'Professional tutor for grades 1-10. Specializes in Mathematics, Science, and English. Patient and effective teaching methods.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Imran Shah',
-      'category': 'Driver',
-      'rating': 4.7,
-      'distance': '0.8 km',
-      'experience': '12 years',
-      'hourlyRate': 'Rs. 400',
-      'dailyRate': 'Rs. 3500',
-      'avatar': 'https://picsum.photos/seed/driver1/100/100',
-      'reviews': 203,
-      'about':
-          'Professional driver with 12 years of experience. Clean driving record. Available for personal and family transport.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Hassan Ali',
-      'category': 'Gardener',
-      'rating': 4.6,
-      'distance': '3.1 km',
-      'experience': '6 years',
-      'hourlyRate': 'Rs. 350',
-      'dailyRate': 'Rs. 2800',
-      'avatar': 'https://picsum.photos/seed/garden1/100/100',
-      'reviews': 87,
-      'about':
-          'Expert gardener for lawn maintenance, plant care, and landscaping. Knowledgeable about local plants and seasonal care.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Rashid Khan',
-      'category': 'Security Guard',
-      'rating': 4.8,
-      'distance': '1.5 km',
-      'experience': '10 years',
-      'hourlyRate': 'Rs. 250',
-      'dailyRate': 'Rs. 2000',
-      'avatar': 'https://picsum.photos/seed/security1/100/100',
-      'reviews': 156,
-      'about':
-          'Trained security guard with experience in residential and commercial properties. Vigilant and professional.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Saima Begum',
-      'category': 'Babysitter',
-      'rating': 4.9,
-      'distance': '0.9 km',
-      'experience': '7 years',
-      'hourlyRate': 'Rs. 400',
-      'dailyRate': 'Rs. 3200',
-      'avatar': 'https://picsum.photos/seed/baby1/100/100',
-      'reviews': 134,
-      'about':
-          'Loving babysitter with early childhood education training. CPR certified. Great with kids of all ages.',
-      'status': 'Busy',
-      'statusColor': Colors.orange,
-    },
-    {
-      'type': 'provider',
-      'name': 'Naseem Akhtar',
-      'category': 'Domestic Helper',
-      'rating': 4.7,
-      'distance': '2.2 km',
-      'experience': '4 years',
-      'hourlyRate': 'Rs. 280',
-      'dailyRate': 'Rs. 2200',
-      'avatar': 'https://picsum.photos/seed/helper1/100/100',
-      'reviews': 98,
-      'about':
-          'Reliable domestic helper for all household tasks including cleaning, cooking assistance, and errands.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'provider',
-      'name': 'Tariq Mehmood',
-      'category': 'Washerman',
-      'rating': 4.5,
-      'distance': '1.8 km',
-      'experience': '8 years',
-      'hourlyRate': 'Rs. 200',
-      'dailyRate': 'Rs. 1500',
-      'avatar': 'https://picsum.photos/seed/wash1/100/100',
-      'reviews': 76,
-      'about':
-          'Professional laundry and ironing services. Careful with delicate fabrics and stain removal.',
-      'status': 'Available',
-      'statusColor': Colors.green,
-    },
     // Vendors - Only: Milkshop, Supermarket, Gas Cylinder Shop, Bakery, Fruits and Vegetables Shop, Drinking Water Plant, Meatshop
-    {
-      'type': 'vendor',
-      'name': 'Corner Dairy Shop',
-      'category': 'Milkshop',
-      'rating': 4.6,
-      'distance': '0.8 km',
-      'experience': '4 years',
-      'hourlyRate': 'Rs. 500',
-      'dailyRate': 'Rs. 8000',
-      'avatar': 'https://picsum.photos/seed/milk1/100/100',
-      'reviews': 85,
-      'about': 'Premium quality fresh milk and dairy products delivered daily.',
-      'status': 'OPEN',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'vendor',
-      'name': 'Fresh Market Grocery',
-      'category': 'Supermarket',
-      'rating': 4.8,
-      'distance': '0.3 km',
-      'experience': '5 years',
-      'hourlyRate': 'Rs. 600',
-      'dailyRate': 'Rs. 9000',
-      'avatar': 'https://picsum.photos/seed/super1/100/100',
-      'reviews': 156,
-      'about':
-          'One-stop shop for all your grocery needs. Fresh produce, imported items, and daily essentials.',
-      'status': 'OPEN',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'vendor',
-      'name': 'Quick Gas Services',
-      'category': 'Gas Cylinder Shop',
-      'rating': 4.4,
-      'distance': '2.8 km',
-      'experience': '6 years',
-      'hourlyRate': 'Rs. 200',
-      'dailyRate': 'Rs. 3000',
-      'avatar': 'https://picsum.photos/seed/gas1/100/100',
-      'reviews': 92,
-      'about': 'Authorized dealer of LPG cylinders. Quick refill service.',
-      'status': 'CLOSED',
-      'statusColor': Colors.red,
-    },
-    {
-      'type': 'vendor',
-      'name': 'City Bakery & Cafe',
-      'category': 'Bakery',
-      'rating': 4.9,
-      'distance': '1.2 km',
-      'experience': '6 years',
-      'hourlyRate': 'Rs. 550',
-      'dailyRate': 'Rs. 8500',
-      'avatar': 'https://picsum.photos/seed/bake1/100/100',
-      'reviews': 112,
-      'about': 'Artisan breads, custom cakes, and fresh pastries daily.',
-      'status': 'OPEN',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'vendor',
-      'name': 'Organic Fresh Mart',
-      'category': 'Fruits and Vegetables Shop',
-      'rating': 4.7,
-      'distance': '1.5 km',
-      'experience': '3 years',
-      'hourlyRate': 'Rs. 400',
-      'dailyRate': 'Rs. 6000',
-      'avatar': 'https://picsum.photos/seed/fruit1/100/100',
-      'reviews': 124,
-      'about':
-          'Fresh organic fruits and vegetables sourced daily from local farms.',
-      'status': 'OPEN',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'vendor',
-      'name': 'Pure Water Station',
-      'category': 'Drinking Water Plant',
-      'rating': 4.5,
-      'distance': '3.5 km',
-      'experience': '4 years',
-      'hourlyRate': 'Rs. 300',
-      'dailyRate': 'Rs. 5000',
-      'avatar': 'https://picsum.photos/seed/water1/100/100',
-      'reviews': 68,
-      'about':
-          'Premium quality mineral water with state-of-the-art purification.',
-      'status': 'OPEN',
-      'statusColor': Colors.green,
-    },
-    {
-      'type': 'vendor',
-      'name': 'Premium Meat Shop',
-      'category': 'Meatshop',
-      'rating': 4.7,
-      'distance': '2.1 km',
-      'experience': '3 years',
-      'hourlyRate': 'Rs. 450',
-      'dailyRate': 'Rs. 7000',
-      'avatar': 'https://picsum.photos/seed/meat1/100/100',
-      'reviews': 42,
-      'about':
-          'Fresh halal meat daily. Specializing in beef, mutton, and chicken cuts.',
-      'status': 'CLOSED',
-      'statusColor': Colors.red,
-    },
+    // TODO: Connect to Supabase
   ];
 
   // Filter options
@@ -1482,6 +1389,28 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     }
   }
 
+  // Load Urdu category mapping from database
+  Future<void> _loadUrduCategoryMap() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('service_categories')
+          .select('name, name_urdu, category_type')
+          .eq('is_active', true);
+
+      final Map<String, String> urduMap = {};
+      for (final cat in response) {
+        if (cat['name_urdu'] != null) {
+          urduMap[cat['name_urdu']] = cat['name'];
+        }
+      }
+
+      setState(() => _urduCategoryMap = urduMap);
+    } catch (e) {
+      debugPrint('Error loading Urdu map: $e');
+    }
+  }
+
   // Voice Search Methods
   Future<void> _handleVoiceSearch() async {
     // Check if speech is available
@@ -1565,21 +1494,8 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
   void _performVoiceSearch(String query) {
     // Urdu to English category mapping
-    final Map<String, String> urduMap = {
-      'خانہ دار': 'Maid',
-      'ماہر باغبان': 'Gardener',
-      'ڈرائیور': 'Driver',
-      'سیکیورٹی گارڈ': 'Security Guard',
-      'استاد': 'Tutor',
-      'بچوں کی دیکھ بھال': 'Babysitter',
-      'گھریلو مددگار': 'Domestic Helper',
-      'دھوبی': 'Washerman',
-      'باورچی': 'Cook',
-    };
-
-    // Check if query matches Urdu category
     String searchQuery = query;
-    urduMap.forEach((urdu, english) {
+    _urduCategoryMap.forEach((urdu, english) {
       if (query.contains(urdu)) {
         searchQuery = english;
         _searchController.text = english;
@@ -1887,7 +1803,8 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
         } else {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => CustomerProviderProfileScreen(provider: result),
+              builder: (_) =>
+                  CustomerProviderProfileScreen(providerId: result['id'] ?? ''),
             ),
           );
         }
@@ -2137,14 +2054,20 @@ class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
     _loadFeaturedPartners();
   }
 
+  // Get current logged in user ID from Supabase
+  String? _getCustomerId() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return null;
+    return user.id;
+  }
+
   Future<void> _loadFeaturedPartners() async {
     try {
       final featuredManager = FeaturedAdManager();
 
       // Filter featured ads by location (within 5km radius) for current customer
-      // Using a placeholder customer ID - in real app this would come from user authentication
       final featuredPartners = await featuredManager.getFeaturedAdsForCustomer(
-        'customer_001', // Placeholder customer ID
+        _getCustomerId() ?? '',
         5.0, // 5km radius
       );
 
@@ -2314,7 +2237,7 @@ class _FeaturedPartnerCard extends StatelessWidget {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => CustomerProviderProfileScreen(
-                provider: providerData,
+                providerId: providerData['id']?.toString() ?? '',
               ),
             ),
           );
@@ -2541,9 +2464,15 @@ class _FeaturedPartnerCard extends StatelessWidget {
 
 // Local Vendors Section
 class _LocalVendorsSection extends StatefulWidget {
-  const _LocalVendorsSection({required this.primary});
+  const _LocalVendorsSection({
+    required this.primary,
+    required this.vendorCategories,
+    required this.vendorCategoriesLoading,
+  });
 
   final Color primary;
+  final List<Map<String, dynamic>> vendorCategories;
+  final bool vendorCategoriesLoading;
 
   @override
   State<_LocalVendorsSection> createState() => _LocalVendorsSectionState();
@@ -2561,6 +2490,11 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading shimmer while loading vendor categories
+    if (widget.vendorCategoriesLoading) {
+      return _buildVendorCategoriesShimmer();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2588,97 +2522,16 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  // Vendor Cards with 1rem gap (gap-4)
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('milkshop'),
-                    imagePlaceholder: 'Dairy/Cow imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('supermarket'),
-                    imagePlaceholder: 'Grocery aisle imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('meatshop'),
-                    imagePlaceholder: 'Fresh meat imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('drinking_water_plant'),
-                    imagePlaceholder: 'Mineral water imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('gas_cylinder_shop'),
-                    imagePlaceholder: 'Gas tank imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('fruits_vegetables_shop'),
-                    imagePlaceholder: 'Fresh produce imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('bakery'),
-                    imagePlaceholder: 'Bakery imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('supermarket'),
-                    imagePlaceholder: 'Grocery aisle imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('meatshop'),
-                    imagePlaceholder: 'Fresh meat imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('drinking_water_plant'),
-                    imagePlaceholder: 'Mineral water imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('gas_cylinder_shop'),
-                    imagePlaceholder: 'Gas tank imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('fruits_vegetables_shop'),
-                    imagePlaceholder: 'Fresh produce imagery',
-                  ),
-                  const SizedBox(width: _cardMargin),
-                  _VendorCard(
-                    primary: widget.primary,
-                    title: Provider.of<LanguageProvider>(context)
-                        .translate('bakery'),
-                    imagePlaceholder: 'Bakery imagery',
-                  ),
+                  // Dynamic Vendor Categories from Database
+                  ...widget.vendorCategories.map((category) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: _cardMargin),
+                      child: _vendorCategoryCard(
+                        primary: widget.primary,
+                        category: category,
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
@@ -2687,282 +2540,130 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
       ],
     );
   }
-}
 
-// Vendor Card Widget
-class _VendorCard extends StatelessWidget {
-  const _VendorCard({
-    required this.primary,
-    required this.title,
-    required this.imagePlaceholder,
-  });
-
-  final Color primary;
-  final String title;
-  final String imagePlaceholder;
-
-  // Method to get appropriate icon for each vendor category
-  IconData _getVendorIcon(String title) {
-    switch (title.toLowerCase()) {
-      case 'milkshop':
-      case 'dairy shop':
-        return Icons.coffee; // or Icons.local_cafe
-      case 'supermarket':
-      case 'grocery store':
-        return Icons.shopping_cart;
-      case 'meatshop':
-      case 'butcher shop':
-        return Icons.restaurant;
-      case 'bakery':
-        return Icons.bakery_dining;
-      case 'fruits and vegetables shop':
-      case 'produce store':
-        return Icons.eco;
-      case 'gas cylinder shop':
-      case 'gas station':
-        return Icons.local_fire_department;
-      case 'drinking water plant':
-      case 'water supply':
-        return Icons.water_drop;
-      default:
-        return Icons.store;
-    }
+  // Build shimmer loading state for vendor categories
+  Widget _buildVendorCategoriesShimmer() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section Header shimmer
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Container(
+            width: 120,
+            height: 20,
+            color: Colors.grey[300],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Vendor cards shimmer
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: List.generate(
+                4,
+                (index) => Padding(
+                      padding: const EdgeInsets.only(right: _cardMargin),
+                      child: _buildVendorCardShimmer(),
+                    )),
+          ),
+        ),
+      ],
+    );
   }
 
-  // Method to get appropriate icon color for each vendor category
-  Color _getVendorIconColor(String title) {
-    switch (title.toLowerCase()) {
-      case 'milkshop':
-      case 'dairy shop':
-        return const Color(0xFF8B4513); // Brown - milk/dairy
-      case 'supermarket':
-      case 'grocery store':
-        return const Color(0xFF2196F3); // Blue - shopping
-      case 'meatshop':
-      case 'butcher shop':
-        return const Color(0xFFE91E63); // Pink/Red - meat
-      case 'bakery':
-        return const Color(0xFF795548); // Brown - bakery
-      case 'fruits and vegetables shop':
-      case 'produce store':
-        return const Color(0xFF4CAF50); // Green - fresh produce
-      case 'gas cylinder shop':
-      case 'gas station':
-        return const Color(0xFFFF5722); // Orange - fire/gas
-      case 'drinking water plant':
-      case 'water supply':
-        return const Color(0xFF03A9F4); // Light Blue - water
-      default:
-        return Colors.white; // Default white
-    }
+  // Single vendor card shimmer
+  Widget _buildVendorCardShimmer() {
+    return Container(
+      width: 120,
+      height: 140,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  // Build vendor category card from database
+  Widget _vendorCategoryCard({
+    required Color primary,
+    required Map<String, dynamic> category,
+  }) {
+    final name = category['name'] as String? ?? '';
+    final icon = category['icon'] as String? ?? '';
+
+    // Use icon emoji if available, otherwise use first letter of name
+    final displayIcon = icon.isNotEmpty
+        ? icon
+        : name.isNotEmpty
+            ? name[0].toUpperCase()
+            : '?';
+
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
+        Navigator.push(
+          context,
           MaterialPageRoute(
-            builder: (_) => VendorResultsScreen(category: title),
+            builder: (_) => VendorResultsScreen(category: name),
           ),
         );
       },
       child: Container(
-        width: 160, // 10rem / w-40
+        width: 120,
+        height: 140,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24), // rounded-[24px]
+          borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8, // shadow-md
-              offset: const Offset(0, 4),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            children: [
-              // Visual Imagery - Fixed height 8rem (h-32)
-              Container(
-                height: 128, // 8rem / h-32
+        child: Column(
+          children: [
+            // Icon container
+            Expanded(
+              flex: 3,
+              child: Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF047A62), // Primary Teal
-                      Color(0xFF064e3b), // Dark Teal
-                    ],
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
                   ),
                 ),
-                child: (title.toLowerCase() == 'milkshop')
-                    ? Image.asset(
-                        'imagess/milk.jpg',
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            _getVendorIcon(title),
-                            size: 48,
-                            color: _getVendorIconColor(title),
-                          );
-                        },
-                      )
-                    : (title.toLowerCase() == 'supermarket')
-                        ? Image.asset(
-                            'imagess/supermarket.jpg',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                _getVendorIcon(title),
-                                size: 48,
-                                color: _getVendorIconColor(title),
-                              );
-                            },
-                          )
-                        : (title.toLowerCase() == 'meatshop')
-                            ? Image.asset(
-                                'imagess/meatshop.jpg',
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    _getVendorIcon(title),
-                                    size: 48,
-                                    color: _getVendorIconColor(title),
-                                  );
-                                },
-                              )
-                            : (title.toLowerCase() == 'drinking water plant' ||
-                                    title.toLowerCase() == 'water supply')
-                                ? Image.asset(
-                                    'imagess/water.jpg',
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        _getVendorIcon(title),
-                                        size: 48,
-                                        color: _getVendorIconColor(title),
-                                      );
-                                    },
-                                  )
-                                : (title.toLowerCase() == 'gas cylinder shop')
-                                    ? Image.asset(
-                                        'imagess/gas.jpg',
-                                        width: 48,
-                                        height: 48,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return Icon(
-                                            _getVendorIcon(title),
-                                            size: 48,
-                                            color: _getVendorIconColor(title),
-                                          );
-                                        },
-                                      )
-                                    : (title.toLowerCase() ==
-                                            'fruits and vegetables shop')
-                                        ? Image.asset(
-                                            'imagess/fruit.jpg',
-                                            width: 48,
-                                            height: 48,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                              return Icon(
-                                                _getVendorIcon(title),
-                                                size: 48,
-                                                color:
-                                                    _getVendorIconColor(title),
-                                              );
-                                            },
-                                          )
-                                        : (title.toLowerCase() == 'bakery')
-                                            ? Image.asset(
-                                                'imagess/bakery.jpg',
-                                                width: 48,
-                                                height: 48,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error,
-                                                    stackTrace) {
-                                                  return Icon(
-                                                    _getVendorIcon(title),
-                                                    size: 48,
-                                                    color: _getVendorIconColor(
-                                                        title),
-                                                  );
-                                                },
-                                              )
-                                            : Icon(
-                                                // Use appropriate icon for each category based on title
-                                                _getVendorIcon(title),
-                                                size: 48,
-                                                color:
-                                                    _getVendorIconColor(title),
-                                              ),
-              ),
-
-              // Bottom Mask - Vertical gradient overlay
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.6), // from-black/60
-                      ],
-                    ),
+                child: Center(
+                  child: Text(
+                    displayIcon,
+                    style: const TextStyle(fontSize: 24),
                   ),
                 ),
               ),
-
-              // Iconography & Content Display
-              Positioned(
-                bottom: 12, // 0.75rem from bottom (bottom-3)
-                left: 12, // 0.75rem from left (left-3)
-                child: Row(
-                  children: [
-                    // Store Icon - 0.75rem x 0.75rem (w-3 h-3)
-                    Container(
-                      width: 12, // w-3
-                      height: 12, // h-3
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.store,
-                        size: 8,
-                        color: Colors.black,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Typography - Bold Inter text (0.625rem / text-[10px])
-                    Text(
-                      title,
-                      style: GoogleFonts.inter(
-                        fontSize: 10, // text-[10px]
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+            ),
+            // Title container
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  name,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -2974,6 +2675,10 @@ class _TopRatedProsSection extends StatelessWidget {
   const _TopRatedProsSection({required this.primary});
 
   final Color primary;
+
+  // Sample provider IDs for demonstration - in real app these would come from a backend
+  // TODO: Load from Supabase
+  static const List<String> _providerIds = [];
 
   @override
   Widget build(BuildContext context) {
@@ -3021,7 +2726,7 @@ class _TopRatedProsSection extends StatelessWidget {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 3,
+          itemCount: _providerIds.isEmpty ? 0 : 3,
           itemBuilder: (context, index) {
             return Padding(
               padding:
@@ -3049,13 +2754,6 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
   Map<String, dynamic>? _providerData;
   bool _isLoading = true;
 
-  // Sample provider IDs for demonstration - in real app these would come from a backend
-  final List<String> _providerIds = [
-    'provider_001',
-    'provider_002',
-    'provider_003',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -3064,24 +2762,13 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
 
   Future<void> _loadProviderData() async {
     try {
-      final providerId = _providerIds[widget.index % _providerIds.length];
-      final data = await ProviderDataService.getProviderData(providerId);
+      // Since providerIds is now empty, this won't be called
+      // TODO: Load from Supabase when data is available
       setState(() {
-        _providerData = data;
         _isLoading = false;
-      });
-
-      // Listen for real-time service details changes
-      ProviderDataService.addProviderDataChangeListener((updatedData) {
-        if (mounted) {
-          setState(() {
-            _providerData = updatedData;
-          });
-        }
       });
     } catch (e) {
       debugPrint('Error loading provider data: $e');
-      // Fallback to mock data on error
       setState(() {
         _isLoading = false;
       });
@@ -3123,29 +2810,36 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
   }
 
   Widget _buildDefaultAvatar() {
-    // Fallback to mock avatar or default icon
-    final mockAvatars = [
-      'https://picsum.photos/seed/pro1/200/200',
-      'https://picsum.photos/seed/pro2/200/200',
-      'https://picsum.photos/seed/pro3/200/200',
-    ];
+    // Use real profile_image_url from provider data
+    final profileImageUrl =
+        _providerData?['profiles']?['profile_image_url'] ?? '';
 
-    return ClipOval(
-      child: Image.network(
-        mockAvatars[widget.index % mockAvatars.length],
+    if (profileImageUrl.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          profileImageUrl,
+          width: 60,
+          height: 60,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 60,
+              height: 60,
+              color: Colors.grey[300],
+              child: const Icon(Icons.person_rounded, color: Colors.grey),
+            );
+          },
+        ),
+      );
+    } else {
+      // Show placeholder icon if profile_image_url is empty
+      return Container(
         width: 60,
         height: 60,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            width: 60,
-            height: 60,
-            color: Colors.grey[300],
-            child: Icon(Icons.person, color: Colors.grey[600]),
-          );
-        },
-      ),
-    );
+        color: Colors.grey[300],
+        child: const Icon(Icons.person_rounded, color: Colors.grey),
+      );
+    }
   }
 
   @override
@@ -3198,24 +2892,18 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
     }
 
     // Use real provider data if available, otherwise fallback to mock data
-    final providerName =
-        _providerData?['provider_name'] ?? 'Professional Provider';
-    final serviceType = _providerData?['service_type'] ?? 'Service Provider';
-    final rating = _providerData?['rating'] ?? 4.9;
-    final location = _providerData?['location'] ?? 'Downtown, City Center';
+    // TODO: Load from Supabase
+    final providerName = _providerData?['provider_name'] ?? '';
+    final serviceType = _providerData?['service_type'] ?? '';
+    final rating = _providerData?['rating'] ?? 0.0;
+    final location = _providerData?['location'] ?? '';
 
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CustomerProviderProfileScreen(
-              provider: _providerData ??
-                  {
-                    'name': providerName,
-                    'category': serviceType,
-                    'rating': rating,
-                    'location': location,
-                  },
+              providerId: _providerData?['id']?.toString() ?? '',
             ),
           ),
         );
@@ -3740,206 +3428,236 @@ class _MuawinProAdState extends State<_MuawinProAd>
 }
 
 // Featured Ads Section
-class _FeaturedAdsSection extends StatefulWidget {
-  const _FeaturedAdsSection();
+class _FeaturedAdsSection extends StatelessWidget {
+  const _FeaturedAdsSection({this.featuredAd});
 
-  @override
-  State<_FeaturedAdsSection> createState() => _FeaturedAdsSectionState();
-}
-
-class _FeaturedAdsSectionState extends State<_FeaturedAdsSection> {
-  late Future<List<FeaturedAd>> _featuredAdsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFeaturedAds();
-  }
-
-  void _loadFeaturedAds() {
-    final featuredManager = FeaturedAdManager();
-    _featuredAdsFuture = featuredManager.getFeaturedAdsForCustomer(
-      'customer_001', // Placeholder customer ID
-      5.0, // 5km radius
-    );
-  }
+  final Map<String, dynamic>? featuredAd;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<FeaturedAd>>(
-      future: _featuredAdsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF047A62),
-            ),
-          );
-        }
+    if (featuredAd == null) {
+      return const SizedBox.shrink();
+    }
 
-        if (snapshot.hasError) {
-          return const SizedBox.shrink();
-        }
+    // Extract data from featured ad
+    final isProvider = featuredAd!['provider_id'] != null;
+    final providerData = featuredAd!['providers'] as Map<String, dynamic>?;
+    final vendorData = featuredAd!['vendors'] as Map<String, dynamic>?;
+    final providerName = providerData?['profiles']?['full_name'];
+    final vendorName = vendorData?['business_name'];
+    final providerCategory = providerData?['service_category'];
+    final vendorCategory = vendorData?['business_type'];
+    final providerRating = providerData?['rating'];
+    final vendorRating = vendorData?['rating'];
+    final name = (isProvider == true && providerData != null)
+        ? (providerName ?? 'Featured Professional')
+        : (vendorName ?? 'Featured Professional');
+    final category = (isProvider == true && providerData != null)
+        ? (providerCategory ?? 'Service Professional')
+        : (vendorCategory ?? 'Service Professional');
+    final tagline = featuredAd!['tagline'] ?? 'Trusted Expert Near You';
+    final rating = (isProvider == true && providerData != null)
+        ? (providerRating?.toString() ?? '5.0')
+        : (vendorRating?.toString() ?? '5.0');
+    // Get distance from provider/vendor data
+    final distance = providerData?['distance']?.toString() ??
+        vendorData?['distance']?.toString() ??
+        (providerData?['city'] != null
+            ? providerData!['city'].toString()
+            : vendorData?['city'] != null
+                ? vendorData!['city'].toString()
+                : 'Nearby');
 
-        final ads = snapshot.data ?? [];
-        final featuredAd = ads.isNotEmpty
-            ? ads.reduce((a, b) => a.userRating > b.userRating ? a : b)
-            : null;
-
-        if (featuredAd == null) {
-          // Show empty state when no featured ads
-          return const SizedBox.shrink();
-        }
-
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF047A62), Color(0xFF035C4A)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF047A62), Color(0xFF035C4A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
               children: [
-                // Header
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.amber,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.campaign_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Service Provider of the Day',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'Top-rated professional in your area',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Provider/Vendor Info
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.amber,
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  child: const Icon(
+                    Icons.campaign_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Name
                       Text(
-                        featuredAd.userName,
+                        'Service Provider of the Day',
                         style: GoogleFonts.poppins(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 4),
-
-                      // Category
                       Text(
-                        featuredAd.userCategory,
+                        'Top-rated professional in your area',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color: Colors.grey.shade600,
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Tagline
-                      Text(
-                        featuredAd.tagline,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontStyle: FontStyle.italic,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Rating and Distance
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Colors.amber,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            featuredAd.userRating.toString(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.location_on_rounded,
-                            color: Colors.grey,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${featuredAd.userDistance} km',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 16),
+
+            // Provider/Vendor Info
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Name
+                  Text(
+                    name,
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Category
+                  Text(
+                    category,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Tagline
+                  Text(
+                    tagline,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Rating and Distance
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.amber,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        rating,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: Colors.grey,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$distance km',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const Spacer(),
+                      // Arrow button
+                      GestureDetector(
+                        onTap: () {
+                          if (featuredAd == null) return;
+
+                          final isProvider = featuredAd!['provider_id'] != null;
+
+                          if (isProvider) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CustomerProviderProfileScreen(
+                                  providerId:
+                                      featuredAd!['provider_id']?.toString() ??
+                                          '',
+                                ),
+                              ),
+                            );
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CustomerVendorProfileScreen(
+                                  vendor: featuredAd!['vendors'],
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF047A62),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3952,68 +3670,13 @@ class _VendorNearbyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Sample vendor data - cycling through different vendors with complete data
-    final vendors = [
-      {
-        'name': 'Fresh Market Grocery',
-        'category': 'Supermarket',
-        'rating': 4.8,
-        'distance': '0.3 km',
-        'experience': '5 years',
-        'hourlyRate': 'Rs. 600',
-        'dailyRate': 'Rs. 9000',
-        'avatar': 'https://picsum.photos/100/100?random=1',
-        'reviews': 156,
-        'about':
-            'One-stop shop for all your grocery needs. Fresh produce, imported items, and daily essentials.',
-        'status': 'OPEN',
-        'statusColor': Colors.green,
-      },
-      {
-        'name': 'Corner Dairy Shop',
-        'category': 'Milkshop',
-        'rating': 4.6,
-        'distance': '0.8 km',
-        'experience': '4 years',
-        'hourlyRate': 'Rs. 500',
-        'dailyRate': 'Rs. 8000',
-        'avatar': 'https://picsum.photos/100/100?random=2',
-        'reviews': 85,
-        'about':
-            'Premium quality fresh milk and dairy products delivered daily.',
-        'status': 'OPEN',
-        'statusColor': Colors.green,
-      },
-      {
-        'name': 'City Bakery & Cafe',
-        'category': 'Bakery',
-        'rating': 4.9,
-        'distance': '1.2 km',
-        'experience': '6 years',
-        'hourlyRate': 'Rs. 550',
-        'dailyRate': 'Rs. 8500',
-        'avatar': 'https://picsum.photos/100/100?random=3',
-        'reviews': 112,
-        'about': 'Artisan breads, custom cakes, and fresh pastries daily.',
-        'status': 'CLOSING SOON',
-        'statusColor': Colors.orange,
-      },
-      {
-        'name': 'Green Grocer Market',
-        'category': 'Fruits and Vegetables Shop',
-        'rating': 4.7,
-        'distance': '1.8 km',
-        'experience': '3 years',
-        'hourlyRate': 'Rs. 400',
-        'dailyRate': 'Rs. 6000',
-        'avatar': 'https://picsum.photos/100/100?random=4',
-        'reviews': 124,
-        'about':
-            'Fresh organic fruits and vegetables sourced daily from local farms.',
-        'status': 'OPEN',
-        'statusColor': Colors.green,
-      },
-    ];
+    // TODO: Connect to Supabase
+    final List<Map<String, dynamic>> vendors = [];
+
+    // Handle empty vendors list to prevent RangeError
+    if (vendors.isEmpty) {
+      return Container(); // Return empty container if no vendors
+    }
 
     final vendor = vendors[index % vendors.length];
 

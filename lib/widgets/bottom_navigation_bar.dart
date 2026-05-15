@@ -234,6 +234,7 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
 
     return GestureDetector(
       onTap: () => _handleTap(index),
+      behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
         animation: Listenable.merge([animationController, pressController]),
         builder: (context, child) {
@@ -245,7 +246,8 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
           return Transform.scale(
             scale: combinedScale,
             child: Container(
-              constraints: const BoxConstraints(minWidth: 64),
+              constraints: const BoxConstraints(minWidth: 72, minHeight: 60),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -318,6 +320,7 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
     // Contained FAB button with label for navigation bar
     return GestureDetector(
       onTap: () => _handleTap(index),
+      behavior: HitTestBehavior.opaque,
       child: MouseRegion(
         onEnter: (_) {
           // Handle hover enter (scale to 105%)
@@ -339,7 +342,9 @@ class _MuawinBottomNavigationBarState extends State<MuawinBottomNavigationBar>
             return Transform.scale(
               scale: combinedScale,
               child: Container(
-                constraints: const BoxConstraints(minWidth: 70, maxHeight: 65),
+                constraints: const BoxConstraints(minWidth: 72, minHeight: 60),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,

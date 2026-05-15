@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:bcrypt/bcrypt.dart';
-import 'dart:convert';
-import 'vendor_verify_phone_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'provider_document_verification_screen.dart';
 
 /// Location data model for autocomplete
 class Location {
@@ -691,59 +688,58 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
   // Save provider registration data securely
   Future<void> _saveProviderData() async {
     try {
-      // Use secure storage instead of SharedPreferences
-      const storage = FlutterSecureStorage();
+      final supabase = Supabase.instance.client;
 
-      // Hash the password securely
-      final hashedPassword =
-          BCrypt.hashpw(_passwordController.text, BCrypt.gensalt());
+      // Clean email
+      final cleanEmail = _emailController.text.trim().toLowerCase();
 
-      // Extract city from full address for proper data storage
+      // Extract city from full address
       String cityName = _cityController.text.trim();
       String areaName = _areaController.text.trim();
-
-      // Try to extract city name from full address if it contains comma
       if (cityName.contains(',')) {
         cityName = cityName.split(',').first.trim();
       }
 
-      // Create provider data map (without plain text password)
-      final providerData = {
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'category': _selectedCategory,
-        'experience': _yearsController.text.trim(),
-        'city': cityName,
-        'area': areaName,
-        'fullAddress':
-            _cityController.text.trim(), // Store full address for display
-        'fromTime': '${_fromTime.hour}:${_fromTime.minute}',
-        'toTime': '${_toTime.hour}:${_toTime.minute}',
-        'registeredAt': DateTime.now().toIso8601String(),
-        'isVerified': false,
-        'serviceRates': {}, // Initialize empty service rates
-      };
-
-      // Save hashed password separately in secure storage
-      await storage.write(
-        key: 'provider_password_${_phoneController.text.trim()}',
-        value: hashedPassword,
+      // Register with Supabase Auth
+      // Pass ALL provider data in metadata
+      final response = await supabase.auth.signUp(
+        email: cleanEmail,
+        password: _passwordController.text,
+        data: {
+          'full_name': _nameController.text.trim(),
+          'phone_number': _phoneController.text.trim(),
+          'role': 'provider',
+          'service_category': _selectedCategory,
+          'city': cityName,
+          'area': areaName,
+          'years_experience': _yearsController.text.trim(),
+          'working_hours_from':
+              '${_fromTime.hour}:${_fromTime.minute.toString().padLeft(2, '0')}',
+          'working_hours_to':
+              '${_toTime.hour}:${_toTime.minute.toString().padLeft(2, '0')}',
+        },
       );
 
-      // Save provider data in regular storage (without password)
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'provider_data_${_phoneController.text.trim()}',
-        jsonEncode(providerData),
-      );
+      if (response.user == null) {
+        throw Exception('Registration failed. Please try again.');
+      }
 
-      debugPrint(
-          'Provider data saved securely for category: $_selectedCategory');
+      debugPrint('Provider registered successfully: ${response.user!.id}');
+    } on AuthException catch (e) {
+      debugPrint('Provider registration auth error: ${e.message}');
+      String message = 'Registration failed';
+      if (e.message.contains('already registered') ||
+          e.message.contains('already been registered')) {
+        message = 'This email is already registered. Please login instead.';
+      } else if (e.message.contains('invalid')) {
+        message = 'Invalid email address. Please check and try again.';
+      } else {
+        message = e.message;
+      }
+      throw Exception(message);
     } catch (e) {
-      debugPrint('Error saving provider data: $e');
-      // In a real app, you'd want to show this error to the user
-      rethrow; // Re-throw to handle in UI
+      debugPrint('Provider registration error: $e');
+      rethrow;
     }
   }
 
@@ -980,27 +976,37 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
     if (_canGoNext()) {
       try {
         await _saveProviderData();
-        // Navigate to phone verification first
-        if (mounted) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => VendorVerifyPhoneScreen(
-                phoneNumber: _phoneController.text.trim(),
-                verificationType: VerificationType.provider,
-              ),
-            ),
-          );
-        }
+
+        if (!mounted) return;
+
+        // Show success and navigate to
+        // document verification screen
+        // (keep existing navigation)
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ProviderDocumentVerificationScreen(
+                // pass required data if needed
+                ),
+          ),
+        );
       } catch (e) {
-        // Show error to user
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Registration failed: ${e.toString()}'),
-              backgroundColor: Colors.red,
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().replaceAll('Exception: ', ''),
+              style: GoogleFonts.poppins(),
             ),
-          );
-        }
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      } finally {
+        if (mounted) {}
       }
     }
   }
@@ -1009,6 +1015,14 @@ class _ProviderRegisterScreenState extends State<ProviderRegisterScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: isFrom ? _fromTime : _toTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme,
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && mounted) {
       setState(() {

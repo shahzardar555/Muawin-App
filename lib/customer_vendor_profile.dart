@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'customer_home_screen.dart';
 import 'customer_jobs_screen.dart';
 import 'post_job_step1_screen.dart';
@@ -13,8 +14,8 @@ import 'vendor_home_screen.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'widgets/semantic_analysis_card.dart';
 import 'chat_screen.dart';
-import 'services/service_locator.dart';
 import 'services/pro_status_checker.dart';
+import 'services/database_service.dart';
 
 class CustomerVendorProfileScreen extends StatefulWidget {
   const CustomerVendorProfileScreen({super.key, required this.vendor});
@@ -37,82 +38,50 @@ class _CustomerVendorProfileScreenState
   // Service-based state management
   bool _isLoadingVendorData = true;
   Map<String, dynamic>? _vendorData;
+  final DatabaseService _databaseService = DatabaseService();
+  List<Map<String, dynamic>> _supabaseReviews = [];
+  bool _isLoadingReviews = true;
 
   Future<void> _loadVendorData() async {
     try {
-      final data = await serviceLocator.vendorService.getVendorData();
+      // Get vendor ID from the passed vendor map
+      final vendorId = widget.vendor['id']?.toString();
+      if (vendorId == null) {
+        setState(() => _isLoadingVendorData = false);
+        return;
+      }
+
+      // Fetch full vendor details from Supabase
+      final data = await _databaseService.getVendorById(vendorId);
       setState(() {
         _vendorData = data;
         _isLoadingVendorData = false;
       });
+
+      // Also load reviews
+      await _loadReviews(vendorId);
     } catch (e) {
-      setState(() {
-        _isLoadingVendorData = false;
-      });
+      debugPrint('Error loading vendor data: $e');
+      setState(() => _isLoadingVendorData = false);
     }
   }
 
-  // Dynamic reviews list - initialized with sample reviews
-  List<Map<String, dynamic>>? _reviews = [
-    {
-      'username': 'Sarah M.',
-      'rating': 5,
-      'date': '2 DAYS AGO',
-      'comment': 'Great selection of fresh produce and very friendly staff!',
-    },
-    {
-      'username': 'Ali K.',
-      'rating': 4,
-      'date': '1 WEEK AGO',
-      'comment': 'Good prices but sometimes crowded during peak hours.',
-    },
-    {
-      'username': 'Fatima R.',
-      'rating': 5,
-      'date': '2 WEEKS AGO',
-      'comment': 'Excellent quality products and helpful staff!',
-    },
-    {
-      'username': 'Ahmed H.',
-      'rating': 4,
-      'date': '3 WEEKS AGO',
-      'comment': 'Very reliable vendor with consistent quality.',
-    },
-    {
-      'username': 'Ayesha S.',
-      'rating': 5,
-      'date': '1 MONTH AGO',
-      'comment': 'Outstanding service and professional attitude!',
-    },
-    {
-      'username': 'Bilal M.',
-      'rating': 3,
-      'date': '1 MONTH AGO',
-      'comment': 'Good variety of products but could improve delivery times.',
-    },
-    {
-      'username': 'Nadia K.',
-      'rating': 4,
-      'date': '2 MONTHS AGO',
-      'comment': 'Always fresh and reasonably priced items.',
-    },
-    {
-      'username': 'Omar T.',
-      'rating': 5,
-      'date': '3 MONTHS AGO',
-      'comment': 'Exceptional customer service and product quality!',
-    },
-  ];
-
-  // Get only first 5 reviews for display
-  List<Map<String, dynamic>> get _displayReviews {
-    if (_reviews == null || _reviews!.isEmpty) return [];
-    return _reviews!.take(5).toList();
+  Future<void> _loadReviews(String vendorId) async {
+    try {
+      final reviews = await _databaseService.getVendorReviews(vendorId);
+      setState(() {
+        _supabaseReviews = reviews;
+        _isLoadingReviews = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading reviews: $e');
+      setState(() => _isLoadingReviews = false);
+    }
   }
 
   // Check if there are more than 5 reviews
   bool get _hasMoreReviews {
-    return (_reviews?.length ?? 0) > 5;
+    return _supabaseReviews.length > 5;
   }
 
   @override
@@ -171,25 +140,32 @@ class _CustomerVendorProfileScreenState
       );
     }
 
-    // Use service data with fallback to widget data
-    final vendorName = _vendorData?['name']?.toString() ??
+    // Vendor data from Supabase with fallback to passed widget.vendor
+    final vendorName = _vendorData?['business_name']?.toString() ??
+        widget.vendor['business_name']?.toString() ??
         widget.vendor['name']?.toString() ??
-        'Vendor';
-    final category = _vendorData?['category']?.toString() ??
+        '';
+    final category = _vendorData?['business_type']?.toString() ??
+        widget.vendor['business_type']?.toString() ??
         widget.vendor['category']?.toString() ??
-        'Category';
-    final rating = double.tryParse(_vendorData?['rating']?.toString() ?? '') ??
+        '';
+    final rating = (_vendorData?['rating'] as num?)?.toDouble() ??
         (widget.vendor['rating'] as num?)?.toDouble() ??
         0.0;
-    final distance = widget.vendor['distance']?.toString() ?? 'Unknown';
-    final experience = widget.vendor['experience']?.toString() ?? '0 years';
-    final about = _vendorData?['about']?.toString() ??
+    final about = _vendorData?['description']?.toString() ??
         widget.vendor['about']?.toString() ??
         'No description available';
-    final reviews =
-        int.tryParse(_vendorData?['reviewCount']?.toString() ?? '') ??
-            (widget.vendor['reviews'] as num?)?.toInt() ??
-            0;
+    final reviewCount = (_vendorData?['review_count'] as num?)?.toInt() ??
+        (widget.vendor['review_count'] as num?)?.toInt() ??
+        0;
+    final vendorCity = _vendorData?['city']?.toString() ??
+        widget.vendor['city']?.toString() ??
+        '';
+
+    // Keep these for backward compatibility
+    final distance = widget.vendor['distance']?.toString() ?? vendorCity;
+    final experience = widget.vendor['experience']?.toString() ?? '';
+    final reviews = reviewCount;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0FDF4),
@@ -597,11 +573,15 @@ class _CustomerVendorProfileScreenState
                   MaterialPageRoute(
                       builder: (_) => ChatScreen(
                             chatData: {
-                              'name':
-                                  widget.vendor['name']?.toString() ?? 'Vendor',
+                              'name': _vendorData?['business_name']
+                                      ?.toString() ??
+                                  widget.vendor['business_name']?.toString() ??
+                                  widget.vendor['name']?.toString() ??
+                                  '',
                               'isOnline': true,
-                              'avatar':
-                                  widget.vendor['avatar']?.toString() ?? '',
+                              'avatar': _vendorData?['avatar']?.toString() ??
+                                  widget.vendor['avatar']?.toString() ??
+                                  '',
                               'type': 'vendor',
                             },
                           )),
@@ -701,11 +681,18 @@ class _CustomerVendorProfileScreenState
                     } else {
                       // Fallback: Create Google Maps URL with vendor location search
                       final vendorName =
-                          widget.vendor['name']?.toString() ?? 'Vendor';
+                          _vendorData?['business_name']?.toString() ??
+                              widget.vendor['business_name']?.toString() ??
+                              widget.vendor['name']?.toString() ??
+                              '';
                       final vendorCategory =
-                          widget.vendor['category']?.toString() ?? 'Shop';
+                          _vendorData?['business_type']?.toString() ??
+                              widget.vendor['business_type']?.toString() ??
+                              widget.vendor['category']?.toString() ??
+                              '';
                       final vendorAddress =
-                          widget.vendor['address']?.toString();
+                          _vendorData?['address']?.toString() ??
+                              widget.vendor['address']?.toString();
 
                       // Create a search query for Google Maps
                       String searchQuery = '$vendorName $vendorCategory';
@@ -908,19 +895,62 @@ class _CustomerVendorProfileScreenState
           ],
         ),
         const SizedBox(height: 16),
-        // Dynamic reviews list
-        ...List.generate(_displayReviews.length, (index) {
-          return Padding(
-            padding: EdgeInsets.only(
-                bottom: index < _displayReviews.length - 1 ? 12 : 0),
-            child: _buildReviewCard(
-              username: _displayReviews[index]['username'] as String? ?? '',
-              rating: _displayReviews[index]['rating'] as int? ?? 0,
-              date: _displayReviews[index]['date'] as String? ?? '',
-              comment: _displayReviews[index]['comment'] as String? ?? '',
+        // Dynamic reviews list from Supabase
+        if (_isLoadingReviews)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(color: Color(0xFF047A62)),
             ),
-          );
-        }),
+          )
+        else if (_supabaseReviews.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: Text(
+                'No reviews yet. Be the first!',
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+              ),
+            ),
+          )
+        else
+          ...List.generate(
+            _supabaseReviews.length > 5 ? 5 : _supabaseReviews.length,
+            (index) {
+              final review = _supabaseReviews[index];
+              final customerName =
+                  review['customers']?['profiles']?['full_name']?.toString() ??
+                      'Customer';
+              final reviewRating = (review['rating'] as num?)?.toInt() ?? 0;
+              final reviewText = review['review']?.toString() ?? '';
+              final createdAt = review['created_at']?.toString() ?? '';
+              String dateStr = '';
+              if (createdAt.isNotEmpty) {
+                try {
+                  final date = DateTime.parse(createdAt);
+                  dateStr = '${date.day}/${date.month}/${date.year}';
+                } catch (_) {
+                  dateStr = createdAt.substring(0, 10);
+                }
+              }
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: index <
+                          (_supabaseReviews.length > 5
+                              ? 4
+                              : _supabaseReviews.length - 1)
+                      ? 12
+                      : 0,
+                ),
+                child: _buildReviewCard(
+                  username: customerName,
+                  rating: reviewRating,
+                  date: dateStr,
+                  comment: reviewText,
+                ),
+              );
+            },
+          ),
         // Add View All Reviews button if there are more than 5 reviews
         if (_hasMoreReviews) ...[
           Container(
@@ -1116,26 +1146,68 @@ class _CustomerVendorProfileScreenState
               ),
             ),
             ElevatedButton(
-              onPressed: () {
-                if (reviewController.text.trim().isNotEmpty) {
-                  // Add the new review to the list
-                  this.setState(() {
-                    _reviews ??= [];
-                    _reviews!.insert(0, {
-                      'username': 'You',
-                      'rating': selectedRating,
-                      'date': 'JUST NOW',
-                      'comment': reviewController.text.trim(),
-                    });
+              onPressed: () async {
+                if (reviewController.text.trim().isEmpty) return;
+
+                final vendorId = widget.vendor['id']?.toString();
+                if (vendorId == null) return;
+
+                // Capture ScaffoldMessenger before any async gaps
+                final messenger = ScaffoldMessenger.of(context);
+
+                Navigator.pop(context);
+
+                // Get current customer ID
+                final user = Supabase.instance.client.auth.currentUser;
+                if (user == null) return;
+
+                try {
+                  // Get customer record
+                  final customerRecord = await Supabase.instance.client
+                      .from('customers')
+                      .select('id')
+                      .eq(
+                          'profile_id',
+                          (await Supabase.instance.client
+                              .from('profiles')
+                              .select('id')
+                              .eq('user_id', user.id)
+                              .single())['id'])
+                      .single();
+
+                  // Insert review into Supabase
+                  await Supabase.instance.client.from('reviews').insert({
+                    'vendor_id': vendorId,
+                    'customer_id': customerRecord['id'],
+                    'rating': selectedRating,
+                    'review': reviewController.text.trim(),
+                    'is_verified': false,
                   });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Review submitted successfully!'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+
+                  // Reload reviews
+                  await _loadReviews(vendorId);
+
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Review submitted successfully!'),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  debugPrint('Error submitting review: $e');
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Failed to submit review. Please try again.'),
+                        backgroundColor: Colors.red,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
                 }
               },
               style: ElevatedButton.styleFrom(

@@ -20,7 +20,8 @@ class BackendVendorService implements VendorService {
        _timeout = timeout;
 
   @override
-  String get vendorId => 'vendor_001'; // Get from authentication
+  // TODO: Connect to Supabase
+  String get vendorId => ''; // Get from authentication
 
   @override
   Future<Map<String, dynamic>> getVendorData() async {
@@ -170,32 +171,38 @@ class BackendVendorService implements VendorService {
   // Convenience getters
   @override
   Future<String> getVendorName() async {
-    return await getVendorField('name') ?? 'Unknown Vendor';
+    // TODO: Connect to Supabase
+    return await getVendorField('name') ?? '';
   }
 
   @override
   Future<String> getVendorCategory() async {
-    return await getVendorField('category') ?? 'General';
+    // TODO: Connect to Supabase
+    return await getVendorField('category') ?? '';
   }
 
   @override
   Future<String> getVendorPhone() async {
-    return await getVendorField('phone') ?? 'No phone';
+    // TODO: Connect to Supabase
+    return await getVendorField('phone') ?? '';
   }
 
   @override
   Future<String> getVendorAddress() async {
-    return await getVendorField('address') ?? 'No address';
+    // TODO: Connect to Supabase
+    return await getVendorField('address') ?? '';
   }
 
   @override
   Future<String> getVendorMapsLink() async {
+    // TODO: Connect to Supabase
     return await getVendorField('mapsLink') ?? '';
   }
 
   @override
   Future<String> getVendorAbout() async {
-    return await getVendorField('about') ?? 'No description available';
+    // TODO: Connect to Supabase
+    return await getVendorField('about') ?? '';
   }
 
   @override
@@ -205,6 +212,7 @@ class BackendVendorService implements VendorService {
 
   @override
   Future<String> getVendorRating() async {
+    // TODO: Connect to Supabase
     return await getVendorField('rating') ?? '0.0';
   }
 

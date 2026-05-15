@@ -28,20 +28,19 @@ class ProviderDataService {
       final prefs = await SharedPreferences.getInstance();
 
       // Load all provider-related data
-      final experience = prefs.getString(_experienceKey) ?? '3 years';
-      final availability = prefs.getString(_availabilityKey) ?? 'Weekdays';
+      // TODO: Load from Supabase
+      final experience = prefs.getString(_experienceKey) ?? '';
+      final availability = prefs.getString(_availabilityKey) ?? '';
       final serviceAreas = prefs.getStringList(_serviceAreasKey) ?? [];
-      final description =
-          prefs.getString(_descriptionKey) ?? 'Professional service provider';
-      final serviceType = prefs.getString(_serviceTypeKey) ?? 'Driver';
-      final hourlyRate = prefs.getString(_hourlyRateKey) ?? '500';
-      final contactPhone = prefs.getString(_contactPhoneKey) ?? '+923001234567';
-      final email = prefs.getString(_emailKey) ?? 'provider@example.com';
-      final responseTime = prefs.getString(_responseTimeKey) ?? '2';
-      final workingHours =
-          prefs.getString(_workingHoursKey) ?? '9:00 AM - 6:00 PM';
+      final description = prefs.getString(_descriptionKey) ?? '';
+      final serviceType = prefs.getString(_serviceTypeKey) ?? '';
+      final hourlyRate = prefs.getString(_hourlyRateKey) ?? '';
+      final contactPhone = prefs.getString(_contactPhoneKey) ?? '';
+      final email = prefs.getString(_emailKey) ?? '';
+      final responseTime = prefs.getString(_responseTimeKey) ?? '';
+      final workingHours = prefs.getString(_workingHoursKey) ?? '';
       final profileImagePath = prefs.getString(_profileImagePathKey);
-      final providerName = prefs.getString(_providerNameKey) ?? 'Ahmad M.';
+      final providerName = prefs.getString(_providerNameKey) ?? '';
 
       return {
         'id': providerId,
@@ -61,22 +60,23 @@ class ProviderDataService {
       };
     } catch (e) {
       debugPrint('Error loading provider data: $e');
+      // TODO: Load from Supabase
       // Return default data on error
       return {
         'id': providerId,
-        'experience': '3 years',
-        'availability': 'Weekdays',
+        'experience': '',
+        'availability': '',
         'service_areas': <String>[],
-        'description': 'Professional service provider',
-        'service_type': 'Driver',
-        'hourly_rate': '500',
-        'contact_phone': '+923001234567',
-        'email': 'provider@example.com',
-        'response_time': '2',
-        'working_hours': '9:00 AM - 6:00 PM',
+        'description': '',
+        'service_type': '',
+        'hourly_rate': '',
+        'contact_phone': '',
+        'email': '',
+        'response_time': '',
+        'working_hours': '',
         'profile_image_path': null,
-        'provider_name': 'Ahmad M.',
-        'category': 'Driver',
+        'provider_name': '',
+        'category': '',
       };
     }
   }

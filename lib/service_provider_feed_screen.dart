@@ -81,68 +81,36 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   int _currentNavIndex = 0;
 
   // Current provider ID (this would come from authentication/user profile)
-  final String _currentProviderId =
-      'provider_001'; // This should come from auth
+  // TODO: Load from Supabase
+  final String _currentProviderId = '';
 
   // Real provider data from ProviderDataService
   Map<String, dynamic>? _providerData;
 
   // Service provider profile data
+  // TODO: Load from Supabase
   Map<String, dynamic> get _providerProfile {
     // Use real provider data if available, otherwise fallback to mock data
     if (_providerData != null) {
       return {
-        'name': _providerData!['provider_name'] ?? 'Ahmed M.',
-        'category': _providerData!['service_type'] ?? 'Service Provider',
-        'rating': '4.9',
-        'profilePicture': 'https://i.pravatar.cc/150?img=42',
+        'name': _providerData!['provider_name'] ?? '',
+        'category': _providerData!['service_type'] ?? '',
+        'rating': '0.0',
+        'profilePicture': '',
       };
     }
 
-    // Fallback mock data
+    // Fallback empty data
     return {
-      'name': 'Ahmed Hassan',
-      'category': 'Electrician Service',
-      'rating': '4.9',
-      'profilePicture': 'https://i.pravatar.cc/150?img=42',
+      'name': '',
+      'category': '',
+      'rating': '0.0',
+      'profilePicture': '',
     };
   }
 
-  final List<Map<String, dynamic>> _jobAlerts = [
-    {
-      'id': '#48292',
-      'customer': 'Ahmed R.',
-      'distance': '1.2 km',
-      'details':
-          'Need a driver for airport pickup. Must have own car. Round trip required, estimated 2 hours total.',
-      'location': 'DHA Phase 6, Lahore',
-      'time': 'Today, 3:00 PM',
-      'price': 'Rs. 1,500',
-      'highPriority': true,
-    },
-    {
-      'id': '#48285',
-      'customer': 'Fatima S.',
-      'distance': '3.5 km',
-      'details':
-          'Looking for a driver for weekly grocery runs. Flexible timing, prefer mornings.',
-      'location': 'Gulberg III, Lahore',
-      'time': 'Tomorrow, 10:00 AM',
-      'price': 'Rs. 800',
-      'highPriority': false,
-    },
-    {
-      'id': '#48270',
-      'customer': 'Bilal K.',
-      'distance': '5.0 km',
-      'details':
-          'Office commute driver needed for 1 month. Monday to Friday, 8 AM to 6 PM.',
-      'location': 'Johar Town, Lahore',
-      'time': 'Mon, 8:00 AM',
-      'price': 'Rs. 25,000/mo',
-      'highPriority': false,
-    },
-  ];
+  // TODO: Load from Supabase
+  final List<Map<String, dynamic>> _jobAlerts = [];
 
   void _showStatusSheet() {
     showModalBottomSheet(
@@ -815,7 +783,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                 ],
               ),
               child: Text(
-                'Aapki Muawinat kesay karain?',
+                'Muawin Rehnuma',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -906,8 +874,7 @@ class _FeedHeader extends StatelessWidget {
           // Navigation & Profile Block
           Row(
             children: [
-              const SizedBox(width: 52), // Compensate for removed back button
-              // Profile squircle with status dot
+              // Profile squircle with status dot - positioned on the left
               GestureDetector(
                 onTap: () {
                   // Safe haptic feedback alternative
@@ -1218,7 +1185,7 @@ class _JobLeadCard extends StatelessWidget {
                     child: Text(
                       isHighPriority ? 'Decline' : 'Not Interested',
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
                         color: Colors.white,
@@ -1238,15 +1205,12 @@ class _JobLeadCard extends StatelessWidget {
                     height: 44,
                     decoration: BoxDecoration(
                       color: primary,
-                      borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(12),
-                      ),
                     ),
                     alignment: Alignment.center,
                     child: const Text(
                       'Negotiate',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
                         color: Colors.white,
@@ -1274,7 +1238,7 @@ class _JobLeadCard extends StatelessWidget {
                     child: Text(
                       isHighPriority ? 'Accept' : 'Apply',
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
                         color: Colors.white,
@@ -1523,7 +1487,7 @@ class _StandardJobCardState extends State<_StandardJobCard> {
                         child: const Text(
                           'Not Interested',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.5,
                             color: Colors.white,
@@ -1548,7 +1512,7 @@ class _StandardJobCardState extends State<_StandardJobCard> {
                         child: const Text(
                           'Negotiate',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.5,
                             color: Colors.black87,
@@ -1576,7 +1540,7 @@ class _StandardJobCardState extends State<_StandardJobCard> {
                         child: const Text(
                           'Apply',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.5,
                             color: Colors.white,

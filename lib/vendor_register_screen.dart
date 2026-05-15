@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'vendor_verify_phone_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Vendor categories for vendor registration.
 const List<String> kVendorCategories = [
@@ -36,16 +36,20 @@ class _VendorRegisterScreenState extends State<VendorRegisterScreen> {
   final _businessNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _yearsController = TextEditingController();
   final _cityController = TextEditingController();
   final _areaController = TextEditingController();
   String? _selectedCategory;
+
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _businessNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _passwordController.dispose();
     _yearsController.dispose();
     _cityController.dispose();
     _areaController.dispose();
@@ -109,7 +113,7 @@ class _VendorRegisterScreenState extends State<VendorRegisterScreen> {
                   const SizedBox(height: 8),
                   _VendorInputWithIcon(
                     controller: _businessNameController,
-                    hint: 'Super Grocery Store',
+                    hint: 'Enter business name',
                     icon: Icons.person_rounded,
                     keyboardType: TextInputType.name,
                     validator: (v) =>
@@ -123,6 +127,18 @@ class _VendorRegisterScreenState extends State<VendorRegisterScreen> {
                     controller: _emailController,
                     hint: 'you@example.com',
                     keyboardType: TextInputType.emailAddress,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  // Password
+                  const _VendorFieldLabel(text: 'PASSWORD'),
+                  const SizedBox(height: 8),
+                  _VendorInput(
+                    controller: _passwordController,
+                    hint: 'Create a password',
+                    keyboardType: TextInputType.visiblePassword,
+                    obscureText: true,
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
@@ -204,16 +220,118 @@ class _VendorRegisterScreenState extends State<VendorRegisterScreen> {
                   const SizedBox(height: _kHeaderFormGap),
                   // Register Now — full-width, h-14, rounded-2xl, shadow, scale on tap
                   _VendorRegisterNowButton(
-                    onPressed: () {
+                    isLoading: _isLoading,
+                    onPressed: () async {
                       HapticFeedback.lightImpact();
                       if (_formKey.currentState?.validate() ?? false) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => VendorVerifyPhoneScreen(
-                              phoneNumber: _phoneController.text.trim(),
+                        if (_selectedCategory == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Please select a vendor category',
+                                style: GoogleFonts.poppins(),
+                              ),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
                             ),
-                          ),
-                        );
+                          );
+                          return;
+                        }
+
+                        setState(() => _isLoading = true);
+
+                        try {
+                          final supabase = Supabase.instance.client;
+
+                          final cleanEmail =
+                              _emailController.text.trim().toLowerCase();
+
+                          // Register vendor with Supabase Auth
+                          final response = await supabase.auth.signUp(
+                            email: cleanEmail,
+                            password: _passwordController.text,
+                            data: {
+                              'full_name': _businessNameController.text.trim(),
+                              'phone_number': _phoneController.text.trim(),
+                              'role': 'vendor',
+                              'business_name':
+                                  _businessNameController.text.trim(),
+                              'business_type': _selectedCategory!,
+                              'city': _cityController.text.trim(),
+                              'area': _areaController.text.trim(),
+                              'years_in_business': _yearsController.text.trim(),
+                            },
+                          );
+
+                          if (response.user == null) {
+                            throw Exception(
+                                'Registration failed. Please try again.');
+                          }
+
+                          // Show success message
+                          if (!mounted) return;
+                          // ignore: use_build_context_synchronously
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Account created successfully! Please login.',
+                                style: GoogleFonts.poppins(),
+                              ),
+                              backgroundColor: const Color(0xFF047A62),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          );
+
+                          // Navigate back to login screen
+                          if (!mounted) return;
+                          // ignore: use_build_context_synchronously
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
+                        } on AuthException catch (e) {
+                          String message = 'Registration failed';
+                          if (e.message.contains('already registered') ||
+                              e.message.contains('already been registered')) {
+                            message =
+                                'This email is already registered. Please login.';
+                          } else {
+                            message = e.message;
+                          }
+                          if (!mounted) return;
+                          // ignore: use_build_context_synchronously
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                message,
+                                style: GoogleFonts.poppins(),
+                              ),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          // ignore: use_build_context_synchronously
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                e.toString().replaceAll('Exception: ', ''),
+                                style: GoogleFonts.poppins(),
+                              ),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        } finally {
+                          if (mounted) {
+                            setState(() => _isLoading = false);
+                          }
+                        }
                       }
                     },
                   ),
@@ -288,12 +406,14 @@ class _VendorInput extends StatelessWidget {
     required this.hint,
     required this.keyboardType,
     this.validator,
+    this.obscureText = false,
   });
 
   final TextEditingController controller;
   final String hint;
   final TextInputType keyboardType;
   final String? Function(String?)? validator;
+  final bool obscureText;
 
   static const double _height = 48;
   static const double _radius = 12;
@@ -302,12 +422,14 @@ class _VendorInput extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = Theme.of(context).colorScheme.surface;
     final onSurface = Theme.of(context).colorScheme.onSurface;
+    final primary = Theme.of(context).colorScheme.primary;
 
     return SizedBox(
       height: _height,
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
+        obscureText: obscureText,
         validator: validator,
         style: GoogleFonts.poppins(
             fontSize: 15, color: onSurface, fontWeight: FontWeight.w500),
@@ -331,8 +453,7 @@ class _VendorInput extends StatelessWidget {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(_radius),
             borderSide: BorderSide(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+              color: primary.withValues(alpha: 0.5),
               width: 1.5,
             ),
           ),
@@ -506,9 +627,13 @@ class _VendorCategoryDropdown extends StatelessWidget {
 
 /// Register Now button: h-14 (3.5rem), rounded-2xl (1rem), shadow-primary/20, active:scale-95.
 class _VendorRegisterNowButton extends StatefulWidget {
-  const _VendorRegisterNowButton({required this.onPressed});
+  const _VendorRegisterNowButton({
+    required this.onPressed,
+    this.isLoading = false,
+  });
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool isLoading;
 
   static const double _height = 56;
   static const double _radius = 16;
@@ -549,7 +674,7 @@ class _VendorRegisterNowButtonState extends State<_VendorRegisterNowButton>
       onTapDown: (_) => _controller.forward(),
       onTapUp: (_) => _controller.reverse(),
       onTapCancel: () => _controller.reverse(),
-      onTap: widget.onPressed,
+      onTap: widget.isLoading ? null : widget.onPressed,
       child: AnimatedBuilder(
         animation: _scale,
         builder: (context, child) =>
@@ -570,14 +695,23 @@ class _VendorRegisterNowButtonState extends State<_VendorRegisterNowButton>
             ],
           ),
           alignment: Alignment.center,
-          child: Text(
-            'Register Now',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
+          child: widget.isLoading
+              ? const SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  'Register Now',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
         ),
       ),
     );

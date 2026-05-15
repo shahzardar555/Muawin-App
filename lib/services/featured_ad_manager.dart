@@ -90,41 +90,10 @@ class FeaturedAdManager extends ChangeNotifier {
   static final FeaturedAdManager _instance = FeaturedAdManager._internal();
   factory FeaturedAdManager() => _instance;
   FeaturedAdManager._internal() {
-    // Add mock data for demonstration
-    _addMockData();
+    // TODO: Load from Supabase
   }
 
-  void _addMockData() {
-    // Add one mock featured partner for demonstration
-    final mockAd = FeaturedAd(
-      id: 'mock_001',
-      userId: 'provider_001',
-      userType: 'provider',
-      userName: 'Ahmed Hassan',
-      userCategory: 'Plumbing',
-      userRating: 4.8,
-      userDistance: 2.3,
-      tagline: 'Expert plumbing services with 10+ years experience',
-      planType: 'weekly',
-      planPrice: 500,
-      startDate: DateTime.now().subtract(const Duration(days: 3)),
-      endDate: DateTime.now().add(const Duration(days: 4)),
-      isActive: true,
-      profileImageUrl: 'https://via.placeholder.com/150',
-      userProfileData: {
-        'name': 'Ahmed Hassan',
-        'category': 'Plumbing',
-        'rating': 4.8,
-        'completedJobs': 156,
-        'verified': true,
-      },
-      userLatitude: 24.8607, // Karachi coordinates
-      userLongitude: 67.0011,
-    );
-
-    _activeFeaturedAds.add(mockAd);
-  }
-
+  // TODO: Load from Supabase
   List<FeaturedAd> _activeFeaturedAds = [];
 
   List<FeaturedAd> get activeFeaturedAds =>

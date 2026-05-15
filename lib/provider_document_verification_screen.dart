@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'service_provider_feed_screen.dart';
+import 'login_screen.dart';
 
 /// Max width 28rem (448px), centered (max-w-md mx-auto).
 const double _kMaxContentWidth = 448;
@@ -489,6 +491,7 @@ class _ProviderDocumentVerificationScreenState
 /// Navigation Header:
 /// - Centered micro-typography: "PROVIDER VERIFICATION".
 /// - Rounded-full ghost back button with ArrowLeft icon.
+/// - Logout button on the right.
 class _NavigationHeader extends StatelessWidget {
   const _NavigationHeader({required this.onBack});
 
@@ -531,7 +534,26 @@ class _NavigationHeader extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 40),
+        GestureDetector(
+          onTap: () async {
+            await Supabase.instance.client.auth.signOut();
+            if (context.mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            }
+          },
+          child: Text(
+            'Log Out',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.red,
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -75,11 +75,87 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       'budget': '3,200',
       'providerCategory': 'Plumber',
     },
+    {
+      'id': 'job_003',
+      'name': 'Fatima Ali',
+      'role': 'CUSTOMER',
+      'snippet': 'Electrical wiring issues in living room',
+      'time': '3 hours ago',
+      'unread': true,
+      'profilePicture': 'https://i.pravatar.cc/150?img=8',
+      'avatar': 'https://i.pravatar.cc/150?img=8',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Lights flickering and some outlets not working',
+      'timestamp': '3 hours ago',
+      'category': 'Electrician',
+      'status': 'In Progress',
+      'location': 'Bahria Town, Lahore',
+      'budget': '4,500',
+      'providerCategory': 'Electrician',
+    },
+    {
+      'id': 'job_004',
+      'name': 'Omar Hassan',
+      'role': 'CUSTOMER',
+      'snippet': 'Garden maintenance and landscaping',
+      'time': '5 hours ago',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=2',
+      'avatar': 'https://i.pravatar.cc/150?img=2',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Need regular garden cleanup and tree trimming',
+      'timestamp': '5 hours ago',
+      'category': 'Gardening',
+      'status': 'In Progress',
+      'location': 'LDA Avenue, Lahore',
+      'budget': '3,800',
+      'providerCategory': 'Gardener',
+    },
+    {
+      'id': 'job_005',
+      'name': 'Ayesha Rahman',
+      'role': 'CUSTOMER',
+      'snippet': 'Cooking for family dinner party',
+      'time': '6 hours ago',
+      'unread': true,
+      'profilePicture': 'https://i.pravatar.cc/150?img=10',
+      'avatar': 'https://i.pravatar.cc/150?img=10',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Need chef for 20 people dinner party tomorrow',
+      'timestamp': '6 hours ago',
+      'category': 'Cooking',
+      'status': 'In Progress',
+      'location': 'Cantonment, Lahore',
+      'budget': '8,000',
+      'providerCategory': 'Cook',
+    },
+    {
+      'id': 'job_006',
+      'name': 'M. Khan',
+      'role': 'CUSTOMER',
+      'snippet': 'Transportation to airport',
+      'time': '8 hours ago',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=6',
+      'avatar': 'https://i.pravatar.cc/150?img=6',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Need ride to Allama Iqbal Airport at 6 AM',
+      'timestamp': '8 hours ago',
+      'category': 'Transportation',
+      'status': 'In Progress',
+      'location': 'Gulberg II, Lahore',
+      'budget': '1,500',
+      'providerCategory': 'Driver',
+    },
   ];
 
   List<Map<String, dynamic>> completedJobs = [
     {
-      'id': 'job_005',
+      'id': 'job_011',
       'name': 'Ayesha Malik',
       'role': 'CUSTOMER',
       'snippet': 'Monthly house cleaning completed',
@@ -101,7 +177,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       'review': 'Excellent service, very professional and thorough',
     },
     {
-      'id': 'job_006',
+      'id': 'job_012',
       'name': 'Imran Khan',
       'role': 'CUSTOMER',
       'snippet': 'Electrical repair completed',
@@ -122,15 +198,164 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       'rating': 5,
       'review': 'Very skilled electrician, quick and efficient',
     },
+    {
+      'id': 'job_013',
+      'name': 'Nadia Shah',
+      'role': 'CUSTOMER',
+      'snippet': 'Garden landscaping completed',
+      'time': 'Completed on Mar 6, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=11',
+      'avatar': 'https://i.pravatar.cc/150?img=11',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Garden looks amazing now!',
+      'timestamp': 'Completed on Mar 6, 2024',
+      'category': 'Gardening',
+      'status': 'Completed',
+      'location': 'Askari XI, Lahore',
+      'budget': '5,500',
+      'providerCategory': 'Gardener',
+      'completionDate': 'Mar 6, 2024',
+      'rating': 4,
+      'review': 'Great work, garden transformed completely',
+    },
+    {
+      'id': 'job_014',
+      'name': 'Farooq Ahmed',
+      'role': 'CUSTOMER',
+      'snippet': 'Birthday party cooking service',
+      'time': 'Completed on Mar 5, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=13',
+      'avatar': 'https://i.pravatar.cc/150?img=13',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Food was delicious, guests loved it',
+      'timestamp': 'Completed on Mar 5, 2024',
+      'category': 'Cooking',
+      'status': 'Completed',
+      'location': 'Defense Housing Authority, Lahore',
+      'budget': '12,000',
+      'providerCategory': 'Cook',
+      'completionDate': 'Mar 5, 2024',
+      'rating': 5,
+      'review': 'Exceptional cooking service, highly recommended',
+    },
+    {
+      'id': 'job_015',
+      'name': 'Saima Yousaf',
+      'role': 'CUSTOMER',
+      'snippet': 'Airport transfer completed',
+      'time': 'Completed on Mar 4, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=15',
+      'avatar': 'https://i.pravatar.cc/150?img=15',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Reached airport on time, safe driving',
+      'timestamp': 'Completed on Mar 4, 2024',
+      'category': 'Transportation',
+      'status': 'Completed',
+      'location': 'Gulberg I, Lahore',
+      'budget': '1,800',
+      'providerCategory': 'Driver',
+      'completionDate': 'Mar 4, 2024',
+      'rating': 4,
+      'review': 'Punctual and professional driver',
+    },
   ];
 
   List<Map<String, dynamic>> scheduledJobs = [
-    // Empty list - jobs will be loaded from storage only
+    {
+      'id': 'job_007',
+      'name': 'Tariq Mehmood',
+      'role': 'CUSTOMER',
+      'snippet': 'Airport transfer service',
+      'time': 'Tomorrow at 5:30 AM',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=18',
+      'avatar': 'https://i.pravatar.cc/150?img=18',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Need pickup for early morning flight',
+      'timestamp': 'Tomorrow at 5:30 AM',
+      'category': 'Transportation',
+      'status': 'Scheduled',
+      'location': 'Model Town, Lahore',
+      'budget': '2,200',
+      'providerCategory': 'Driver',
+      'scheduledDate': '2024-03-29',
+      'scheduledTime': '5:30 AM',
+    },
+    {
+      'id': 'job_008',
+      'name': 'Ali Hassan',
+      'role': 'CUSTOMER',
+      'snippet': 'City tour transportation',
+      'time': 'Mar 30 at 10:00 AM',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=21',
+      'avatar': 'https://i.pravatar.cc/150?img=21',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Need driver for city tour',
+      'timestamp': 'Mar 30 at 10:00 AM',
+      'category': 'Transportation',
+      'status': 'Scheduled',
+      'location': 'Lahore Fort, Lahore',
+      'budget': '3,500',
+      'providerCategory': 'Driver',
+      'scheduledDate': '2024-03-30',
+      'scheduledTime': '10:00 AM',
+    },
+    {
+      'id': 'job_009',
+      'name': 'Nadia Khan',
+      'role': 'CUSTOMER',
+      'snippet': 'Shopping trip driver needed',
+      'time': 'Mar 31 at 2:00 PM',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=22',
+      'avatar': 'https://i.pravatar.cc/150?img=22',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Need ride for shopping in Mall of Lahore',
+      'timestamp': 'Mar 31 at 2:00 PM',
+      'category': 'Transportation',
+      'status': 'Scheduled',
+      'location': 'Cavalry Ground, Lahore',
+      'budget': '1,800',
+      'providerCategory': 'Driver',
+      'scheduledDate': '2024-03-31',
+      'scheduledTime': '2:00 PM',
+    },
+    {
+      'id': 'job_010',
+      'name': 'Faisal Ahmed',
+      'role': 'CUSTOMER',
+      'snippet': 'Outstation trip to Islamabad',
+      'time': 'Apr 1 at 8:00 AM',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=23',
+      'avatar': 'https://i.pravatar.cc/150?img=23',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Need driver for Islamabad trip',
+      'timestamp': 'Apr 1 at 8:00 AM',
+      'category': 'Transportation',
+      'status': 'Scheduled',
+      'location': 'Gulberg II, Lahore',
+      'budget': '8,000',
+      'providerCategory': 'Driver',
+      'scheduledDate': '2024-04-01',
+      'scheduledTime': '8:00 AM',
+    },
   ];
 
   List<Map<String, dynamic>> cancelledJobs = [
     {
-      'id': 'job_007',
+      'id': 'job_016',
       'name': 'Sarah Johnson',
       'role': 'CUSTOMER',
       'snippet': 'Emergency plumbing cancelled',
@@ -152,6 +377,75 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       'cancelDescription':
           'Customer mentioned they found a more affordable option and decided to cancel this job.',
     },
+    {
+      'id': 'job_017',
+      'name': 'Rashid Mehmood',
+      'role': 'CUSTOMER',
+      'snippet': 'House cleaning service cancelled',
+      'time': 'Cancelled on Mar 7, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=17',
+      'avatar': 'https://i.pravatar.cc/150?img=17',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Customer had emergency and cancelled',
+      'timestamp': 'Cancelled on Mar 7, 2024',
+      'category': 'Home Cleaning',
+      'status': 'Cancelled',
+      'location': 'Township, Lahore',
+      'budget': '2,000',
+      'providerCategory': 'Maid',
+      'cancelDate': 'Mar 7, 2024',
+      'cancelReason': 'Family emergency',
+      'cancelDescription':
+          'Customer had a family emergency and had to cancel the scheduled cleaning service.',
+    },
+    {
+      'id': 'job_018',
+      'name': 'Mariam Sadiq',
+      'role': 'CUSTOMER',
+      'snippet': 'Cooking service cancelled',
+      'time': 'Cancelled on Mar 9, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=19',
+      'avatar': 'https://i.pravatar.cc/150?img=19',
+      'isOnline': false,
+      'type': 'customer',
+      'lastMessage': 'Event was postponed',
+      'timestamp': 'Cancelled on Mar 9, 2024',
+      'category': 'Cooking',
+      'status': 'Cancelled',
+      'location': 'Cavalry Ground, Lahore',
+      'budget': '6,000',
+      'providerCategory': 'Cook',
+      'cancelDate': 'Mar 9, 2024',
+      'cancelReason': 'Event postponed',
+      'cancelDescription':
+          'Customer postponed the dinner party and cancelled the cooking service.',
+    },
+    {
+      'id': 'job_019',
+      'name': 'Zain Ali',
+      'role': 'CUSTOMER',
+      'snippet': 'Garden maintenance cancelled',
+      'time': 'Cancelled on Mar 11, 2024',
+      'unread': false,
+      'profilePicture': 'https://i.pravatar.cc/150?img=20',
+      'avatar': 'https://i.pravatar.cc/150?img=20',
+      'isOnline': true,
+      'type': 'customer',
+      'lastMessage': 'Weather conditions not suitable',
+      'timestamp': 'Cancelled on Mar 11, 2024',
+      'category': 'Gardening',
+      'status': 'Cancelled',
+      'location': 'EME Society, Lahore',
+      'budget': '1,500',
+      'providerCategory': 'Gardener',
+      'cancelDate': 'Mar 11, 2024',
+      'cancelReason': 'Bad weather',
+      'cancelDescription':
+          'Customer cancelled due to heavy rain and unsuitable weather conditions for garden work.',
+    },
   ];
 
   // Filter jobs based on provider's registered category
@@ -162,15 +456,9 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
   }
 
   List<Map<String, dynamic>> get _filteredScheduledJobs {
-    final filtered = scheduledJobs
+    return scheduledJobs
         .where((job) => job['providerCategory'] == _providerCategory)
         .toList();
-    debugPrint('Filtered scheduled jobs: ${filtered.length} jobs');
-    for (final job in filtered) {
-      debugPrint(
-          '  - Job ${job['id']}: ${job['customer']} (${job['providerCategory']})');
-    }
-    return filtered;
   }
 
   List<Map<String, dynamic>> get _filteredCompletedJobs {
@@ -214,15 +502,131 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       debugPrint('Loaded ${uniqueJobs.length} unique jobs from storage');
 
       setState(() {
-        // Replace scheduled jobs with stored jobs (filter by provider category)
-        final filteredJobs = uniqueJobs.where((job) {
+        // Merge hardcoded jobs with stored jobs (filter by provider category)
+        final filteredStoredJobs = uniqueJobs.where((job) {
           final jobCategory = job['providerCategory'] as String? ?? 'General';
           final matches = jobCategory == _providerCategory;
           return matches;
         }).toList();
 
-        scheduledJobs = filteredJobs;
-        debugPrint('Filtered scheduled jobs: ${scheduledJobs.length} jobs');
+        // Get hardcoded jobs that match provider category
+        final hardcodedJobs = <Map<String, dynamic>>[];
+        for (final job in [
+          {
+            'id': 'job_007',
+            'name': 'Tariq Mehmood',
+            'role': 'CUSTOMER',
+            'snippet': 'Airport transfer service',
+            'time': 'Tomorrow at 5:30 AM',
+            'unread': false,
+            'profilePicture': 'https://i.pravatar.cc/150?img=18',
+            'avatar': 'https://i.pravatar.cc/150?img=18',
+            'isOnline': false,
+            'type': 'customer',
+            'lastMessage': 'Need pickup for early morning flight',
+            'timestamp': 'Tomorrow at 5:30 AM',
+            'category': 'Transportation',
+            'status': 'Scheduled',
+            'location': 'Model Town, Lahore',
+            'budget': '2,200',
+            'providerCategory': 'Driver',
+            'scheduledDate': '2024-03-29',
+            'scheduledTime': '5:30 AM',
+          },
+          {
+            'id': 'job_008',
+            'name': 'Ali Hassan',
+            'role': 'CUSTOMER',
+            'snippet': 'City tour transportation',
+            'time': 'Mar 30 at 10:00 AM',
+            'unread': false,
+            'profilePicture': 'https://i.pravatar.cc/150?img=21',
+            'avatar': 'https://i.pravatar.cc/150?img=21',
+            'isOnline': true,
+            'type': 'customer',
+            'lastMessage': 'Need driver for city tour',
+            'timestamp': 'Mar 30 at 10:00 AM',
+            'category': 'Transportation',
+            'status': 'Scheduled',
+            'location': 'Lahore Fort, Lahore',
+            'budget': '3,500',
+            'providerCategory': 'Driver',
+            'scheduledDate': '2024-03-30',
+            'scheduledTime': '10:00 AM',
+          },
+          {
+            'id': 'job_009',
+            'name': 'Nadia Khan',
+            'role': 'CUSTOMER',
+            'snippet': 'Shopping trip driver needed',
+            'time': 'Mar 31 at 2:00 PM',
+            'unread': false,
+            'profilePicture': 'https://i.pravatar.cc/150?img=22',
+            'avatar': 'https://i.pravatar.cc/150?img=22',
+            'isOnline': false,
+            'type': 'customer',
+            'lastMessage': 'Need ride for shopping in Mall of Lahore',
+            'timestamp': 'Mar 31 at 2:00 PM',
+            'category': 'Transportation',
+            'status': 'Scheduled',
+            'location': 'Cavalry Ground, Lahore',
+            'budget': '1,800',
+            'providerCategory': 'Driver',
+            'scheduledDate': '2024-03-31',
+            'scheduledTime': '2:00 PM',
+          },
+          {
+            'id': 'job_010',
+            'name': 'Faisal Ahmed',
+            'role': 'CUSTOMER',
+            'snippet': 'Outstation trip to Islamabad',
+            'time': 'Apr 1 at 8:00 AM',
+            'unread': false,
+            'profilePicture': 'https://i.pravatar.cc/150?img=23',
+            'avatar': 'https://i.pravatar.cc/150?img=23',
+            'isOnline': true,
+            'type': 'customer',
+            'lastMessage': 'Need driver for Islamabad trip',
+            'timestamp': 'Apr 1 at 8:00 AM',
+            'category': 'Transportation',
+            'status': 'Scheduled',
+            'location': 'Gulberg II, Lahore',
+            'budget': '8,000',
+            'providerCategory': 'Driver',
+            'scheduledDate': '2024-04-01',
+            'scheduledTime': '8:00 AM',
+          }
+        ]) {
+          if (job['providerCategory'] == _providerCategory) {
+            hardcodedJobs.add(Map<String, dynamic>.from(job));
+          }
+        }
+
+        // Combine hardcoded and stored jobs, avoiding duplicates
+        final allJobs = <Map<String, dynamic>>[];
+        final seenJobIds = <String>{};
+
+        // Add hardcoded jobs first
+        for (final job in hardcodedJobs) {
+          final jobId = job['id'] as String?;
+          if (jobId != null && !seenJobIds.contains(jobId)) {
+            allJobs.add(job);
+            seenJobIds.add(jobId);
+          }
+        }
+
+        // Add stored jobs that aren't duplicates
+        for (final job in filteredStoredJobs) {
+          final jobId = job['id'] as String?;
+          if (jobId != null && !seenJobIds.contains(jobId)) {
+            allJobs.add(job);
+            seenJobIds.add(jobId);
+          }
+        }
+
+        scheduledJobs = allJobs;
+        debugPrint(
+            'Total scheduled jobs after merge: ${scheduledJobs.length} jobs');
       });
     } catch (e) {
       debugPrint('Error loading scheduled jobs: $e');
@@ -2437,18 +2841,49 @@ class _ScheduledJobsView extends StatelessWidget {
             ),
           ),
           // Scheduled Jobs List
-          ...jobsList.map((job) {
-            final providerName = job['provider'] ?? job['name'] ?? '';
-            final isProviderBusy =
-                _hasActiveJobForProvider(providerName, activeJobs);
+          if (jobsList.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    size: 64,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No scheduled jobs',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your upcoming jobs will appear here',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...jobsList.map((job) {
+              final providerName = job['provider'] ?? job['name'] ?? '';
+              final isProviderBusy =
+                  _hasActiveJobForProvider(providerName, activeJobs);
 
-            return _JobCard(
-              jobData: job,
-              primary: primary,
-              onJobCancelled: onJobCancelled,
-              isProviderBusy: isProviderBusy,
-            );
-          }),
+              return _JobCard(
+                jobData: job,
+                primary: primary,
+                onJobCancelled: onJobCancelled,
+                isProviderBusy: isProviderBusy,
+              );
+            }),
         ],
       ),
     );

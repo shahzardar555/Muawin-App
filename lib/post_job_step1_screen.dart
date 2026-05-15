@@ -837,6 +837,14 @@ class _PostJobStep1ScreenState extends State<PostJobStep1Screen>
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2027),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null && mounted) {
@@ -856,6 +864,14 @@ class _PostJobStep1ScreenState extends State<PostJobStep1Screen>
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null && mounted) {
@@ -1502,6 +1518,14 @@ class _PostJobStep2ScreenState extends State<PostJobStep2Screen> {
       initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null && picked != _selectedDate) {
@@ -1517,6 +1541,14 @@ class _PostJobStep2ScreenState extends State<PostJobStep2Screen> {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _selectedTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null && picked != _selectedTime) {

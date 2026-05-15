@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
-import 'customer_verification_screen.dart';
+import 'services/auth_service.dart';
+import 'login_screen.dart';
 
 /// Muawin Primary Teal
 const Color _muawinPrimaryTeal = Color(0xFF047A62);
@@ -149,13 +150,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    _progressAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _progressController,
-      curve: Curves.easeInOut,
-    ));
+    _progressAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _progressController, curve: Curves.easeInOut),
+    );
 
     // Start progress animation
     _progressController.forward();
@@ -179,8 +176,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
     };
     _passwordListener = () {
       setState(() {
-        _passwordStrength =
-            _calculatePasswordStrength(_passwordController.text);
+        _passwordStrength = _calculatePasswordStrength(
+          _passwordController.text,
+        );
       });
       _validatePassword();
       _updateProgress();
@@ -244,51 +242,15 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
     if (_isDisposed) return;
 
     final phone = _phoneController.text.trim();
-    final regex = RegExp(r'^03\d{2} \d{7}$');
+    // Phone is now mandatory - must have at least 10 digits
+    final digitCount = phone.replaceAll(RegExp(r'\D'), '').length;
     final wasValid = _isPhoneValid;
-    final isValid = phone.isNotEmpty && regex.hasMatch(phone);
+    final isValid = digitCount >= 10;
 
     if (wasValid != isValid) {
       setState(() {
         _isPhoneValid = isValid;
       });
-    }
-  }
-
-  // Phone number input formatter
-  void _formatPhoneNumber(String text) {
-    if (text.isEmpty) {
-      _phoneController.text = '';
-      return;
-    }
-
-    // Remove all non-digit characters
-    String digits = text.replaceAll(RegExp(r'\D'), '');
-
-    if (digits.isNotEmpty) {
-      // Ensure it starts with 03
-      if (!digits.startsWith('03')) {
-        digits = '03${digits.substring(digits.startsWith('3') ? 1 : 0)}';
-      }
-    }
-
-    // Limit to 10 digits (03 + 7 more)
-    if (digits.length > 10) {
-      digits = digits.substring(0, 10);
-    }
-
-    // Format as 03XX XXXXXXX
-    String formatted = digits.isNotEmpty && digits.length >= 5
-        ? '${digits.substring(0, 5)} ${digits.substring(5)}'
-        : digits;
-
-    // Update controller with formatted text and move cursor to end
-    final currentText = _phoneController.text;
-    if (currentText != formatted) {
-      _phoneController.value = TextEditingValue(
-        text: formatted,
-        selection: TextSelection.collapsed(offset: formatted.length),
-      );
     }
   }
 
@@ -337,7 +299,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
 
   // Step validation methods
   bool _isStep1Valid() {
-    return _isNameValid && _isEmailValid;
+    return _isNameValid && _isEmailValid && _isPhoneValid;
   }
 
   bool _isStep2Valid() {
@@ -359,9 +321,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
             label: 'FULL NAME',
             hint: 'Enter your full name',
             keyboardType: TextInputType.name,
-            inputFormatters: [
-              _SmartCapitalizationTextInputFormatter(),
-            ],
+            inputFormatters: [_SmartCapitalizationTextInputFormatter()],
             focusNode: _nameFocusNode,
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -381,8 +341,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
             keyboardType: TextInputType.emailAddress,
             inputFormatters: [
               FilteringTextInputFormatter.deny(RegExp(r'\s')), // Deny spaces
-              FilteringTextInputFormatter.deny(RegExp(
-                  r'[!#$%^&*(),":{}|<>]')), // Deny special chars but allow dot
+              FilteringTextInputFormatter.deny(
+                RegExp(r'[!#$%^&*(),":{}|<>]'),
+              ), // Deny special chars but allow dot
             ],
             focusNode: _emailFocusNode,
             validator: (v) {
@@ -401,6 +362,31 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
             icon: Icons.email_outlined,
             onFieldSubmitted: (value) =>
                 _onFieldSubmitted(value, _emailFocusNode),
+          ),
+          const SizedBox(height: 16),
+          _FloatingLabelInput(
+            controller: _phoneController,
+            label: 'PHONE NUMBER',
+            hint: '0300-1234567',
+            keyboardType: TextInputType.phone,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            focusNode: _phoneFocusNode,
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) {
+                return 'Required';
+              }
+              final digitCount = v.replaceAll(RegExp(r'\D'), '').length;
+              if (digitCount < 10) {
+                return 'Enter valid phone number';
+              }
+              return null;
+            },
+            autofillHint: AutofillHints.telephoneNumber,
+            isValid: _isPhoneValid,
+            showValidation: true,
+            icon: Icons.phone_outlined,
+            onFieldSubmitted: (value) =>
+                _onFieldSubmitted(value, _phoneFocusNode),
           ),
         ];
       case 2:
@@ -436,7 +422,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Add phone and location (optional)',
+                        'Add location (optional)',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -461,31 +447,32 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                 ? Column(
                     key: const ValueKey('advanced_fields'),
                     children: [
-                      _FloatingLabelInput(
-                        controller: _phoneController,
-                        label: 'PHONE (Optional)',
-                        hint: '03XX XXXXXXX',
-                        keyboardType: TextInputType.phone,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        focusNode: _phoneFocusNode,
-                        validator: (v) {
-                          if (v != null && v.trim().isNotEmpty) {
-                            final regex = RegExp(r'^03\d{2} \d{7}$');
-                            if (!regex.hasMatch(v.trim())) {
-                              return 'Format: 03XX XXXXXXX';
-                            }
+                      TextField(
+                        controller: _locationController,
+                        keyboardType: TextInputType.streetAddress,
+                        focusNode: _locationFocusNode,
+                        onChanged: (value) {
+                          // Validate location on change
+                          final wasValid = _isLocationValid;
+                          final isValid = value.isEmpty || value.length >= 2;
+                          if (wasValid != isValid) {
+                            setState(() {
+                              _isLocationValid = isValid;
+                            });
                           }
-                          return null;
                         },
-                        autofillHint: AutofillHints.telephoneNumber,
-                        isValid: _isPhoneValid,
-                        showValidation: true,
-                        icon: Icons.phone_outlined,
-                        onChanged: _formatPhoneNumber,
-                        onFieldSubmitted: (value) =>
-                            _onFieldSubmitted(value, _phoneFocusNode),
+                        decoration: InputDecoration(
+                          labelText: 'Location',
+                          hintText: 'Enter your location',
+                          prefixIcon: const Icon(Icons.location_on),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          errorText: _locationController.text.isNotEmpty &&
+                                  _locationController.text.length < 2
+                              ? 'Enter valid location'
+                              : null,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       _FloatingLabelInput(
@@ -540,9 +527,11 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                   showValidation: true,
                   icon: Icons.lock_outline,
                   suffixIcon: IconButton(
-                    icon: Icon(_obscurePassword
-                        ? Icons.visibility_off
-                        : Icons.visibility),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                    ),
                     onPressed: () =>
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
@@ -584,11 +573,14 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
             showValidation: true,
             icon: Icons.lock_outline,
             suffixIcon: IconButton(
-              icon: Icon(_obscureConfirmPassword
-                  ? Icons.visibility_off
-                  : Icons.visibility),
+              icon: Icon(
+                _obscureConfirmPassword
+                    ? Icons.visibility_off
+                    : Icons.visibility,
+              ),
               onPressed: () => setState(
-                  () => _obscureConfirmPassword = !_obscureConfirmPassword),
+                () => _obscureConfirmPassword = !_obscureConfirmPassword,
+              ),
             ),
           ),
         ];
@@ -639,7 +631,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
     switch (_currentStep) {
       case 1:
         return Text(
-          'Let\'s start with your name and email address',
+          'Let\'s start with your name, email and phone number',
           style: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
@@ -649,7 +641,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
         );
       case 2:
         return Text(
-          'Add your phone and location (optional)',
+          'Add your location (optional)',
           style: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
@@ -807,21 +799,66 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                           // Store context before async gap
                           final navigator = Navigator.of(context);
                           setState(() => _isLoading = true);
-                          await Future.delayed(const Duration(seconds: 2));
-                          if (!mounted) return;
-                          // Navigate to verification screen
-                          navigator.pushReplacement(
-                            PageRouteBuilder(
-                              pageBuilder: (_, __, ___) =>
-                                  const CustomerVerificationScreen(),
-                              transitionsBuilder: (_, anim, __, child) {
-                                return FadeTransition(
-                                    opacity: anim, child: child);
-                              },
-                              transitionDuration:
-                                  const Duration(milliseconds: 400),
-                            ),
-                          );
+
+                          try {
+                            // Sanitize email
+                            String cleanEmail = _emailController.text
+                                .trim()
+                                .toLowerCase()
+                                .replaceAll('[', '')
+                                .replaceAll(']', '')
+                                .replaceAll(' ', '');
+
+                            // Validate email
+                            if (!cleanEmail.contains('@') ||
+                                !cleanEmail.contains('.')) {
+                              throw Exception(
+                                  'Please enter a valid email address');
+                            }
+
+                            final authService = AuthService();
+                            await authService.signUp(
+                              email: cleanEmail,
+                              password: _passwordController.text.trim(),
+                              fullName: _nameController.text.trim(),
+                              phoneNumber: _phoneController.text.trim(),
+                              role: 'customer',
+                            );
+
+                            if (!mounted) return;
+
+                            // Show success message and navigate to login
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Registration successful! Please login.',
+                                ),
+                                backgroundColor: Colors.green,
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+
+                            navigator.pushReplacement(
+                              MaterialPageRoute(
+                                builder: (_) => const LoginScreen(),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            setState(() => _isLoading = false);
+
+                            // Show readable error message
+                            final errorMessage = _getReadableErrorMessage(
+                              e.toString(),
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(errorMessage),
+                                backgroundColor: Colors.red,
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          }
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -1018,6 +1055,22 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
     _goToPreviousStep();
   }
 
+  String _getReadableErrorMessage(String error) {
+    if (error.contains('User already registered')) {
+      return 'An account with this email already exists';
+    }
+    if (error.contains('Invalid email')) {
+      return 'Please enter a valid email address';
+    }
+    if (error.contains('Password')) {
+      return 'Password must be at least 8 characters';
+    }
+    if (error.contains('weak')) {
+      return 'Password is too weak';
+    }
+    return error;
+  }
+
   void _showBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -1056,10 +1109,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outline
-                        .withValues(alpha: 0.4),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1067,8 +1119,9 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
               const SizedBox(height: _kSpacing4),
               // Title with Material 3 styling
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: _kScreenPadding),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _kScreenPadding,
+                ),
                 child: Text(
                   'Additional Options',
                   style: GoogleFonts.poppins(
@@ -1082,15 +1135,15 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
               const SizedBox(height: _kSpacing2),
               // Divider
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: _kScreenPadding),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _kScreenPadding,
+                ),
                 child: Divider(
                   height: 1,
                   thickness: 1,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outline
-                      .withValues(alpha: 0.12),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.outline.withValues(alpha: 0.12),
                 ),
               ),
               const SizedBox(height: _kSpacing2),
@@ -1131,15 +1184,15 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
               const SizedBox(height: _kSpacing2),
               // Divider before destructive action
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: _kScreenPadding),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _kScreenPadding,
+                ),
                 child: Divider(
                   height: 1,
                   thickness: 1,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outline
-                      .withValues(alpha: 0.12),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.outline.withValues(alpha: 0.12),
                 ),
               ),
               const SizedBox(height: _kSpacing2),
@@ -1171,17 +1224,11 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
       builder: (context) => AlertDialog(
         title: Text(
           'Coming Soon',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         content: Text(
           '$feature feature will be available in the next update. We\'re working hard to bring you the best experience!',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
+          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w400),
         ),
         actions: [
           TextButton(
@@ -1214,10 +1261,7 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
         ),
         content: Text(
           'Are you sure you want to clear all form fields? This action cannot be undone.',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
+          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w400),
         ),
         actions: [
           TextButton(
@@ -1381,20 +1425,24 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                       width: _kMinTouchTarget,
                       height: _kMinTouchTarget,
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.black87),
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.black87,
+                        ),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ),
                   ),
                 ),
                 SliverPadding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: _kScreenPadding),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: _kScreenPadding,
+                  ),
                   sliver: SliverToBoxAdapter(
                     child: ConstrainedBox(
-                      constraints:
-                          const BoxConstraints(maxWidth: _kMaxContentWidth),
+                      constraints: const BoxConstraints(
+                        maxWidth: _kMaxContentWidth,
+                      ),
                       child: AutofillGroup(
                         child: Form(
                           key: _formKey,
@@ -1433,18 +1481,21 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                               Container(
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius:
-                                      BorderRadius.circular(_kRadiusLarge),
+                                  borderRadius: BorderRadius.circular(
+                                    _kRadiusLarge,
+                                  ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.08),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.08,
+                                      ),
                                       blurRadius: _kElevationLevel3,
                                       offset: const Offset(0, 4),
                                     ),
                                     BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.04),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.04,
+                                      ),
                                       blurRadius: _kElevationLevel1,
                                       offset: const Offset(0, 1),
                                     ),
@@ -1517,7 +1568,8 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: _kSpacing4),
+                                      horizontal: _kSpacing4,
+                                    ),
                                     child: Text(
                                       'OR',
                                       style: GoogleFonts.poppins(
@@ -1575,11 +1627,14 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                                   ),
                                   style: OutlinedButton.styleFrom(
                                     side: BorderSide(
-                                        color: _muawinPrimaryTeal.withValues(
-                                            alpha: 0.3)),
+                                      color: _muawinPrimaryTeal.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                    ),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(_kRadiusMedium),
+                                      borderRadius: BorderRadius.circular(
+                                        _kRadiusMedium,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1699,7 +1754,9 @@ class _ProgressIndicator extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                             border: isCurrent
                                 ? Border.all(
-                                    color: _muawinPrimaryTeal, width: 2)
+                                    color: _muawinPrimaryTeal,
+                                    width: 2,
+                                  )
                                 : null,
                           ),
                           child: Center(
@@ -1761,10 +1818,11 @@ class _ProgressIndicator extends StatelessWidget {
 }
 
 class _RegisterButton extends StatefulWidget {
-  const _RegisterButton(
-      {required this.onPressed,
-      required this.isLoading,
-      required this.primaryColor});
+  const _RegisterButton({
+    required this.onPressed,
+    required this.isLoading,
+    required this.primaryColor,
+  });
 
   final VoidCallback onPressed;
   final bool isLoading;
@@ -1789,16 +1847,21 @@ class _RegisterButtonState extends State<_RegisterButton>
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 150));
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
 
-    _scale = Tween<double>(begin: 1.0, end: 0.95)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scale = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _shimmerAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
-        CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut));
+      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut),
+    );
 
     // Start shimmer when loading
     if (widget.isLoading) {
@@ -1845,10 +1908,11 @@ class _RegisterButtonState extends State<_RegisterButton>
                 borderRadius: BorderRadius.circular(_RegisterButton._radius),
                 boxShadow: [
                   BoxShadow(
-                      color: widget.primaryColor.withValues(alpha: 0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                      spreadRadius: -2),
+                    color: widget.primaryColor.withValues(alpha: 0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                    spreadRadius: -2,
+                  ),
                 ],
               ),
               child: widget.isLoading
@@ -1857,13 +1921,18 @@ class _RegisterButtonState extends State<_RegisterButton>
                       builder: (context, child) {
                         return Container(
                           decoration: BoxDecoration(
-                            borderRadius:
-                                BorderRadius.circular(_RegisterButton._radius),
+                            borderRadius: BorderRadius.circular(
+                              _RegisterButton._radius,
+                            ),
                             gradient: LinearGradient(
                               begin: Alignment(
-                                  -1.0 + _shimmerAnimation.value, 0.0),
-                              end:
-                                  Alignment(1.0 + _shimmerAnimation.value, 0.0),
+                                -1.0 + _shimmerAnimation.value,
+                                0.0,
+                              ),
+                              end: Alignment(
+                                1.0 + _shimmerAnimation.value,
+                                0.0,
+                              ),
                               colors: [
                                 widget.primaryColor.withValues(alpha: 0.8),
                                 widget.primaryColor.withValues(alpha: 1.0),
@@ -1878,8 +1947,9 @@ class _RegisterButtonState extends State<_RegisterButton>
                               width: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             ),
                           ),
@@ -1920,10 +1990,7 @@ class _RegisterButtonState extends State<_RegisterButton>
 }
 
 class _SkipButton extends StatefulWidget {
-  const _SkipButton({
-    required this.onPressed,
-    required this.text,
-  });
+  const _SkipButton({required this.onPressed, required this.text});
 
   final VoidCallback onPressed;
   final String text;
@@ -1946,12 +2013,14 @@ class _SkipButtonState extends State<_SkipButton>
       duration: const Duration(milliseconds: 100),
       vsync: this,
     );
-    _scale = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    _borderOpacity = Tween<double>(begin: 0.4, end: 0.8).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _borderOpacity = Tween<double>(
+      begin: 0.4,
+      end: 0.8,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -1994,8 +2063,9 @@ class _SkipButtonState extends State<_SkipButton>
                 color: _isPressed ? Colors.grey.shade50 : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.grey.shade400
-                      .withValues(alpha: _borderOpacity.value),
+                  color: Colors.grey.shade400.withValues(
+                    alpha: _borderOpacity.value,
+                  ),
                   width: 1,
                 ),
               ),
@@ -2006,8 +2076,12 @@ class _SkipButtonState extends State<_SkipButton>
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 100),
                       transform: Matrix4.identity()
-                        ..scaleByDouble(_isPressed ? 1.2 : 1.0,
-                            _isPressed ? 1.2 : 1.0, 1.0, 1.0),
+                        ..scaleByDouble(
+                          _isPressed ? 1.2 : 1.0,
+                          _isPressed ? 1.2 : 1.0,
+                          1.0,
+                          1.0,
+                        ),
                       child: Icon(
                         Icons.skip_next,
                         size: 16,
@@ -2069,12 +2143,14 @@ class _SocialLoginButtonState extends State<_SocialLoginButton>
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scale = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    _elevation = Tween<double>(begin: 2.0, end: 8.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _elevation = Tween<double>(
+      begin: 2.0,
+      end: 8.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -2134,13 +2210,13 @@ class _SocialLoginButtonState extends State<_SocialLoginButton>
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     transform: Matrix4.identity()
-                      ..scaleByDouble(_isPressed ? 1.1 : 1.0,
-                          _isPressed ? 1.1 : 1.0, 1.0, 1.0),
-                    child: Icon(
-                      widget.icon,
-                      size: 20,
-                      color: widget.color,
-                    ),
+                      ..scaleByDouble(
+                        _isPressed ? 1.1 : 1.0,
+                        _isPressed ? 1.1 : 1.0,
+                        1.0,
+                        1.0,
+                      ),
+                    child: Icon(widget.icon, size: 20, color: widget.color),
                   ),
                   const SizedBox(width: 12),
                   Text(
@@ -2162,10 +2238,7 @@ class _SocialLoginButtonState extends State<_SocialLoginButton>
 }
 
 class _LoadingSkeleton extends StatefulWidget {
-  const _LoadingSkeleton({
-    required this.child,
-    required this.isLoading,
-  });
+  const _LoadingSkeleton({required this.child, required this.isLoading});
 
   final Widget child;
   final bool isLoading;
@@ -2189,10 +2262,7 @@ class _LoadingSkeletonState extends State<_LoadingSkeleton>
     _shimmerAnimation = Tween<double>(
       begin: -2.0,
       end: 2.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     if (widget.isLoading) {
       _controller.repeat();
@@ -2273,11 +2343,7 @@ class _PasswordStrengthIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(
-          Icons.security,
-          size: 16,
-          color: color,
-        ),
+        Icon(Icons.security, size: 16, color: color),
         const SizedBox(width: 8),
         Text(
           'Password strength: $strength',
@@ -2372,26 +2438,24 @@ class _FloatingLabelInputState extends State<_FloatingLabelInput>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _errorAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _errorAnimationController,
-      curve: Curves.elasticOut,
-    ));
+    _errorAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _errorAnimationController,
+        curve: Curves.elasticOut,
+      ),
+    );
 
     // Border animation for focus effects
     _borderAnimationController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _borderAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _borderAnimationController,
-      curve: Curves.easeOutCubic,
-    ));
+    _borderAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _borderAnimationController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
 
     _focusNode.addListener(_onFocusChanged);
   }
@@ -2513,8 +2577,12 @@ class _FloatingLabelInputState extends State<_FloatingLabelInput>
         return 'Phone number helps us contact you';
       } else if (!RegExp(r'^03\d{2}').hasMatch(text)) {
         return 'Format: 03XX XXXXXXX';
-      } else if (text.length < 11) {
-        return 'Complete phone number';
+      } else {
+        // Count digits only (ignore space)
+        final digitCount = text.replaceAll(RegExp(r'\D'), '').length;
+        if (digitCount < 11) {
+          return 'Complete phone number';
+        }
       }
       return originalError;
     }
@@ -2623,11 +2691,10 @@ class _FloatingLabelInputState extends State<_FloatingLabelInput>
                   keyboardType: widget.keyboardType,
                   obscureText: widget.obscureText,
                   validator: widget.validator,
-                  textCapitalization: widget.textCapitalization,
                   autofillHints: widget.autofillHint != null
                       ? [widget.autofillHint!]
                       : null,
-                  inputFormatters: widget.inputFormatters,
+                  inputFormatters: widget.inputFormatters ?? [],
                   onChanged: _onFieldChanged,
                   style: GoogleFonts.poppins(
                     fontSize: 15,
@@ -2773,10 +2840,7 @@ class _SmartCapitalizationTextInputFormatter extends TextInputFormatter {
 }
 
 class _PageTransitionWidget extends StatefulWidget {
-  const _PageTransitionWidget({
-    required this.child,
-    required this.isVisible,
-  });
+  const _PageTransitionWidget({required this.child, required this.isVisible});
 
   final Widget child;
   final bool isVisible;
@@ -2802,18 +2866,14 @@ class _PageTransitionWidgetState extends State<_PageTransitionWidget>
     _slideAnimation = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.3, 1.0, curve: Curves.easeOutCubic),
-    ));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOutCubic),
+      ),
+    );
 
     if (widget.isVisible) {
       _controller.forward();
@@ -2847,27 +2907,17 @@ class _PageTransitionWidgetState extends State<_PageTransitionWidget>
 
         return Transform.translate(
           offset: Offset(slideOffset, 0),
-          child: Opacity(
-            opacity: _fadeAnimation.value,
-            child: widget.child,
-          ),
+          child: Opacity(opacity: _fadeAnimation.value, child: widget.child),
         );
       },
     );
   }
 }
 
-enum PageTransitionType {
-  slideRight,
-  slideLeft,
-  slideUp,
-  slideDown,
-}
+enum PageTransitionType { slideRight, slideLeft, slideUp, slideDown }
 
 class _ShakeAnimationWidget extends StatefulWidget {
-  const _ShakeAnimationWidget({
-    required this.child,
-  });
+  const _ShakeAnimationWidget({required this.child});
 
   final Widget child;
 
@@ -2891,10 +2941,7 @@ class _ShakeAnimationWidgetState extends State<_ShakeAnimationWidget>
     _shakeAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.elasticOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
   }
 
   void shake() {
@@ -2929,9 +2976,7 @@ class _ShakeAnimationWidgetState extends State<_ShakeAnimationWidget>
 }
 
 class _StaggeredAnimationWidget extends StatefulWidget {
-  const _StaggeredAnimationWidget({
-    required this.children,
-  });
+  const _StaggeredAnimationWidget({required this.children});
 
   final List<Widget> children;
 
@@ -2957,13 +3002,9 @@ class _StaggeredAnimationWidgetState extends State<_StaggeredAnimationWidget>
     );
 
     _animations = _controllers.map((controller) {
-      return Tween<double>(
-        begin: 0.0,
-        end: 1.0,
-      ).animate(CurvedAnimation(
-        parent: controller,
-        curve: Curves.easeOutCubic,
-      ));
+      return Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: controller, curve: Curves.easeOutCubic),
+      );
     }).toList();
 
     // Start animations with staggered delay
@@ -2995,10 +3036,7 @@ class _StaggeredAnimationWidgetState extends State<_StaggeredAnimationWidget>
           builder: (context, child) {
             return Transform.translate(
               offset: Offset(0, 20 * (1 - _animations[index].value)),
-              child: Opacity(
-                opacity: _animations[index].value,
-                child: child,
-              ),
+              child: Opacity(opacity: _animations[index].value, child: child),
             );
           },
           child: child,
@@ -3050,29 +3088,17 @@ class _CelebrationAnimationWidgetState
       vsync: this,
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.1,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.elasticOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
+    );
 
-    _rotationAnimation = Tween<double>(
-      begin: 0.0,
-      end: 0.05,
-    ).animate(CurvedAnimation(
-      parent: _rotationController,
-      curve: Curves.easeInOut,
-    ));
+    _rotationAnimation = Tween<double>(begin: 0.0, end: 0.05).animate(
+      CurvedAnimation(parent: _rotationController, curve: Curves.easeInOut),
+    );
 
-    _opacityAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _opacityController,
-      curve: Curves.easeOut,
-    ));
+    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _opacityController, curve: Curves.easeOut),
+    );
   }
 
   @override
@@ -3112,8 +3138,11 @@ class _CelebrationAnimationWidgetState
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(
-          [_scaleAnimation, _rotationAnimation, _opacityAnimation]),
+      animation: Listenable.merge([
+        _scaleAnimation,
+        _rotationAnimation,
+        _opacityAnimation,
+      ]),
       builder: (context, child) {
         return Transform.scale(
           scale: _scaleAnimation.value,
@@ -3125,14 +3154,16 @@ class _CelebrationAnimationWidgetState
                 boxShadow: widget.isCompleted
                     ? [
                         BoxShadow(
-                          color: Colors.green
-                              .withValues(alpha: _opacityAnimation.value * 0.4),
+                          color: Colors.green.withValues(
+                            alpha: _opacityAnimation.value * 0.4,
+                          ),
                           blurRadius: 20 * _opacityAnimation.value,
                           spreadRadius: 5 * _opacityAnimation.value,
                         ),
                         BoxShadow(
                           color: _muawinPrimaryTeal.withValues(
-                              alpha: _opacityAnimation.value * 0.3),
+                            alpha: _opacityAnimation.value * 0.3,
+                          ),
                           blurRadius: 15 * _opacityAnimation.value,
                           spreadRadius: 3 * _opacityAnimation.value,
                         ),
@@ -3181,10 +3212,7 @@ class _ConfettiParticle {
 }
 
 class _ConfettiWidget extends StatefulWidget {
-  const _ConfettiWidget({
-    required this.child,
-    required this.isActive,
-  });
+  const _ConfettiWidget({required this.child, required this.isActive});
 
   final Widget child;
   final bool isActive;
@@ -3220,23 +3248,25 @@ class _ConfettiWidgetState extends State<_ConfettiWidget>
     _particles.clear();
 
     for (int i = 0; i < 50; i++) {
-      _particles.add(_ConfettiParticle(
-        x: _random.nextDouble() * 400,
-        y: -20,
-        velocityX: (_random.nextDouble() - 0.5) * 200,
-        velocityY: _random.nextDouble() * 200 + 100,
-        size: _random.nextDouble() * 8 + 4,
-        color: [
-          Colors.green,
-          _muawinPrimaryTeal,
-          Colors.blue,
-          Colors.orange,
-          Colors.purple,
-        ][_random.nextInt(5)],
-        rotation: _random.nextDouble() * pi * 2,
-        rotationSpeed: (_random.nextDouble() - 0.5) * 10,
-        opacity: 1.0,
-      ));
+      _particles.add(
+        _ConfettiParticle(
+          x: _random.nextDouble() * 400,
+          y: -20,
+          velocityX: (_random.nextDouble() - 0.5) * 200,
+          velocityY: _random.nextDouble() * 200 + 100,
+          size: _random.nextDouble() * 8 + 4,
+          color: [
+            Colors.green,
+            _muawinPrimaryTeal,
+            Colors.blue,
+            Colors.orange,
+            Colors.purple,
+          ][_random.nextInt(5)],
+          rotation: _random.nextDouble() * pi * 2,
+          rotationSpeed: (_random.nextDouble() - 0.5) * 10,
+          opacity: 1.0,
+        ),
+      );
     }
 
     _controller.forward(from: 0.0);
@@ -3265,7 +3295,8 @@ class _ConfettiWidgetState extends State<_ConfettiWidget>
               }
 
               _particles.removeWhere(
-                  (particle) => particle.opacity <= 0 || particle.y > 600);
+                (particle) => particle.opacity <= 0 || particle.y > 600,
+              );
 
               return CustomPaint(
                 painter: _ConfettiPainter(_particles),
@@ -3313,10 +3344,7 @@ class _ConfettiPainter extends CustomPainter {
 }
 
 class _SkeletonWidget extends StatefulWidget {
-  const _SkeletonWidget({
-    required this.child,
-    required this.isLoading,
-  });
+  const _SkeletonWidget({required this.child, required this.isLoading});
 
   final Widget child;
   final bool isLoading;
@@ -3341,10 +3369,7 @@ class _SkeletonWidgetState extends State<_SkeletonWidget>
     _animation = Tween<double>(
       begin: -1.0,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     if (widget.isLoading) {
       _controller.repeat();
@@ -3387,11 +3412,7 @@ class _SkeletonWidgetState extends State<_SkeletonWidget>
                 Color(0xFFF5F5F5),
                 Color(0xFFE0E0E0),
               ],
-              stops: [
-                0.0,
-                0.5 + _animation.value * 0.5,
-                1.0,
-              ],
+              stops: [0.0, 0.5 + _animation.value * 0.5, 1.0],
               tileMode: TileMode.clamp,
             ).createShader(bounds);
           },
@@ -3403,9 +3424,7 @@ class _SkeletonWidgetState extends State<_SkeletonWidget>
 }
 
 class _ParallaxBackgroundWidget extends StatefulWidget {
-  const _ParallaxBackgroundWidget({
-    required this.child,
-  });
+  const _ParallaxBackgroundWidget({required this.child});
 
   final Widget child;
 
@@ -3430,13 +3449,12 @@ class _ParallaxBackgroundWidgetState extends State<_ParallaxBackgroundWidget>
       vsync: this,
     );
 
-    _backgroundAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _backgroundController,
-      curve: Curves.easeOutCubic,
-    ));
+    _backgroundAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _backgroundController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
 
     _internalScrollController.addListener(_onScroll);
   }
@@ -3523,8 +3541,10 @@ class _ParallaxBackgroundWidgetState extends State<_ParallaxBackgroundWidget>
             // Parallax layer 3 - Fast moving decorative elements
             Positioned.fill(
               child: Transform.translate(
-                offset: Offset(_backgroundAnimation.value * 30,
-                    -_backgroundAnimation.value * 150),
+                offset: Offset(
+                  _backgroundAnimation.value * 30,
+                  -_backgroundAnimation.value * 150,
+                ),
                 child: CustomPaint(
                   painter: _ParallaxPatternPainter(_backgroundAnimation.value),
                   size: Size.infinite,
@@ -3573,10 +3593,7 @@ class _ParallaxPatternPainter extends CustomPainter {
 }
 
 class _CustomRippleButton extends StatefulWidget {
-  const _CustomRippleButton({
-    required this.child,
-    required this.onPressed,
-  });
+  const _CustomRippleButton({required this.child, required this.onPressed});
 
   final Widget child;
   final VoidCallback? onPressed;
@@ -3607,29 +3624,17 @@ class _CustomRippleButtonState extends State<_CustomRippleButton>
       vsync: this,
     );
 
-    _rippleAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _rippleController,
-      curve: Curves.easeOutCubic,
-    ));
+    _rippleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _rippleController, curve: Curves.easeOutCubic),
+    );
 
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.95,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+    );
 
-    _opacityAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _rippleController,
-      curve: Curves.easeOutCubic,
-    ));
+    _opacityAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _rippleController, curve: Curves.easeOutCubic),
+    );
   }
 
   void _handleTapDown(TapDownDetails details) {
@@ -3662,8 +3667,11 @@ class _CustomRippleButtonState extends State<_CustomRippleButton>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(
-          [_scaleAnimation, _rippleAnimation, _opacityAnimation]),
+      animation: Listenable.merge([
+        _scaleAnimation,
+        _rippleAnimation,
+        _opacityAnimation,
+      ]),
       builder: (context, child) {
         return Transform.scale(
           scale: _scaleAnimation.value,
@@ -3698,8 +3706,9 @@ class _CustomRippleButtonState extends State<_CustomRippleButton>
                           painter: _RipplePainter(
                             center: Offset.zero, // Will be updated on tap
                             radius: 100 * _rippleAnimation.value,
-                            color: Colors.white
-                                .withValues(alpha: _opacityAnimation.value),
+                            color: Colors.white.withValues(
+                              alpha: _opacityAnimation.value,
+                            ),
                           ),
                           size: Size.infinite,
                         ),
@@ -3742,9 +3751,7 @@ class _RipplePainter extends CustomPainter {
 }
 
 class _AnimatedProgressBar extends StatefulWidget {
-  const _AnimatedProgressBar({
-    required this.progress,
-  });
+  const _AnimatedProgressBar({required this.progress});
 
   final double progress; // 0.0 to 1.0
 
@@ -3775,21 +3782,17 @@ class _AnimatedProgressBarState extends State<_AnimatedProgressBar>
       vsync: this,
     );
 
-    _progressAnimation = Tween<double>(
-      begin: 0.0,
-      end: widget.progress,
-    ).animate(CurvedAnimation(
-      parent: _progressController,
-      curve: Curves.easeOutCubic,
-    ));
+    _progressAnimation =
+        Tween<double>(begin: 0.0, end: widget.progress).animate(
+      CurvedAnimation(
+        parent: _progressController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
 
-    _shimmerAnimation = Tween<double>(
-      begin: -1.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _shimmerController,
-      curve: Curves.easeInOut,
-    ));
+    _shimmerAnimation = Tween<double>(begin: -1.0, end: 1.0).animate(
+      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut),
+    );
 
     _progressController.forward();
     _shimmerController.repeat();
@@ -3801,13 +3804,13 @@ class _AnimatedProgressBarState extends State<_AnimatedProgressBar>
 
     if (widget.progress != oldWidget.progress) {
       _previousProgress = oldWidget.progress;
-      _progressAnimation = Tween<double>(
-        begin: _previousProgress,
-        end: widget.progress,
-      ).animate(CurvedAnimation(
-        parent: _progressController,
-        curve: Curves.easeOutCubic,
-      ));
+      _progressAnimation =
+          Tween<double>(begin: _previousProgress, end: widget.progress).animate(
+        CurvedAnimation(
+          parent: _progressController,
+          curve: Curves.easeOutCubic,
+        ),
+      );
 
       _progressController.forward(from: 0.0);
     }
@@ -3903,8 +3906,9 @@ class _AnimatedProgressBarState extends State<_AnimatedProgressBar>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: dotProgress > 0 && dotProgress <= 1
-                            ? Colors.white
-                                .withValues(alpha: dotProgress.clamp(0.0, 1.0))
+                            ? Colors.white.withValues(
+                                alpha: dotProgress.clamp(0.0, 1.0),
+                              )
                             : Colors.transparent,
                       ),
                     );
@@ -3920,10 +3924,7 @@ class _AnimatedProgressBarState extends State<_AnimatedProgressBar>
 }
 
 class _LongPressOptionsWidget extends StatefulWidget {
-  const _LongPressOptionsWidget({
-    required this.child,
-    required this.options,
-  });
+  const _LongPressOptionsWidget({required this.child, required this.options});
 
   final Widget child;
   final List<String> options;
@@ -3950,21 +3951,14 @@ class _LongPressOptionsWidgetState extends State<_LongPressOptionsWidget>
       vsync: this,
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _menuController,
-      curve: Curves.easeOutBack,
-    ));
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _menuController, curve: Curves.easeOutBack),
+    );
 
     _opacityAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _menuController,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _menuController, curve: Curves.easeOut));
   }
 
   void _showMenu(BuildContext context, Offset position) {
@@ -4126,9 +4120,7 @@ class _ContextMenuOverlay extends StatelessWidget {
 }
 
 class _PinchToZoomWidget extends StatefulWidget {
-  const _PinchToZoomWidget({
-    required this.child,
-  });
+  const _PinchToZoomWidget({required this.child});
 
   final Widget child;
 
@@ -4152,13 +4144,9 @@ class _PinchToZoomWidgetState extends State<_PinchToZoomWidget>
       vsync: this,
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.easeOutCubic,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeOutCubic),
+    );
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
@@ -4177,10 +4165,12 @@ class _PinchToZoomWidgetState extends State<_PinchToZoomWidget>
       _scaleAnimation = Tween<double>(
         begin: _scaleAnimation.value,
         end: _currentScale,
-      ).animate(CurvedAnimation(
-        parent: _scaleController,
-        curve: Curves.easeOutCubic,
-      ));
+      ).animate(
+        CurvedAnimation(
+          parent: _scaleController,
+          curve: Curves.easeOutCubic,
+        ),
+      );
 
       _scaleController.forward(from: 0.0);
     }
@@ -4191,13 +4181,10 @@ class _PinchToZoomWidgetState extends State<_PinchToZoomWidget>
     final targetScale = _currentScale.clamp(0.9, 1.5);
 
     if (targetScale != _currentScale) {
-      _scaleAnimation = Tween<double>(
-        begin: _currentScale,
-        end: targetScale,
-      ).animate(CurvedAnimation(
-        parent: _scaleController,
-        curve: Curves.elasticOut,
-      ));
+      _scaleAnimation =
+          Tween<double>(begin: _currentScale, end: targetScale).animate(
+        CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
+      );
 
       _scaleController.forward().then((_) {
         setState(() {
@@ -4234,10 +4221,7 @@ class _PinchToZoomWidgetState extends State<_PinchToZoomWidget>
 }
 
 class _DragToReorderWidget extends StatefulWidget {
-  const _DragToReorderWidget({
-    required this.children,
-    required this.onReorder,
-  });
+  const _DragToReorderWidget({required this.children, required this.onReorder});
 
   final List<Widget> children;
   final Function(int oldIndex, int newIndex) onReorder;
@@ -4280,8 +4264,10 @@ class _DragToReorderWidgetState extends State<_DragToReorderWidget>
     final dragOffset = details.primaryDelta ?? 0;
     final currentPosition = index * itemHeight;
     final newPosition = currentPosition + dragOffset;
-    final newHoveringIndex =
-        (newPosition / itemHeight).round().clamp(0, _items.length - 1);
+    final newHoveringIndex = (newPosition / itemHeight).round().clamp(
+          0,
+          _items.length - 1,
+        );
 
     if (newHoveringIndex != _hoveringIndex &&
         newHoveringIndex != _draggingIndex) {
@@ -4335,7 +4321,11 @@ class _DragToReorderWidgetState extends State<_DragToReorderWidget>
           duration: const Duration(milliseconds: 200),
           transform: Matrix4.identity()
             ..translateByDouble(
-                0.0, isDragging ? -5.0 : (isHovering ? 5.0 : 0.0), 0.0, 1.0),
+              0.0,
+              isDragging ? -5.0 : (isHovering ? 5.0 : 0.0),
+              0.0,
+              1.0,
+            ),
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
@@ -4372,10 +4362,7 @@ class _DragToReorderWidgetState extends State<_DragToReorderWidget>
                   child: SizedBox(
                     width: 40,
                     height: 60,
-                    child: Icon(
-                      Icons.drag_handle,
-                      color: Colors.grey[600],
-                    ),
+                    child: Icon(Icons.drag_handle, color: Colors.grey[600]),
                   ),
                 ),
                 // Content
@@ -4405,10 +4392,7 @@ class _DragToReorderWidgetState extends State<_DragToReorderWidget>
 }
 
 class _SwipeToDeleteWidget extends StatefulWidget {
-  const _SwipeToDeleteWidget({
-    required this.child,
-    required this.onDelete,
-  });
+  const _SwipeToDeleteWidget({required this.child, required this.onDelete});
 
   final Widget child;
   final VoidCallback onDelete;
@@ -4440,21 +4424,13 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
       vsync: this,
     );
 
-    _slideAnimation = Tween<double>(
-      begin: 0.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation = Tween<double>(begin: 0.0, end: 0.0).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+    );
 
-    _deleteAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _deleteController,
-      curve: Curves.easeInOut,
-    ));
+    _deleteAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _deleteController, curve: Curves.easeInOut),
+    );
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
@@ -4465,13 +4441,10 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
       _dragOffset = _dragOffset.clamp(-100.0, 0.0);
     });
 
-    _slideAnimation = Tween<double>(
-      begin: 0.0,
-      end: _dragOffset / 100.0,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<double>(begin: 0.0, end: _dragOffset / 100.0).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+    );
 
     _slideController.forward(from: 0.0);
   }
@@ -4504,13 +4477,10 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
       _dragOffset = 0.0;
     });
 
-    _slideAnimation = Tween<double>(
-      begin: _slideAnimation.value,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.elasticOut,
-    ));
+    _slideAnimation =
+        Tween<double>(begin: _slideAnimation.value, end: 0.0).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.elasticOut),
+    );
 
     _slideController.forward(from: 0.0);
   }
@@ -4555,11 +4525,7 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.delete,
-                            color: Colors.white,
-                            size: 24,
-                          ),
+                          Icon(Icons.delete, color: Colors.white, size: 24),
                           SizedBox(height: 4),
                           Text(
                             'Delete',
@@ -4626,11 +4592,7 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.close,
-                      size: 16,
-                      color: Colors.red,
-                    ),
+                    child: const Icon(Icons.close, size: 16, color: Colors.red),
                   ),
                 ),
               ),
@@ -4642,10 +4604,7 @@ class _SwipeToDeleteWidgetState extends State<_SwipeToDeleteWidget>
 }
 
 class _PullToRefreshWidget extends StatefulWidget {
-  const _PullToRefreshWidget({
-    required this.child,
-    required this.onRefresh,
-  });
+  const _PullToRefreshWidget({required this.child, required this.onRefresh});
 
   final Widget child;
   final Future<void> Function() onRefresh;
@@ -4681,37 +4640,21 @@ class _PullToRefreshWidgetState extends State<_PullToRefreshWidget>
       vsync: this,
     );
 
-    _pullAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _refreshController,
-      curve: Curves.easeOutCubic,
-    ));
+    _pullAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _refreshController, curve: Curves.easeOutCubic),
+    );
 
-    _rotateAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _indicatorController,
-      curve: Curves.linear,
-    ));
+    _rotateAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _indicatorController, curve: Curves.linear),
+    );
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _indicatorController,
-      curve: Curves.elasticOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _indicatorController, curve: Curves.elasticOut),
+    );
 
-    _opacityAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _indicatorController,
-      curve: Curves.easeIn,
-    ));
+    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _indicatorController, curve: Curves.easeIn),
+    );
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
@@ -4821,9 +4764,7 @@ class _PullToRefreshWidgetState extends State<_PullToRefreshWidget>
                           ],
                         ),
                       ),
-                      child: Center(
-                        child: _buildRefreshIndicator(),
-                      ),
+                      child: Center(child: _buildRefreshIndicator()),
                     ),
                   ),
                 );
@@ -4838,11 +4779,7 @@ class _PullToRefreshWidgetState extends State<_PullToRefreshWidget>
     if (_isRefreshing) {
       return Transform.rotate(
         angle: _rotateAnimation.value * 2 * 3.14159,
-        child: const Icon(
-          Icons.refresh,
-          color: _muawinPrimaryTeal,
-          size: 24,
-        ),
+        child: const Icon(Icons.refresh, color: _muawinPrimaryTeal, size: 24),
       );
     } else {
       final progress = _pullAnimation.value;
@@ -4859,10 +4796,7 @@ class _PullToRefreshWidgetState extends State<_PullToRefreshWidget>
 }
 
 class _InfiniteScrollWidget extends StatefulWidget {
-  const _InfiniteScrollWidget({
-    required this.child,
-    required this.onLoadMore,
-  });
+  const _InfiniteScrollWidget({required this.child, required this.onLoadMore});
 
   final Widget child;
   final Future<void> Function() onLoadMore;
@@ -4946,8 +4880,9 @@ class _InfiniteScrollWidgetState extends State<_InfiniteScrollWidget> {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(_muawinPrimaryTeal),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _muawinPrimaryTeal,
+                      ),
                     ),
                   ),
                   SizedBox(width: 12),
@@ -4969,9 +4904,7 @@ class _InfiniteScrollWidgetState extends State<_InfiniteScrollWidget> {
 }
 
 class _GestureShortcutsWidget extends StatefulWidget {
-  const _GestureShortcutsWidget({
-    required this.child,
-  });
+  const _GestureShortcutsWidget({required this.child});
 
   final Widget child;
 
@@ -4996,9 +4929,7 @@ class _GestureShortcutsWidgetState extends State<_GestureShortcutsWidget> {
 }
 
 class _AnimatedOpacityWidget extends StatefulWidget {
-  const _AnimatedOpacityWidget({
-    required this.child,
-  });
+  const _AnimatedOpacityWidget({required this.child});
 
   final Widget child;
 
@@ -5024,10 +4955,7 @@ class _AnimatedOpacityWidgetState extends State<_AnimatedOpacityWidget>
     _opacityAnimation = Tween<double>(
       begin: _previousOpacity,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     // Start animation if opacity is different from initial
     if (1.0 != 1.0) {
@@ -5045,10 +4973,7 @@ class _AnimatedOpacityWidgetState extends State<_AnimatedOpacityWidget>
       _opacityAnimation = Tween<double>(
         begin: _previousOpacity,
         end: 1.0,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ));
+      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
       _controller.duration = const Duration(milliseconds: 300);
       _controller.forward(from: 0.0);
@@ -5066,19 +4991,14 @@ class _AnimatedOpacityWidgetState extends State<_AnimatedOpacityWidget>
     return AnimatedBuilder(
       animation: _opacityAnimation,
       builder: (context, child) {
-        return Opacity(
-          opacity: _opacityAnimation.value,
-          child: widget.child,
-        );
+        return Opacity(opacity: _opacityAnimation.value, child: widget.child);
       },
     );
   }
 }
 
 class _TransformAnimationWidget extends StatefulWidget {
-  const _TransformAnimationWidget({
-    required this.child,
-  });
+  const _TransformAnimationWidget({required this.child});
 
   final Widget child;
 
@@ -5114,26 +5034,17 @@ class _TransformAnimationWidgetState extends State<_TransformAnimationWidget>
     _offsetAnimation = Tween<Offset>(
       begin: _previousOffset,
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     _scaleAnimation = Tween<double>(
       begin: _previousScale,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     _rotationAnimation = Tween<double>(
       begin: _previousRotation,
       end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -5168,9 +5079,7 @@ class _TransformAnimationWidgetState extends State<_TransformAnimationWidget>
 }
 
 class _PhysicsAnimationWidget extends StatefulWidget {
-  const _PhysicsAnimationWidget({
-    required this.child,
-  });
+  const _PhysicsAnimationWidget({required this.child});
 
   final Widget child;
 
@@ -5198,22 +5107,19 @@ class _PhysicsAnimationWidgetState extends State<_PhysicsAnimationWidget>
   }
 
   void _setupPhysicsAnimation() {
-    _physicsAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const _PhysicsCurve(
-        springConfig: _SpringConfig(
-          mass: 1.0,
-          stiffness: 100.0,
-          damping: 10.0,
-        ),
-        frictionConfig: _FrictionConfig(
-          coefficient: 0.1,
+    _physicsAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const _PhysicsCurve(
+          springConfig: _SpringConfig(
+            mass: 1.0,
+            stiffness: 100.0,
+            damping: 10.0,
+          ),
+          frictionConfig: _FrictionConfig(coefficient: 0.1),
         ),
       ),
-    ));
+    );
   }
 
   @override
@@ -5230,21 +5136,14 @@ class _PhysicsAnimationWidgetState extends State<_PhysicsAnimationWidget>
         final value = _physicsAnimation.value;
         final physicsValue = _calculatePhysics(value);
 
-        return Transform.translate(
-          offset: physicsValue,
-          child: widget.child,
-        );
+        return Transform.translate(offset: physicsValue, child: widget.child);
       },
     );
   }
 
   Offset _calculatePhysics(double t) {
     // Spring physics simulation
-    const spring = _SpringConfig(
-      mass: 1.0,
-      stiffness: 100.0,
-      damping: 10.0,
-    );
+    const spring = _SpringConfig(mass: 1.0, stiffness: 100.0, damping: 10.0);
     final displacement = sin(t * 2 * pi) * 20.0;
     final damping = exp(-spring.damping * t);
     return Offset(displacement * damping, 0);
@@ -5264,18 +5163,13 @@ class _SpringConfig {
 }
 
 class _FrictionConfig {
-  const _FrictionConfig({
-    required this.coefficient,
-  });
+  const _FrictionConfig({required this.coefficient});
 
   final double coefficient;
 }
 
 class _PhysicsCurve extends Curve {
-  const _PhysicsCurve({
-    this.springConfig,
-    this.frictionConfig,
-  });
+  const _PhysicsCurve({this.springConfig, this.frictionConfig});
 
   final _SpringConfig? springConfig;
   final _FrictionConfig? frictionConfig;
@@ -5330,10 +5224,7 @@ class _GPUAcceleratedAnimationWidgetState
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
-      duration: widget.duration,
-      vsync: this,
-    );
+    _controller = AnimationController(duration: widget.duration, vsync: this);
 
     _transformAnimation = Tween<double>(
       begin: 0.0,
@@ -5375,10 +5266,7 @@ class _GPUAcceleratedAnimationWidgetState
 }
 
 class _AnimationPreloader extends StatefulWidget {
-  const _AnimationPreloader({
-    required this.child,
-    required this.animations,
-  });
+  const _AnimationPreloader({required this.child, required this.animations});
 
   final Widget child;
   final List<AnimationController> animations;
@@ -5468,9 +5356,7 @@ class _ReducedMotionWidgetState extends State<_ReducedMotionWidget> {
 }
 
 class _PerformanceOptimizedAnimation extends StatefulWidget {
-  const _PerformanceOptimizedAnimation({
-    required this.child,
-  });
+  const _PerformanceOptimizedAnimation({required this.child});
 
   final Widget child;
 
@@ -5497,10 +5383,7 @@ class _PerformanceOptimizedAnimationState
       vsync: this,
     );
 
-    _animation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(_controller);
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(_controller);
 
     _startPerformanceMonitoring();
     _controller.repeat();
@@ -5571,11 +5454,7 @@ class _BackgroundGradient extends BoxDecoration {
           gradient: const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.white,
-              Color(0xFFFAFAFA),
-              Color(0xFFF5F5F5),
-            ],
+            colors: [Colors.white, Color(0xFFFAFAFA), Color(0xFFF5F5F5)],
             stops: [0.0, 0.6, 1.0],
           ),
         );
@@ -5626,11 +5505,7 @@ class _BottomSheetOption extends StatelessWidget {
                         : color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(_kRadiusMedium),
                   ),
-                  child: Icon(
-                    icon,
-                    color: color,
-                    size: 20,
-                  ),
+                  child: Icon(icon, color: color, size: 20),
                 ),
                 const SizedBox(width: _kSpacing4),
                 // Text content
@@ -5656,10 +5531,9 @@ class _BottomSheetOption extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: 13,
                           fontWeight: FontWeight.w400,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -5671,10 +5545,9 @@ class _BottomSheetOption extends StatelessWidget {
                   child: Icon(
                     Icons.arrow_forward_ios,
                     size: 16,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.4),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
                 ),
               ],

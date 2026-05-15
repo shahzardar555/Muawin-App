@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'widgets/bottom_navigation_bar.dart';
@@ -26,202 +27,201 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   late TabController _tabController;
   List<Map<String, dynamic>> _ongoingJobs = [];
   List<Map<String, dynamic>> _historyJobs = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  String? _customerId;
 
   @override
   void initState() {
     super.initState();
     onShowDetails = null; // Initialize to null
     _tabController = TabController(length: 2, vsync: this);
-    _initializeJobs();
+    _loadJobs(); // Add this line
   }
 
-  void _initializeJobs() {
-    _loadJobsWithProviderNames();
-  }
-
-  Future<void> _loadJobsWithProviderNames() async {
-    final providerIds = [
-      'provider_001',
-      'provider_002',
-      'provider_003',
-      'provider_004'
-    ];
+  Future<String?> _getCustomerId() async {
     try {
-      final ongoingJobsWithProviders = <Map<String, dynamic>>[];
-      final historyJobsWithProviders = <Map<String, dynamic>>[];
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return null;
 
-      for (int i = 0; i < 2; i++) {
-        final providerId = providerIds[i % providerIds.length];
-        try {
-          final providerData =
-              await ProviderDataService.getProviderData(providerId);
-          final providerName =
-              providerData['provider_name'] ?? 'Service Provider';
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-          if (i == 0) {
-            ongoingJobsWithProviders.add({
-              'id': '#MUA-2847',
-              'category': 'Home Cleaning',
-              'status': 'In Progress',
-              'postedDate': 'Mar 6, 2024',
-              'budget': '2,500',
-              'provider': providerName,
-              'rating': 4.9,
-              'location': 'DHA Phase 5, Lahore',
-              'providerCategory': 'Maid',
-              'providerId': providerId,
-            });
-          } else {
-            ongoingJobsWithProviders.add({
-              'id': '#MUA-2848',
-              'category': 'Driver Services',
-              'status': 'Scheduled',
-              'postedDate': 'Mar 6, 2024',
-              'budget': '800',
-              'provider': providerName,
-              'rating': 4.8,
-              'location': 'Gulberg, Lahore',
-              'providerCategory': 'Driver',
-              'providerId': providerId,
-            });
-          }
-        } catch (e) {
-          debugPrint('Error loading provider $providerId: $e');
-          // Fallback to default provider
-          ongoingJobsWithProviders.add(_createFallbackJob(i));
-        }
-      }
+      final customer = await Supabase.instance.client
+          .from('customers')
+          .select('id')
+          .eq('profile_id', profile['id'])
+          .single();
 
-      for (int i = 2; i < 4; i++) {
-        final providerId = providerIds[i % providerIds.length];
-        try {
-          final providerData =
-              await ProviderDataService.getProviderData(providerId);
-          final providerName =
-              providerData['provider_name'] ?? 'Service Provider';
-
-          if (i == 2) {
-            historyJobsWithProviders.add({
-              'id': '#MUA-2845',
-              'category': 'Cooking Services',
-              'status': 'Completed',
-              'postedDate': 'Mar 4, 2024',
-              'budget': '1,200',
-              'provider': providerName,
-              'rating': 4.7,
-              'location': 'Model Town, Lahore',
-              'providerCategory': 'Cook',
-              'providerId': providerId,
-            });
-          } else {
-            historyJobsWithProviders.add({
-              'id': '#MUA-2846',
-              'category': 'Babysitting',
-              'status': 'Cancelled',
-              'postedDate': 'Mar 3, 2024',
-              'budget': '600',
-              'provider': providerName,
-              'rating': 4.6,
-              'location': 'Bahria Town, Lahore',
-              'providerCategory': 'Babysitter',
-              'providerId': providerId,
-            });
-          }
-        } catch (e) {
-          debugPrint('Error loading provider $providerId: $e');
-          // Fallback to default provider
-          historyJobsWithProviders.add(_createFallbackJob(i));
-        }
-      }
-
-      setState(() {
-        _ongoingJobs = ongoingJobsWithProviders;
-        _historyJobs = historyJobsWithProviders;
-      });
-
-      // Listen for real-time service details changes
-      ProviderDataService.addProviderDataChangeListener((updatedData) {
-        if (mounted) {
-          _loadJobsWithProviderNames(); // Refresh jobs when provider data changes
-        }
-      });
+      return customer['id'] as String?;
     } catch (e) {
-      setState(() {
-        _ongoingJobs = [_createFallbackJob(0), _createFallbackJob(1)];
-        _historyJobs = [_createFallbackJob(2), _createFallbackJob(3)];
-      });
+      debugPrint('Error getting customer: $e');
+      return null;
     }
   }
 
-  Map<String, dynamic> _createFallbackJob(int index) {
-    final fallbackJobs = [
-      {
-        'id': '#MUA-2847',
-        'category': 'Home Cleaning',
-        'status': 'In Progress',
-        'postedDate': 'Mar 6, 2024',
-        'budget': '2,500',
-        'provider': 'Saira Khan',
-        'rating': 4.9,
-        'location': 'DHA Phase 5, Lahore',
-        'providerCategory': 'Maid',
-        'providerId': 'provider_001',
-      },
-      {
-        'id': '#MUA-2848',
-        'category': 'Driver Services',
-        'status': 'Scheduled',
-        'postedDate': 'Mar 6, 2024',
-        'budget': '800',
-        'provider': 'Ahmed Services',
-        'rating': 4.7,
-        'location': 'Gulberg, Islamabad',
-        'providerCategory': 'Driver',
-        'providerId': 'provider_002',
-      },
-      {
-        'id': '#MUA-2845',
-        'category': 'Maintenance',
-        'status': 'Completed',
-        'postedDate': 'Mar 4, 2024',
-        'budget': '1,200',
-        'provider': 'QuickFix Repairs',
-        'rating': 4.8,
-        'location': 'Model Town, Lahore',
-        'providerCategory': 'Domestic Helper',
-        'providerId': 'provider_003',
-      },
-      {
-        'id': '#MUA-2846',
-        'category': 'Babysitting',
-        'status': 'Completed',
-        'postedDate': 'Mar 2, 2024',
-        'budget': '1,500',
-        'provider': 'Fatima Ali',
-        'rating': 5.0,
-        'location': 'F-7 Markaz, Islamabad',
-        'providerCategory': 'Baby Sitter',
-        'providerId': 'provider_004',
-      },
-    ];
+  Future<void> _loadJobs() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+      });
 
-    return fallbackJobs[index % fallbackJobs.length];
+      // Get customer ID first
+      _customerId = await _getCustomerId();
+
+      if (_customerId == null) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+        return;
+      }
+
+      // Load all jobs for this customer
+      final allJobs = await Supabase.instance.client
+          .from('jobs')
+          .select("""
+          id,
+          status,
+          scheduled_date,
+          scheduled_time,
+          total_amount,
+          created_at,
+          service_category,
+          location,
+          description,
+          providers(
+            id,
+            service_category,
+            city,
+            rating,
+            profiles(
+              full_name,
+              profile_image_url,
+              phone_number
+            )
+          )
+        """)
+          .eq('customer_id', _customerId!)
+          .order('created_at', ascending: false);
+
+      // Split into ongoing and history
+      final ongoing = <Map<String, dynamic>>[];
+      final history = <Map<String, dynamic>>[];
+
+      for (final job in allJobs) {
+        final status = job['status'] as String? ?? '';
+
+        if (status == 'active' ||
+            status == 'scheduled' ||
+            status == 'pending') {
+          ongoing.add(job);
+        } else {
+          history.add(job);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _ongoingJobs = ongoing;
+          _historyJobs = history;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading jobs: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
+    }
   }
 
-  void _cancelJob(String jobId) {
-    setState(() {
-      // Find the job to cancel
-      final jobToCancel = _ongoingJobs.firstWhere((job) => job['id'] == jobId);
+  void _cancelJob(String jobId) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Cancel Job',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to cancel this job?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'No',
+              style: GoogleFonts.poppins(
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: Text(
+              'Yes Cancel',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
 
-      // Remove from ongoing jobs
-      _ongoingJobs.removeWhere((job) => job['id'] == jobId);
+    if (confirm == true) {
+      try {
+        await Supabase.instance.client.from('jobs').update({
+          'status': 'cancelled',
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', jobId);
 
-      // Add to history with cancelled status but preserve original data
-      _historyJobs.add({
-        ...jobToCancel,
-        'status': 'Cancelled',
-      });
-    });
+        // Reload jobs after cancel
+        _loadJobs();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Job cancelled successfully',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: const Color(0xFF047A62),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Cancel error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Could not cancel job',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -258,7 +258,51 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
 
             // 3. CONTENT AREA
             Expanded(
-              child: _buildTabBarView(),
+              child: RefreshIndicator(
+                onRefresh: _loadJobs,
+                color: const Color(0xFF047A62),
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF047A62),
+                        ),
+                      )
+                    : _hasError
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 64,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Could not load jobs',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: _loadJobs,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF047A62),
+                                  ),
+                                  child: Text(
+                                    'Try Again',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _buildTabBarView(),
+              ),
             ),
           ],
         ),
@@ -504,7 +548,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
                     _buildJobDetailRow('Category', _getValidCategory(job)),
                     _buildJobDetailRow('Status', job['status']),
                     _buildJobDetailRow('Posted', job['postedDate']),
-                    _buildJobDetailRow('Budget', 'PKR ${job['budget']}'),
+                    _buildJobDetailRow('Budget', 'PKR ${job['total_amount']}'),
                   ],
                 ),
               ),
@@ -801,8 +845,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           // Category Name
                           Text(
-                            job['providerCategory'] as String? ??
-                                job['category'] as String,
+                            job['service_category'] ?? 'Service',
                             style: GoogleFonts.poppins(
                               fontSize: 18, // 1.125rem = 18px
                               fontWeight: FontWeight.bold,
@@ -913,7 +956,8 @@ class _JobCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         // Name
                         Text(
-                          job['provider'] as String? ?? 'Professional',
+                          job['providers']?['profiles']?['full_name'] ??
+                              'Provider',
                           style: GoogleFonts.poppins(
                             fontSize: 14, // 0.875rem = 14px
                             fontWeight: FontWeight.bold,
@@ -1103,7 +1147,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['budget']}',
+                        'PKR ${job['total_amount']}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -1321,8 +1365,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           // Category Name
                           Text(
-                            job['providerCategory'] as String? ??
-                                job['category'] as String,
+                            job['service_category'] ?? 'Service',
                             style: GoogleFonts.poppins(
                               fontSize: 18, // 1.125rem = 18px
                               fontWeight: FontWeight.bold,
@@ -1398,7 +1441,8 @@ class _JobCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         // Name
                         Text(
-                          job['provider'] as String? ?? 'Professional',
+                          job['providers']?['profiles']?['full_name'] ??
+                              'Provider',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -1564,7 +1608,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['budget']}',
+                        'PKR ${job['total_amount']}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -1719,8 +1763,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           // Category Name
                           Text(
-                            job['providerCategory'] as String? ??
-                                job['category'] as String,
+                            job['service_category'] ?? 'Service',
                             style: GoogleFonts.poppins(
                               fontSize: 18, // 1.125rem = 18px
                               fontWeight: FontWeight.bold,
@@ -1796,7 +1839,8 @@ class _JobCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         // Name
                         Text(
-                          job['provider'] as String? ?? 'Professional',
+                          job['providers']?['profiles']?['full_name'] ??
+                              'Provider',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -1962,7 +2006,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['budget']}',
+                        'PKR ${job['total_amount']}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -2111,9 +2155,9 @@ class _JobCard extends StatelessWidget {
                               28), // Circle shape (56px/2 = 28px)
                         ),
                         child: Icon(
-                          job['providerCategory'] == 'Baby Sitter'
+                          job['service_category'] == 'Baby Sitter'
                               ? Icons.child_care
-                              : job['providerCategory'] == 'Domestic Helper'
+                              : job['service_category'] == 'Domestic Helper'
                                   ? Icons.cleaning_services
                                   : Icons.build, // Default icon
                           size: 28, // 1.75rem = 28px
@@ -2127,8 +2171,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           // Category Name
                           Text(
-                            job['providerCategory'] as String? ??
-                                job['category'] as String,
+                            job['service_category'] ?? 'Service',
                             style: GoogleFonts.poppins(
                               fontSize: 18, // 1.125rem = 18px
                               fontWeight: FontWeight.bold,
@@ -2208,7 +2251,8 @@ class _JobCard extends StatelessWidget {
                             // Name
                             Expanded(
                               child: Text(
-                                job['provider'] as String? ?? 'Professional',
+                                job['providers']?['profiles']?['full_name'] ??
+                                    'Provider',
                                 style: GoogleFonts.poppins(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -2367,7 +2411,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['budget']}',
+                        'PKR ${job['total_amount']}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -2521,11 +2565,11 @@ class _JobCard extends StatelessWidget {
                               28), // Circle shape (56px/2 = 28px)
                         ),
                         child: Icon(
-                          job['providerCategory'] == 'Baby Sitter'
+                          job['service_category'] == 'Baby Sitter'
                               ? Icons.child_care
-                              : job['providerCategory'] == 'Domestic Helper'
+                              : job['service_category'] == 'Domestic Helper'
                                   ? Icons.cleaning_services
-                                  : job['providerCategory'] == 'Driver'
+                                  : job['service_category'] == 'Driver'
                                       ? Icons.drive_eta
                                       : Icons
                                           .cancel, // Cancel icon for cancelled jobs
@@ -2540,8 +2584,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           // Category Name
                           Text(
-                            job['providerCategory'] as String? ??
-                                job['category'] as String,
+                            job['service_category'] ?? 'Service',
                             style: GoogleFonts.poppins(
                               fontSize: 18, // 1.125rem = 18px
                               fontWeight: FontWeight.bold,
@@ -2617,7 +2660,8 @@ class _JobCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         // Name
                         Text(
-                          job['provider'] as String? ?? 'Professional',
+                          job['providers']?['profiles']?['full_name'] ??
+                              'Provider',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -2747,7 +2791,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['budget']}',
+                        'PKR ${job['total_amount']}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -2902,7 +2946,7 @@ class _JobCard extends StatelessWidget {
               Icon(Icons.attach_money, size: 16, color: Colors.grey[500]),
               const SizedBox(width: 4),
               Text(
-                'PKR ${job['budget']}',
+                'PKR ${job['total_amount']}',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: Colors.grey[600],

@@ -14,22 +14,24 @@ enum VendorStatus {
 /// Provides persistent storage with backend-ready architecture
 class MockVendorService implements VendorService {
   static const String _vendorDataKey = 'vendor_data';
-  static const String _vendorId = 'vendor_001';
+  // TODO: Connect to Supabase
+  static const String _vendorId = '';
 
   /// Default vendor data structure
+  // TODO: Connect to Supabase
   static const Map<String, dynamic> _defaultVendorData = {
-    'id': 'vendor_001',
-    'name': 'Super Grocery Store',
-    'category': 'Grocery Store',
-    'phone': '+923001234567',
-    'address': 'Gulberg III, Lahore',
-    'mapsLink': 'https://maps.google.com/?q=Gulberg+III+Lahore',
-    'about': 'Fresh groceries and daily essentials delivered to your doorstep.',
+    'id': '',
+    'name': '',
+    'category': '',
+    'phone': '',
+    'address': '',
+    'mapsLink': '',
+    'about': '',
     'profileImageUrl': null,
     'coverPhotoUrl': null,
     'coverPhotoPath': null,
-    'rating': '4.5',
-    'reviewCount': 3,
+    'rating': '0.0',
+    'reviewCount': 0,
   };
 
   @override
@@ -45,11 +47,11 @@ class MockVendorService implements VendorService {
         return Map<String, dynamic>.from(jsonDecode(vendorDataJson));
       }
 
-      // Return default data if nothing stored
-      return Map<String, dynamic>.from(_defaultVendorData);
+      // TODO: Connect to Supabase
+      return {};
     } catch (e) {
-      // Return default data on error
-      return Map<String, dynamic>.from(_defaultVendorData);
+      // TODO: Connect to Supabase
+      return {};
     }
   }
 
@@ -178,32 +180,38 @@ class MockVendorService implements VendorService {
 
   @override
   Future<String> getVendorName() async {
-    return await getVendorField('name') ?? _defaultVendorData['name'];
+    // TODO: Connect to Supabase
+    return await getVendorField('name') ?? '';
   }
 
   @override
   Future<String> getVendorCategory() async {
-    return await getVendorField('category') ?? _defaultVendorData['category'];
+    // TODO: Connect to Supabase
+    return await getVendorField('category') ?? '';
   }
 
   @override
   Future<String> getVendorPhone() async {
-    return await getVendorField('phone') ?? _defaultVendorData['phone'];
+    // TODO: Connect to Supabase
+    return await getVendorField('phone') ?? '';
   }
 
   @override
   Future<String> getVendorAddress() async {
-    return await getVendorField('address') ?? _defaultVendorData['address'];
+    // TODO: Connect to Supabase
+    return await getVendorField('address') ?? '';
   }
 
   @override
   Future<String> getVendorMapsLink() async {
-    return await getVendorField('mapsLink') ?? _defaultVendorData['mapsLink'];
+    // TODO: Connect to Supabase
+    return await getVendorField('mapsLink') ?? '';
   }
 
   @override
   Future<String> getVendorAbout() async {
-    return await getVendorField('about') ?? _defaultVendorData['about'];
+    // TODO: Connect to Supabase
+    return await getVendorField('about') ?? '';
   }
 
   @override
@@ -213,13 +221,15 @@ class MockVendorService implements VendorService {
 
   @override
   Future<String> getVendorRating() async {
-    return await getVendorField('rating') ?? _defaultVendorData['rating'];
+    // TODO: Connect to Supabase
+    return await getVendorField('rating') ?? '0.0';
   }
 
   @override
   Future<int> getVendorReviewCount() async {
+    // TODO: Connect to Supabase
     final count = await getVendorField('reviewCount');
-    return int.tryParse(count ?? '') ?? _defaultVendorData['reviewCount'];
+    return int.tryParse(count ?? '') ?? 0;
   }
 }
 
@@ -245,7 +255,8 @@ class VendorDataService {
   static Future<bool> resetToDefaults() => _instance.resetToDefaults();
   static Future<bool> clearAllData() => _instance.clearAllData();
   static Future<bool> hasVendorData() => _instance.hasVendorData();
-  static String get vendorId => 'vendor_001';
+  // TODO: Connect to Supabase
+  static String get vendorId => '';
 
   // Convenience getters for common fields
   static Future<String> getVendorName() async =>

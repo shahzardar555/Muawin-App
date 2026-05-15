@@ -18,6 +18,8 @@ import 'package:shimmer/shimmer.dart';
 
 import 'package:fluttertoast/fluttertoast.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'dart:convert';
 
 import 'dart:io';
@@ -392,27 +394,28 @@ class _ServiceProviderProfileScreenState
   List<Map<String, String>> _emergencyContacts = <Map<String, String>>[];
 
   // Service details state
+  // TODO: Load from Supabase
+  String _experience = '';
 
-  String _experience = '5 years';
+  String _availability = '';
 
-  String _availability = 'Part-time';
+  String _serviceArea = '';
 
-  String _serviceArea = 'Karachi'; // Default service area
+  String _serviceLocation = '';
 
-  String _serviceLocation = ''; // Google Maps location link - required field
-
-  String _description =
-      'Professional driver with extensive experience in safe and efficient transportation services.';
+  String _description = '';
 
   // Contact information from registration
-  String _email =
-      'provider2@example.com'; // Will be loaded from registration data
-  String _phoneNumber = '03123456780'; // Will be loaded from registration data
+  // TODO: Load from Supabase
+  String _email = '';
+
+  String _phoneNumber = '';
 
   // Additional service details fields
 
   // Provider name management
-  String _providerName = 'Ahmad M.';
+  // TODO: Load from Supabase
+  String _providerName = '';
 
   // Profile image management
   File? _profileImage;
@@ -424,6 +427,7 @@ class _ServiceProviderProfileScreenState
   String? _coverPhotoPath;
 
   bool _isLoading = true;
+  bool _isSaving = false;
 
   // Enhanced CNIC state with interactive elements
   bool _isCNICExpanded = false;
@@ -2958,27 +2962,6 @@ class _ServiceProviderProfileScreenState
     return file;
   }
 
-  // Legacy method for backward compatibility
-  Future<void> _simulateDocumentUpload(int index) async {
-    setState(() {
-      _isUploadingDocument[index] = true;
-    });
-
-    // Simulate upload process (2 seconds)
-    await Future.delayed(const Duration(seconds: 2));
-
-    setState(() {
-      _isUploadingDocument[index] = false;
-    });
-
-    if (mounted) {
-      // Enhanced feedback with toast, haptic, and animation
-      HapticFeedbackUtils.success();
-      FeedbackUtils.showSuccessToast('Document uploaded successfully!',
-          context: context);
-    }
-  }
-
   // Gallery functionality for document upload
   Future<void> _pickDocumentFromGallery(int index) async {
     try {
@@ -3286,7 +3269,7 @@ class _ServiceProviderProfileScreenState
 
     _loadEarningsData(); // Load actual earnings from app usage
 
-    _loadServiceRates(); // ✅ NEW: Load saved service rates
+    _loadExistingPackages(); // Load saved packages from Supabase
 
     // Add listeners to ensure text controllers update when slider values change
     _basicPriceController.addListener(() {
@@ -3305,45 +3288,61 @@ class _ServiceProviderProfileScreenState
     });
   }
 
-  // ✅ NEW: Load saved service rates from persistent storage
-  Future<void> _loadServiceRates() async {
+  // Load existing packages from Supabase
+  Future<void> _loadExistingPackages() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
 
-      setState(() {
-        // Load price data
-        _basicPriceController.text = prefs.getString('basic_price') ?? '500';
-        _standardPriceController.text =
-            prefs.getString('standard_price') ?? '1000';
-        _premiumPriceController.text =
-            prefs.getString('premium_price') ?? '2000';
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-        // Load description data
-        _basicDescriptionController.text =
-            prefs.getString('basic_description') ??
-                'Basic service package with standard features and support';
-        _standardDescriptionController.text = prefs
-                .getString('standard_description') ??
-            'Enhanced service package with additional features and priority support';
-        _premiumDescriptionController.text = prefs
-                .getString('premium_description') ??
-            'Premium service package with all features, priority support, and dedicated assistance';
+      final provider = await supabase
+          .from('providers')
+          .select('id')
+          .eq('profile_id', profile['id'])
+          .single();
 
-        // Load duration data
-        _basicDurationController.text =
-            prefs.getString('basic_duration') ?? '2';
-        _standardDurationController.text =
-            prefs.getString('standard_duration') ?? '4';
-        _premiumDurationController.text =
-            prefs.getString('premium_duration') ?? '6';
+      final packages = await supabase
+          .from('service_pricing_packages')
+          .select('*')
+          .eq('provider_id', provider['id'])
+          .eq('is_active', true)
+          .order('sort_order');
 
-        // ✅ NEW: Update hourly rate with loaded basic price
-        _updateHourlyRate();
-      });
-
-      debugPrint('✅ Service rates loaded successfully');
+      if (mounted && packages.isNotEmpty) {
+        setState(() {
+          for (final pkg in packages) {
+            if (pkg['package_type'] == 'basic') {
+              _basicPriceController.text = pkg['price']?.toString() ?? '500';
+              _basicDescriptionController.text = pkg['description'] ??
+                  'Basic service package with standard features and support';
+              _basicDurationController.text = pkg['duration'] ?? '2';
+            }
+            if (pkg['package_type'] == 'standard') {
+              _standardPriceController.text =
+                  pkg['price']?.toString() ?? '1000';
+              _standardDescriptionController.text = pkg['description'] ??
+                  'Enhanced service package with additional features and priority support';
+              _standardDurationController.text = pkg['duration'] ?? '4';
+            }
+            if (pkg['package_type'] == 'premium') {
+              _premiumPriceController.text = pkg['price']?.toString() ?? '2000';
+              _premiumDescriptionController.text = pkg['description'] ??
+                  'Premium service package with all features, priority support, and dedicated assistance';
+              _premiumDurationController.text = pkg['duration'] ?? '6';
+            }
+          }
+          _updateHourlyRate();
+        });
+        debugPrint('✅ Packages loaded from Supabase successfully');
+      }
     } catch (e) {
-      debugPrint('❌ Error loading service rates: $e');
+      debugPrint('❌ Error loading packages: $e');
     }
   }
 
@@ -3559,22 +3558,23 @@ class _ServiceProviderProfileScreenState
       final prefs = await SharedPreferences.getInstance();
 
       setState(() {
-        _experience = prefs.getString('experience') ?? '3 years';
+        // TODO: Load from Supabase
+        _experience = prefs.getString('experience') ?? '';
 
-        _availability = prefs.getString('availability') ?? 'Full-time';
+        _availability = prefs.getString('availability') ?? '';
 
-        _description = prefs.getString('description') ??
-            'Professional driver with extensive experience in safe and efficient transportation services.';
+        _description = prefs.getString('description') ?? '';
 
         // Load contact information from registration
-        _email = prefs.getString('provider_email') ?? 'provider@example.com';
-        _phoneNumber = prefs.getString('provider_phone') ?? '03123456789';
+        _email = prefs.getString('provider_email') ?? '';
+        _phoneNumber = prefs.getString('provider_phone') ?? '';
 
         // Load service location
         _serviceLocation = prefs.getString('service_location') ?? '';
 
         // Load provider name
-        _providerName = prefs.getString('provider_name') ?? 'Ahmad M.';
+        // TODO: Load from Supabase
+        _providerName = prefs.getString('provider_name') ?? '';
 
         // Load profile image path
         final savedImagePath = prefs.getString('profile_image_path');
@@ -5409,276 +5409,45 @@ class _ServiceProviderProfileScreenState
             _buildDocumentDetail('Expiry Date', _cnicExpiry),
             const SizedBox(height: 12),
 
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // Show CNIC verification dialog
-                      _showCNICVerificationDialog();
-                    },
-                    icon: const Icon(Icons.verified_user, size: 16),
-                    label: Text(
-                      'Verify CNIC',
-                      style: GoogleFonts.poppins(fontSize: 12),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: _isCNICVerified ? Colors.green : Colors.orange,
-                      ),
-                      foregroundColor:
-                          _isCNICVerified ? Colors.green : Colors.orange,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // Upload CNIC document
-                      _showUploadCNICDialog();
-                    },
-                    icon: const Icon(Icons.upload, size: 16),
-                    label: Text(
-                      'Upload CNIC',
-                      style: GoogleFonts.poppins(fontSize: 12),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.blue),
-                      foregroundColor: Colors.blue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // CNIC Verification Dialog
-  void _showCNICVerificationDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            Icon(
-              Icons.verified_user,
-              color: _isCNICVerified ? Colors.green : Colors.orange,
-              size: 28,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              _isCNICVerified ? 'CNIC Verified' : 'Verify CNIC',
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 16),
-            _buildDocumentDetail('CNIC Number', _cnicNumber),
-            const SizedBox(height: 8),
-            _buildDocumentDetail('Status', _cnicStatus),
-            const SizedBox(height: 8),
-            _buildDocumentDetail('Expiry Date', _cnicExpiry),
-            const SizedBox(height: 16),
-            if (!_isCNICVerified)
-              Text(
-                'Your CNIC verification is pending. Please upload your CNIC document for verification.',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.orange[700],
-                ),
-              )
-            else
-              Text(
-                'Your CNIC has been successfully verified. You can now access all features.',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.green[700],
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Close',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
-            ),
-          ),
-          if (!_isCNICVerified)
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _showUploadCNICDialog();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                'Upload CNIC',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // Upload CNIC Dialog
-  void _showUploadCNICDialog() {
-    Navigator.of(context).pop(); // Close current dialog
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            const Icon(
-              Icons.upload,
-              color: Colors.blue,
-              size: 28,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Upload CNIC Document',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            Text(
-              'Please upload a clear photo of your CNIC (Front and Back)',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      HapticFeedbackUtils.lightImpact();
-                      Navigator.of(context).pop();
-                      _simulateDocumentUpload(0); // Simulate CNIC upload
-                    },
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take Photo'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      HapticFeedbackUtils.lightImpact();
-                      Navigator.of(context).pop();
-                      _simulateDocumentUpload(0); // Simulate CNIC upload
-                    },
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Choose from Gallery'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[600],
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+            // Verification Status Message
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[200]!),
+                color: _isCNICVerified
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _isCNICVerified ? Colors.green : Colors.orange,
+                  width: 1,
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    'Requirements:',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
+                  Icon(
+                    _isCNICVerified ? Icons.check_circle : Icons.info_outline,
+                    size: 20,
+                    color: _isCNICVerified ? Colors.green : Colors.orange,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '• Clear and readable text\n• No glare or shadows\n• Both front and back sides\n• Valid and not expired',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _isCNICVerified
+                          ? 'Your CNIC has been verified by Muawin'
+                          : 'Your CNIC verification is pending review by Muawin admin',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: _isCNICVerified
+                            ? Colors.green[800]
+                            : Colors.orange[800],
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -6998,155 +6767,157 @@ class _ServiceProviderProfileScreenState
           ),
           content: SizedBox(
             width: _dialogWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Available Balance: Rs. $_pendingPayouts',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green[700],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Withdrawal Amount (Rs)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Available Balance: Rs. $_pendingPayouts',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green[700],
                     ),
-                    prefixIcon: Container(
-                      width: 20,
-                      height: 20,
-                      alignment: Alignment.center,
-                      child: Text(
-                        '₨',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[600],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Withdrawal Amount (Rs)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '₨',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ),
                     ),
+                    keyboardType: TextInputType.number,
                   ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedWithdrawalMethod,
-                      isExpanded: true,
-                      hint: Text(
-                        'Select withdrawal method',
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedWithdrawalMethod,
+                        isExpanded: true,
+                        hint: Text(
+                          'Select withdrawal method',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Bank Account',
+                            child: Row(
+                              children: [
+                                Icon(Icons.account_balance,
+                                    color: Colors.blue, size: 20),
+                                SizedBox(width: 12),
+                                Text('Bank Account'),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Jazzcash',
+                            child: Row(
+                              children: [
+                                Icon(Icons.account_balance_wallet,
+                                    color: Colors.green, size: 20),
+                                SizedBox(width: 12),
+                                Text('Jazzcash'),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Easypaisa',
+                            child: Row(
+                              children: [
+                                Icon(Icons.phone_android,
+                                    color: Colors.orange, size: 20),
+                                SizedBox(width: 12),
+                                Text('Easypaisa'),
+                              ],
+                            ),
+                          ),
+                        ],
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            setState(() {
+                              _selectedWithdrawalMethod = value;
+                            });
+                          }
+                        },
                         style: GoogleFonts.poppins(
                           fontSize: 16,
-                          color: Colors.grey[600],
+                          color: Colors.black87,
                         ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        borderRadius: BorderRadius.circular(12),
+                        dropdownColor: Colors.white,
+                        icon: const Icon(Icons.arrow_drop_down,
+                            color: Colors.grey),
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Bank Account',
-                          child: Row(
-                            children: [
-                              Icon(Icons.account_balance,
-                                  color: Colors.blue, size: 20),
-                              SizedBox(width: 12),
-                              Text('Bank Account'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Jazzcash',
-                          child: Row(
-                            children: [
-                              Icon(Icons.account_balance_wallet,
-                                  color: Colors.green, size: 20),
-                              SizedBox(width: 12),
-                              Text('Jazzcash'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Easypaisa',
-                          child: Row(
-                            children: [
-                              Icon(Icons.phone_android,
-                                  color: Colors.orange, size: 20),
-                              SizedBox(width: 12),
-                              Text('Easypaisa'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setState(() {
-                            _selectedWithdrawalMethod = value;
-                          });
-                        }
-                      },
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Account Holder Name',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      borderRadius: BorderRadius.circular(12),
-                      dropdownColor: Colors.white,
-                      icon:
-                          const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                      prefixIcon: const Icon(Icons.person),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Account Holder Name',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    prefixIcon: const Icon(Icons.person),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Account Number',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    prefixIcon: Icon(
-                      _selectedWithdrawalMethod == 'Bank Account'
-                          ? Icons.account_balance
-                          : _selectedWithdrawalMethod == 'Jazzcash'
-                              ? Icons.account_balance_wallet
-                              : Icons.phone_android,
-                      color: _selectedWithdrawalMethod == 'Bank Account'
-                          ? Colors.blue
-                          : _selectedWithdrawalMethod == 'Jazzcash'
-                              ? Colors.green
-                              : Colors.orange,
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Account Number',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: Icon(
+                        _selectedWithdrawalMethod == 'Bank Account'
+                            ? Icons.account_balance
+                            : _selectedWithdrawalMethod == 'Jazzcash'
+                                ? Icons.account_balance_wallet
+                                : Icons.phone_android,
+                        color: _selectedWithdrawalMethod == 'Bank Account'
+                            ? Colors.blue
+                            : _selectedWithdrawalMethod == 'Jazzcash'
+                                ? Colors.green
+                                : Colors.orange,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Notes (Optional)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Notes (Optional)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: const Icon(Icons.note),
                     ),
-                    prefixIcon: const Icon(Icons.note),
+                    maxLines: 2,
                   ),
-                  maxLines: 2,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -8616,23 +8387,24 @@ class _ServiceProviderProfileScreenState
                                     ),
                                   ),
 
-                                  // Save Rates Button
+                                  // Save Packages Button
                                   ElevatedButton(
-                                    onPressed: _hasErrors
+                                    onPressed: (_hasErrors || _isSaving)
                                         ? null
                                         : () {
                                             _saveRates();
                                           },
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: _hasErrors
+                                      backgroundColor: (_hasErrors || _isSaving)
                                           ? Colors.grey.shade300
                                           : Theme.of(context)
                                               .colorScheme
                                               .primary,
-                                      foregroundColor: _hasErrors
+                                      foregroundColor: (_hasErrors || _isSaving)
                                           ? Colors.grey.shade600
                                           : Colors.white,
-                                      elevation: _hasErrors ? 0 : 2,
+                                      elevation:
+                                          (_hasErrors || _isSaving) ? 0 : 2,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(8),
                                       ),
@@ -8641,13 +8413,22 @@ class _ServiceProviderProfileScreenState
                                         vertical: _isMobile ? 10 : 12,
                                       ),
                                     ),
-                                    child: Text(
-                                      'Save Rates',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : Text(
+                                            'Save Packages',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
                                   ),
                                 ],
                               ),
@@ -8759,8 +8540,8 @@ class _ServiceProviderProfileScreenState
     }
 
     try {
-      // Call existing save logic
-      await _saveServiceRates();
+      // Save to Supabase
+      await _savePackages();
 
       // Sync hourly rate with basic price after save
       _updateHourlyRate();
@@ -8913,55 +8694,85 @@ class _ServiceProviderProfileScreenState
     return null;
   }
 
-  // Save service rates to persistent storage
-  Future<void> _saveServiceRates() async {
+  // Save packages to Supabase
+  Future<void> _savePackages() async {
+    if (!mounted) return;
+    setState(() => _isSaving = true);
+
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
 
-      // Save all price data
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-      await prefs.setString('basic_price', _basicPriceController.text);
+      final provider = await supabase
+          .from('providers')
+          .select('id')
+          .eq('profile_id', profile['id'])
+          .single();
 
-      await prefs.setString('standard_price', _standardPriceController.text);
+      final providerId = provider['id'] as String;
 
-      await prefs.setString('premium_price', _premiumPriceController.text);
+      // Delete existing packages first
+      await supabase
+          .from('service_pricing_packages')
+          .delete()
+          .eq('provider_id', providerId);
 
-      // Save all description data
+      // Build packages list to insert
+      final packages = [
+        {
+          'provider_id': providerId,
+          'package_type': 'basic',
+          'price': double.tryParse(_basicPriceController.text) ?? 0,
+          'description': _basicDescriptionController.text.trim(),
+          'duration': _basicDurationController.text.trim(),
+          'is_active': true,
+          'sort_order': 1,
+          'currency': 'PKR',
+        },
+        {
+          'provider_id': providerId,
+          'package_type': 'standard',
+          'price': double.tryParse(_standardPriceController.text) ?? 0,
+          'description': _standardDescriptionController.text.trim(),
+          'duration': _standardDurationController.text.trim(),
+          'is_active': true,
+          'sort_order': 2,
+          'currency': 'PKR',
+        },
+        {
+          'provider_id': providerId,
+          'package_type': 'premium',
+          'price': double.tryParse(_premiumPriceController.text) ?? 0,
+          'description': _premiumDescriptionController.text.trim(),
+          'duration': _premiumDurationController.text.trim(),
+          'is_active': true,
+          'sort_order': 3,
+          'currency': 'PKR',
+        },
+      ];
 
-      await prefs.setString(
-          'basic_description', _basicDescriptionController.text);
-
-      await prefs.setString(
-          'standard_description', _standardDescriptionController.text);
-
-      await prefs.setString(
-          'premium_description', _premiumDescriptionController.text);
-
-      // Save all duration data
-
-      await prefs.setString('basic_duration', _basicDurationController.text);
-
-      await prefs.setString(
-          'standard_duration', _standardDurationController.text);
-
-      await prefs.setString(
-          'premium_duration', _premiumDurationController.text);
-
-      // Show success message
+      // Insert all packages to Supabase
+      await supabase.from('service_pricing_packages').insert(packages);
 
       if (mounted) {
-        // Enhanced feedback with toast, haptic, and animation
+        setState(() => _isSaving = false);
         HapticFeedbackUtils.success();
-        FeedbackUtils.showSuccessToast('Service rates saved successfully!',
+        FeedbackUtils.showSuccessToast('Packages saved successfully!',
             context: context);
       }
     } catch (e) {
-      debugPrint('Error saving service rates: $e');
-
+      debugPrint('Save packages error: $e');
       if (mounted) {
-        // Enhanced error feedback with haptic and toast
+        setState(() => _isSaving = false);
         HapticFeedbackUtils.error();
-        FeedbackUtils.showErrorToast('Error saving rates: ${e.toString()}',
+        FeedbackUtils.showErrorToast('Failed to save packages: $e',
             context: context);
       }
     }

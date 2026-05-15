@@ -1,40 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-
 import 'dart:ui';
-
 import 'package:google_fonts/google_fonts.dart';
-
 import 'package:url_launcher/url_launcher.dart';
-
+import 'dart:convert';
 import 'dart:io';
-
 import 'customer_home_screen.dart';
-
 import 'customer_jobs_screen.dart';
-
 import 'post_job_step1_screen.dart';
-
 import 'customer_messages_screen.dart';
-
 import 'customer_profile_screen.dart';
-
 import 'widgets/bottom_navigation_bar.dart';
-
 import 'widgets/semantic_analysis_card.dart';
-
 import 'chat_screen.dart';
-
 import 'direct_request.dart';
-
-import 'services/provider_data_service.dart';
-
 import 'services/pro_status_checker.dart';
+import 'services/database_service.dart';
 
 class CustomerProviderProfileScreen extends StatefulWidget {
-  const CustomerProviderProfileScreen({super.key, required this.provider});
+  const CustomerProviderProfileScreen({super.key, required this.providerId});
 
-  final Map<String, dynamic> provider;
+  final String providerId;
 
   @override
   State<CustomerProviderProfileScreen> createState() =>
@@ -49,8 +35,16 @@ class _CustomerProviderProfileScreenState
   // Track selected package tab for pricing
   String _selectedPackageTab = 'Basic';
 
+  // Provider data from database
+  Map<String, dynamic>? _provider;
+  List<Map<String, dynamic>> _reviews = [];
+  bool _isLoading = true;
+
   // Provider data loaded from service
   Map<String, dynamic>? _providerData;
+
+  // Pricing packages from Supabase
+  List<Map<String, dynamic>> _packages = [];
 
   // PRO status
   bool _isProUser = false;
@@ -58,12 +52,42 @@ class _CustomerProviderProfileScreenState
   @override
   void initState() {
     super.initState();
-    // Check if request is already accepted from provider data
-    _isRequestAccepted = widget.provider['requestAccepted'] == true;
-    // Load real provider data
     _loadProviderData();
-    // Check PRO status
     _checkProStatus();
+  }
+
+  // Load provider data from database
+  Future<void> _loadProviderData() async {
+    try {
+      final results = await Future.wait([
+        DatabaseService().getProviderById(widget.providerId),
+        DatabaseService().getProviderReviews(widget.providerId),
+        DatabaseService().getProviderPricingPackages(widget.providerId),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _provider = results[0] as Map<String, dynamic>?;
+          _reviews = results[1] as List<Map<String, dynamic>>;
+          _packages = results[2] as List<Map<String, dynamic>>;
+          _isLoading = false;
+          // Check if request is already accepted from provider data
+          _isRequestAccepted =
+              (results[0] as Map<String, dynamic>?)?['isRequestAccepted'] ??
+                  false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading provider data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _provider = null;
+          _reviews = [];
+          _packages = [];
+        });
+      }
+    }
   }
 
   // Check if user is a PRO user
@@ -76,22 +100,33 @@ class _CustomerProviderProfileScreenState
     }
   }
 
-  // Load real provider data instead of using mock data
-  Future<void> _loadProviderData() async {
+  // Format date for reviews
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'RECENTLY';
+
     try {
-      final data = await ProviderDataService.getProviderData(
-          widget.provider['id'] ?? 'provider_001');
-      if (mounted) {
-        setState(() {
-          _providerData = data;
-        });
+      final date = DateTime.parse(dateString);
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inDays == 0) {
+        return 'TODAY';
+      } else if (difference.inDays == 1) {
+        return 'YESTERDAY';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays} DAYS AGO';
+      } else if (difference.inDays < 30) {
+        final weeks = (difference.inDays / 7).floor();
+        return weeks == 1 ? '1 WEEK AGO' : '$weeks WEEKS AGO';
+      } else if (difference.inDays < 365) {
+        final months = (difference.inDays / 30).floor();
+        return months == 1 ? '1 MONTH AGO' : '$months MONTHS AGO';
+      } else {
+        final years = (difference.inDays / 365).floor();
+        return years == 1 ? '1 YEAR AGO' : '$years YEARS AGO';
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _providerData = null;
-        });
-      }
+      return 'RECENTLY';
     }
   }
 
@@ -99,8 +134,7 @@ class _CustomerProviderProfileScreenState
   Future<void> _sendDirectRequest() async {
     try {
       // Check if user can send direct request based on PRO status and provider rating
-      final providerRating =
-          (widget.provider['rating'] as num?)?.toDouble() ?? 0.0;
+      final providerRating = (_provider?['rating'] as num?)?.toDouble() ?? 0.0;
 
       // Basic users cannot send requests to providers with 4.8+ rating
       if (!_isProUser && providerRating >= 4.8) {
@@ -112,13 +146,13 @@ class _CustomerProviderProfileScreenState
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => DirectRequestScreen(
-            providerData: widget.provider,
+            providerData: _provider ?? {},
           ),
         ),
       );
 
       debugPrint(
-          'Navigating to Direct Request for provider ${widget.provider['name']}');
+          'Navigating to Direct Request for provider ${_provider?['profiles']?['full_name']}');
     } catch (e) {
       // Show error message
       if (mounted) {
@@ -223,6 +257,14 @@ class _CustomerProviderProfileScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Show loading shimmer while loading provider data
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF0FDF4),
+        body: _buildLoadingShimmer(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF0FDF4), // Mint-tinted off-white
       body: SingleChildScrollView(
@@ -339,8 +381,9 @@ class _CustomerProviderProfileScreenState
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          widget.provider['name'] as String? ??
-                                              'Ahmed Hassan',
+                                          _provider?['profiles']?['full_name']
+                                                  as String? ??
+                                              'Provider',
                                           style: GoogleFonts.poppins(
                                             fontSize: 24, // 1.5rem
                                             fontWeight: FontWeight.w700,
@@ -362,8 +405,8 @@ class _CustomerProviderProfileScreenState
                                   const SizedBox(height: 4),
                                   // Category
                                   Text(
-                                    widget.provider['category'] as String? ??
-                                        'DRIVER',
+                                    _provider?['service_category'] as String? ??
+                                        'Service',
                                     style: GoogleFonts.inter(
                                       fontSize: 14, // 0.875rem
                                       fontWeight: FontWeight.bold,
@@ -570,11 +613,13 @@ class _CustomerProviderProfileScreenState
                                       MaterialPageRoute(
                                         builder: (_) => ChatScreen(
                                           chatData: {
-                                            'name': widget.provider['name']
+                                            'name': _provider?['profiles']
+                                                        ?['full_name']
                                                     ?.toString() ??
                                                 'Provider',
                                             'isOnline': true,
-                                            'avatar': widget.provider['avatar']
+                                            'avatar': _provider?['profiles']
+                                                        ?['profile_image_url']
                                                     ?.toString() ??
                                                 '',
                                             'type': 'provider',
@@ -608,8 +653,7 @@ class _CustomerProviderProfileScreenState
                                   onPressed: () {
                                     // Launch phone call
                                     final phone =
-                                        widget.provider['phone']?.toString() ??
-                                            '';
+                                        _provider?['phone']?.toString() ?? '';
                                     if (phone.isNotEmpty) {
                                       launchUrl(Uri.parse('tel:$phone'));
                                     }
@@ -668,9 +712,8 @@ class _CustomerProviderProfileScreenState
                                           ),
                                         ),
                                         Text(
-                                          _providerData?['experience'] ??
-                                              widget.provider['experience']
-                                                  as String? ??
+                                          _provider?['experience']
+                                                  ?.toString() ??
                                               '3 Years',
                                           style: GoogleFonts.poppins(
                                             fontSize: 12,
@@ -714,9 +757,8 @@ class _CustomerProviderProfileScreenState
                                             ),
                                           ),
                                           Text(
-                                            widget.provider['distance']
-                                                    as String? ??
-                                                'Gulberg III, Lahore',
+                                            _provider?['city']?.toString() ??
+                                                'City',
                                             style: GoogleFonts.poppins(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
@@ -750,9 +792,7 @@ class _CustomerProviderProfileScreenState
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          (widget.provider['rating'] as num?)
-                                  ?.toStringAsFixed(1) ??
-                              '4.9',
+                          _provider?['rating']?.toString() ?? '0.0',
                           style: GoogleFonts.poppins(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -767,7 +807,7 @@ class _CustomerProviderProfileScreenState
                         ),
                         const SizedBox(width: 12),
                         Text(
-                          '124 Reviews',
+                          '${_provider?['review_count'] as int? ?? _reviews.length} Reviews',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -783,15 +823,14 @@ class _CustomerProviderProfileScreenState
                   if (_isProUser)
                     SemanticAnalysisCard(
                       providerName:
-                          widget.provider['name'] as String? ?? 'Ahmed Khan',
+                          _provider?['profiles']?['full_name'] as String? ??
+                              'Provider',
                       overallRating:
-                          (widget.provider['rating'] as num?)?.toDouble() ??
-                              4.8,
-                      totalReviews:
-                          widget.provider['totalReviews'] as int? ?? 47,
-                      totalJobs: widget.provider['totalJobs'] as int? ?? 52,
-                      category:
-                          widget.provider['category'] as String? ?? 'Driver',
+                          (_provider?['rating'] as num?)?.toDouble() ?? 0.0,
+                      totalReviews: _provider?['review_count'] as int? ?? 0,
+                      totalJobs: _provider?['job_count'] as int? ?? 0,
+                      category: _provider?['service_category'] as String? ??
+                          'Service',
                       recentReviews: const [
                         'Very professional and punctual',
                         'Excellent service highly recommend',
@@ -816,11 +855,10 @@ class _CustomerProviderProfileScreenState
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    _providerData?['description'] ??
-                        widget.provider['about'] as String? ??
-                        'Professional ${widget.provider['category'] as String? ?? 'service provider'} with ${_providerData?['experience'] ?? widget.provider['experience'] as String? ?? '3+ years'} of experience. '
+                    _provider?['description']?.toString() ??
+                        'Professional service provider with experience. '
                             'Passionate about delivering exceptional service and ensuring customer satisfaction. '
-                            'Available for both residential and commercial ${widget.provider['category'] as String? ?? 'services'} with flexible scheduling. '
+                            'Available for both residential and commercial services with flexible scheduling. '
                             'Trustworthy, reliable, and committed to excellence in every job.',
                     style: GoogleFonts.inter(
                       fontSize: 14, // 0.875rem
@@ -851,30 +889,47 @@ class _CustomerProviderProfileScreenState
                   ),
                   const SizedBox(height: 16),
 
-                  // Sample customer reviews after job completion
-                  _buildReviewCard(
-                    username: 'Ahmed R.',
-                    rating: 5,
-                    date: '2 DAYS AGO',
-                    review:
-                        'Excellent service! Very professional and completed the job on time. Highly recommended!',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildReviewCard(
-                    username: 'Fatima K.',
-                    rating: 5,
-                    date: '1 WEEK AGO',
-                    review:
-                        'Great communication throughout the project. Delivered exactly what was promised.',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildReviewCard(
-                    username: 'Muhammad A.',
-                    rating: 4,
-                    date: '2 WEEKS AGO',
-                    review:
-                        'Good work overall. Minor delays but satisfactory result.',
-                  ),
+                  // Customer reviews from database
+                  ..._reviews.map((review) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildReviewCard(
+                          username:
+                              review['profiles']?['full_name']?.toString() ??
+                                  'Customer',
+                          rating: review['rating'] as int? ?? 5,
+                          date: _formatDate(review['created_at'] as String?),
+                          review: review['review_text']?.toString() ??
+                              'Great service!',
+                        ),
+                      )),
+
+                  // Show empty state if no reviews
+                  if (_reviews.isEmpty)
+                    Column(
+                      children: [
+                        Icon(
+                          Icons.reviews_outlined,
+                          size: 48,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No reviews yet',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Be the first to review this provider',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
 
                   // Bottom Padding to clear navigation bar
                   const SizedBox(height: 96), // Reduced from 128 to 96
@@ -1062,7 +1117,62 @@ class _CustomerProviderProfileScreenState
 
   // Build package content based on selected tab
   Widget _buildPackageContent() {
-    final packageData = _getPackageData(_selectedPackageTab);
+    // Handle case when provider has not set packages yet
+    if (_packages.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Text(
+            'This provider has not set their packages yet',
+            style: GoogleFonts.poppins(
+              color: Colors.grey,
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    // Get each package type
+    final basicPkg =
+        _packages.where((p) => p['package_type'] == 'basic').firstOrNull;
+
+    final standardPkg =
+        _packages.where((p) => p['package_type'] == 'standard').firstOrNull;
+
+    final premiumPkg =
+        _packages.where((p) => p['package_type'] == 'premium').firstOrNull;
+
+    // Get current package based on selected tab
+    Map<String, dynamic>? currentPackage;
+    switch (_selectedPackageTab.toLowerCase()) {
+      case 'basic':
+        currentPackage = basicPkg;
+        break;
+      case 'standard':
+        currentPackage = standardPkg;
+        break;
+      case 'premium':
+        currentPackage = premiumPkg;
+        break;
+    }
+
+    if (currentPackage == null) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Text(
+            'No $_selectedPackageTab package available',
+            style: GoogleFonts.poppins(
+              color: Colors.grey,
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1072,7 +1182,7 @@ class _CustomerProviderProfileScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _selectedPackageTab,
+              currentPackage['package_name'] ?? _selectedPackageTab,
               style: GoogleFonts.poppins(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1082,34 +1192,32 @@ class _CustomerProviderProfileScreenState
             const SizedBox(height: 16),
 
             // Description Items
-            ...packageData['description']
-                .map<Widget>((item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            margin: const EdgeInsets.only(top: 2, right: 12),
-                            child: const Icon(
-                              Icons.check_circle,
-                              color: Color(0xFF047A62),
-                              size: 18,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              item,
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: Colors.grey[700],
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
+            ...getIncludes(currentPackage).map<Widget>((item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(top: 2, right: 12),
+                        child: const Icon(
+                          Icons.check_circle,
+                          color: Color(0xFF047A62),
+                          size: 16,
+                        ),
                       ),
-                    ))
-                .toList(),
+                      Expanded(
+                        child: Text(
+                          item,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
 
             const SizedBox(height: 16),
 
@@ -1130,7 +1238,7 @@ class _CustomerProviderProfileScreenState
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    packageData['duration'],
+                    currentPackage['duration'] ?? '',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -1145,7 +1253,7 @@ class _CustomerProviderProfileScreenState
 
             // Price (moved below duration)
             Text(
-              packageData['price'],
+              'Rs. ${currentPackage['price'] ?? 0}',
               style: GoogleFonts.poppins(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -1158,412 +1266,22 @@ class _CustomerProviderProfileScreenState
     );
   }
 
-  // Get package data based on provider category and selected tab
-  Map<String, dynamic> _getPackageData(String packageType) {
-    final category = widget.provider['category'] as String? ?? 'DRIVER';
-
-    // Default package data structure - can be enhanced based on actual provider data
-    switch (category) {
-      case 'MAID':
-        return _getMaidPackageData(packageType);
-      case 'DRIVER':
-        return _getDriverPackageData(packageType);
-      case 'GARDENER':
-        return _getGardenerPackageData(packageType);
-      case 'COOK':
-        return _getCookPackageData(packageType);
-      case 'DOMESTIC HELPER':
-        return _getDomesticHelperPackageData(packageType);
-      case 'SECURITY GUARD':
-        return _getSecurityGuardPackageData(packageType);
-      case 'BABYSITTER':
-        return _getBabysitterPackageData(packageType);
-      case 'WASHERMAN':
-        return _getWashermanPackageData(packageType);
-      case 'TUTOR':
-        return _getTutorPackageData(packageType);
-      default:
-        return _getDefaultPackageData(packageType);
+  // Helper function to parse includes field
+  List<String> getIncludes(Map<String, dynamic>? pkg) {
+    if (pkg == null) return [];
+    final includes = pkg['includes'];
+    if (includes == null) return [];
+    if (includes is List) {
+      return List<String>.from(includes);
     }
-  }
-
-  // Package data methods for different categories
-  Map<String, dynamic> _getMaidPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 800',
-          'description': [
-            'Sweep, mop, and dust all rooms',
-            'Clean kitchen surfaces',
-            'Basic bathroom cleaning'
-          ],
-          'duration': '2-3 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 1,200',
-          'description': [
-            'Basic cleaning + deep kitchen cleaning',
-            'Bathroom sanitization',
-            'Window cleaning'
-          ],
-          'duration': '4-5 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 2,000',
-          'description': [
-            'Complete deep cleaning',
-            'Cupboard organization',
-            'Post-construction cleanup'
-          ],
-          'duration': '6-8 hours'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
+    if (includes is String) {
+      try {
+        return List<String>.from(jsonDecode(includes));
+      } catch (e) {
+        return [includes];
+      }
     }
-  }
-
-  Map<String, dynamic> _getDriverPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 400',
-          'description': [
-            '1-2 hours of driving service',
-            'Local trips within city',
-            'Vehicle provided by family'
-          ],
-          'duration': '1-2 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 1,000',
-          'description': [
-            'Half day driving service',
-            'Multiple destinations',
-            'Flexible scheduling'
-          ],
-          'duration': '4-6 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 2,500',
-          'description': [
-            'Full day dedicated service',
-            'Out-of-city trips available',
-            'Priority booking'
-          ],
-          'duration': '8-12 hours'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getGardenerPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 600',
-          'description': [
-            'Lawn mowing and edging',
-            'Basic weed control',
-            'Plant watering'
-          ],
-          'duration': '2-3 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 1,000',
-          'description': [
-            'Complete lawn care',
-            'Hedge trimming and pruning',
-            'Seasonal planting'
-          ],
-          'duration': '4-5 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 3,000',
-          'description': [
-            'Full garden makeover',
-            'Landscape design consultation',
-            'Fertilization program'
-          ],
-          'duration': 'Full day'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getCookPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 600',
-          'description': [
-            'Single meal preparation',
-            'Kitchen cleanup included',
-            'Ingredients shopping'
-          ],
-          'duration': '2-3 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 2,500',
-          'description': [
-            'Full day meal prep',
-            'Multiple cuisines',
-            'Special dietary requirements'
-          ],
-          'duration': '6-8 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 7,000',
-          'description': [
-            'Event catering service',
-            'Custom menu planning',
-            'Wait staff coordination'
-          ],
-          'duration': 'Full event'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getDomesticHelperPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 1,300',
-          'description': [
-            'General household assistance',
-            'Basic cleaning tasks',
-            'Grocery shopping'
-          ],
-          'duration': '3-4 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 2,000',
-          'description': [
-            'Complete home management',
-            'Child care assistance',
-            'Elder care support'
-          ],
-          'duration': '6-8 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 3,500',
-          'description': [
-            '24/7 availability',
-            'Event management',
-            'Moving assistance'
-          ],
-          'duration': 'As needed'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getSecurityGuardPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 3,000',
-          'description': [
-            'Day shift security',
-            'Access control',
-            'Regular patrols'
-          ],
-          'duration': '8-10 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 4,000',
-          'description': [
-            'Night shift surveillance',
-            'Emergency response',
-            'Security reporting'
-          ],
-          'duration': '8-10 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 10,000',
-          'description': [
-            '24/7 protection',
-            'Advanced security systems',
-            'Risk assessment'
-          ],
-          'duration': '24 hours'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getBabysitterPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 1,200',
-          'description': [
-            'Regular childcare',
-            'Age-appropriate activities',
-            'Light meal prep'
-          ],
-          'duration': '2-4 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 2,000',
-          'description': [
-            'Extended childcare',
-            'Educational activities',
-            'Homework assistance'
-          ],
-          'duration': '6-8 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 3,500',
-          'description': [
-            'Full day care',
-            'Overnight options',
-            'Special needs experience'
-          ],
-          'duration': 'Full day'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getWashermanPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 700',
-          'description': [
-            '10-20 items bundle wash',
-            'Regular washing and drying',
-            'Folding service'
-          ],
-          'duration': 'Same day'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 1,500',
-          'description': [
-            '20-40 items bundle wash',
-            'Stain treatment',
-            'Ironing included'
-          ],
-          'duration': '1-2 days'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 3,000',
-          'description': [
-            '50+ items bulk wash',
-            'Premium fabric care',
-            'Express delivery'
-          ],
-          'duration': 'Same day express'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getTutorPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 1,500',
-          'description': [
-            'Nursery to Intermediate level',
-            '1 hour personalized session',
-            'Study materials provided'
-          ],
-          'duration': '1 hour'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 4,000',
-          'description': [
-            'O/A levels preparation',
-            'Advanced teaching methods',
-            'Progress tracking'
-          ],
-          'duration': '1 hour'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 8,500',
-          'description': [
-            'University level tutoring',
-            'Specialized subjects',
-            'Exam preparation'
-          ],
-          'duration': '1 hour'
-        };
-      default:
-        return _getDefaultPackageData(packageType);
-    }
-  }
-
-  Map<String, dynamic> _getDefaultPackageData(String packageType) {
-    switch (packageType) {
-      case 'Basic':
-        return {
-          'price': 'Rs. 800',
-          'description': [
-            'Basic service features',
-            'Standard support',
-            'Regular availability'
-          ],
-          'duration': '2-3 hours'
-        };
-      case 'Standard':
-        return {
-          'price': 'Rs. 1,500',
-          'description': [
-            'Enhanced service features',
-            'Priority support',
-            'Flexible scheduling'
-          ],
-          'duration': '4-5 hours'
-        };
-      case 'Premium':
-        return {
-          'price': 'Rs. 3,000',
-          'description': [
-            'Premium service features',
-            'Dedicated support',
-            'Customized solutions'
-          ],
-          'duration': 'Full day'
-        };
-      default:
-        return {
-          'price': 'Rs. 800',
-          'description': [
-            'Service features',
-            'Customer support',
-            'Quality assurance'
-          ],
-          'duration': '2-3 hours'
-        };
-    }
+    return [];
   }
 
   Widget _buildReviewCard({
@@ -1767,16 +1485,135 @@ class _CustomerProviderProfileScreenState
     );
   }
 
+  // Build loading shimmer for provider profile
+  Widget _buildLoadingShimmer() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Header shimmer
+          Container(
+            height: 200,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+            ),
+          ),
+          // Profile info shimmer
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                // Name shimmer
+                Container(
+                  width: double.infinity,
+                  height: 24,
+                  color: Colors.grey[300],
+                  margin: const EdgeInsets.only(bottom: 8),
+                ),
+                // Category shimmer
+                Container(
+                  width: 100,
+                  height: 16,
+                  color: Colors.grey[300],
+                  margin: const EdgeInsets.only(bottom: 16),
+                ),
+                // Stats shimmer
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 60,
+                        color: Colors.grey[300],
+                        margin: const EdgeInsets.only(right: 8),
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        height: 60,
+                        color: Colors.grey[300],
+                        margin: const EdgeInsets.only(left: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // About section shimmer
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 80,
+                  height: 18,
+                  color: Colors.grey[300],
+                  margin: const EdgeInsets.only(bottom: 12),
+                ),
+                Container(
+                  width: double.infinity,
+                  height: 14,
+                  color: Colors.grey[300],
+                  margin: const EdgeInsets.only(bottom: 4),
+                ),
+                Container(
+                  width: double.infinity,
+                  height: 14,
+                  color: Colors.grey[300],
+                  margin: const EdgeInsets.only(bottom: 4),
+                ),
+                Container(
+                  width: double.infinity,
+                  height: 14,
+                  color: Colors.grey[300],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Build profile photo for circular container
   Widget _buildProfilePhoto() {
-    final profileImagePath = _providerData?['profile_image_path'] as String?;
-    final profilePhotoUrl = _providerData?['profile_photo_url'] as String?;
-    final avatar = widget.provider['avatar'] as String?;
+    final profileImagePath =
+        _provider?['profiles']?['profile_image_path'] as String?;
+    final profilePhotoUrl =
+        _provider?['profiles']?['profile_photo_url'] as String?;
+    final avatar = _provider?['profiles']?['profile_image_url'] as String?;
 
     const isWeb = kIsWeb;
 
-    // Try to load profile photo
-    if (profileImagePath != null && !isWeb) {
+    // Try to load profile photo with better error handling
+    if (profilePhotoUrl != null &&
+        profilePhotoUrl.isNotEmpty &&
+        !profilePhotoUrl.contains('placeholder.com')) {
+      return Image.network(
+        profilePhotoUrl,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return _buildDefaultProfilePhoto();
+        },
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('Profile image load error: $error');
+          return _buildDefaultProfilePhoto();
+        },
+      );
+    } else if (profileImagePath != null && !isWeb) {
       try {
         if (File(profileImagePath).existsSync()) {
           return Image.file(
@@ -1785,34 +1622,31 @@ class _CustomerProviderProfileScreenState
             height: 56,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
+              debugPrint('Profile file load error: $error');
               return _buildDefaultProfilePhoto();
             },
           );
         }
       } catch (e) {
+        debugPrint('Profile file access error: $e');
         return _buildDefaultProfilePhoto();
       }
     }
 
-    if (profilePhotoUrl != null && profilePhotoUrl.isNotEmpty) {
-      return Image.network(
-        profilePhotoUrl,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildDefaultProfilePhoto();
-        },
-      );
-    }
-
-    if (avatar != null && avatar.isNotEmpty) {
+    if (avatar != null &&
+        avatar.isNotEmpty &&
+        !avatar.contains('placeholder.com')) {
       return Image.network(
         avatar,
         width: 56,
         height: 56,
         fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return _buildDefaultProfilePhoto();
+        },
         errorBuilder: (context, error, stackTrace) {
+          debugPrint('Avatar image load error: $error');
           return _buildDefaultProfilePhoto();
         },
       );
@@ -1993,7 +1827,7 @@ class JobRequestScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              'Provider: ${providerData['name']}',
+              'Provider: ${providerData['name'] ?? 'Provider'}',
               style: GoogleFonts.poppins(fontSize: 14),
             ),
             const SizedBox(height: 20),

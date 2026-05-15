@@ -115,19 +115,16 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   }
 
   // Getters for UI - maintain compatibility with existing code
-  String get _vendorName => _vendorData?['name'] ?? 'Super Grocery Store';
-  String get _vendorCategory => _vendorData?['category'] ?? 'Grocery Store';
-  String get _vendorPhone => _vendorData?['phone'] ?? '+923001234567';
-  String get _vendorAddress => _vendorData?['address'] ?? 'Gulberg III, Lahore';
-  String get _vendorMapsLink =>
-      _vendorData?['mapsLink'] ??
-      'https://maps.google.com/?q=Gulberg+III+Lahore';
-  String get _vendorAbout =>
-      _vendorData?['about'] ??
-      'Fresh groceries and daily essentials delivered to your doorstep.';
-  String get _vendorRating => _vendorData?['rating'] ?? '4.5';
+  // TODO: Connect to Supabase
+  String get _vendorName => _vendorData?['name'] ?? '';
+  String get _vendorCategory => _vendorData?['category'] ?? '';
+  String get _vendorPhone => _vendorData?['phone'] ?? '';
+  String get _vendorAddress => _vendorData?['address'] ?? '';
+  String get _vendorMapsLink => _vendorData?['mapsLink'] ?? '';
+  String get _vendorAbout => _vendorData?['about'] ?? '';
+  String get _vendorRating => _vendorData?['rating'] ?? '0.0';
   int get _vendorReviewCount =>
-      int.tryParse(_vendorData?['reviewCount']?.toString() ?? '') ?? 3;
+      int.tryParse(_vendorData?['reviewCount']?.toString() ?? '') ?? 0;
   String? get _vendorProfileImageUrl => _vendorData?['profileImageUrl'];
 
   void _sendMessage({bool isVoiceMessage = false}) {
@@ -327,30 +324,31 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Chat bubble/dialog
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          // Chat bubble/dialog - hide when chatbot is open
+          if (!_showChatBot)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Text(
+                'Muawin Rehnuma',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF047A62),
                 ),
-              ],
-            ),
-            child: Text(
-              'Aapki Muawinat kesay karain?',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF047A62),
               ),
             ),
-          ),
           // FAB button
           Align(
             alignment: Alignment.bottomRight,
@@ -3361,12 +3359,13 @@ class _PremiumBannerState extends State<_PremiumBanner> {
       return await UserProfileService.getCurrentUserProfile();
     } catch (e) {
       // Fallback to mock data if service fails
+      // TODO: Connect to Supabase
       return {
         'userType': 'vendor',
-        'userId': 'vendor_001',
-        'userName': 'Super Grocery Store',
-        'userCategory': 'Grocery Store',
-        'userRating': 4.8,
+        'userId': '',
+        'userName': '',
+        'userCategory': '',
+        'userRating': 0.0,
       };
     }
   }

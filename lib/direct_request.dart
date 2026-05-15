@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/notification_manager.dart' as nm;
 import 'services/pro_status_checker.dart';
+// ignore: unused_import
+import 'services/database_service.dart';
 import 'widgets/muawin_pro_badge.dart';
 
 /// Direct Request Screen - Customer sends job request to provider
@@ -39,13 +42,11 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   String negotiationNote = '';
 
   // PRO-only options
-  String? _selectedJobType; // 'one_time', 'hire_only'
   String? _selectedDurationType; // 'days', 'weeks', 'months'
   bool _isPriorityResponse = false;
-  DateTime? _hireStartDate;
-  DateTime? _hireEndDate;
-  TimeOfDay? _hireStartTime;
-  TimeOfDay? _hireEndTime;
+  bool _isNDARequired = false;
+  double? _customBudgetMin;
+  double? _customBudgetMax;
 
   // Payment method data
   String selectedPaymentMethod = '';
@@ -203,19 +204,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
 
   void _nextStep() {
     if (currentStep < 4) {
-      // Skip step 1 (Date/Time) for PRO users by incrementing normally
       setState(() => currentStep++);
     }
   }
 
   void _previousStep() {
     if (currentStep > 0) {
-      // Skip step 1 (Date/Time) for PRO users when going back
-      if (_isProUser && currentStep == 1) {
-        setState(() => currentStep--); // Go back to step 0 (Package)
-      } else {
-        setState(() => currentStep--);
-      }
+      setState(() => currentStep--);
     }
   }
 
@@ -224,26 +219,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       case 0:
         return selectedPackage.isNotEmpty;
       case 1:
-        // For PRO users, this is Price step (Date/Time skipped)
-        // For basic users, this is Date/Time step
-        return _isProUser
-            ? proposedPrice >= packageData[selectedPackage]!['price'] * 0.5 &&
-                proposedPrice <= packageData[selectedPackage]!['price'] * 1.5
-            : selectedDate != null && selectedTime.isNotEmpty;
+        return selectedDate != null && selectedTime.isNotEmpty;
       case 2:
-        // For PRO users, this is Pay step
-        // For basic users, this is Price step
-        return _isProUser
-            ? _isPaymentMethodValid()
-            : proposedPrice >= packageData[selectedPackage]!['price'] * 0.5 &&
-                proposedPrice <= packageData[selectedPackage]!['price'] * 1.5;
+        return proposedPrice >= packageData[selectedPackage]!['price'] * 0.5 &&
+            proposedPrice <= packageData[selectedPackage]!['price'] * 1.5;
       case 3:
-        // For PRO users, this is Review step
-        // For basic users, this is Pay step
-        return _isProUser ? true : _isPaymentMethodValid();
+        return _isPaymentMethodValid();
       case 4:
-        // For PRO users, this should never be reached
-        // For basic users, this is Review step
         return true;
       default:
         return false;
@@ -271,63 +253,108 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   Future<void> _sendRequest() async {
     setState(() => isLoading = true);
 
-    // Simulate API call
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    // Check if widget is still mounted before using context
-    if (!mounted) return;
-
-    // Send notifications
     try {
-      final notificationManager =
-          Provider.of<nm.NotificationManager>(context, listen: false);
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
 
-      // Send to provider
-      notificationManager.sendNotification(
-        receiverId: widget.providerData['id']?.toString() ?? 'provider_123',
-        receiverType: 'provider',
-        type: nm.NotificationType.jobRequestReceived,
-        title: '🎯 New Job Request!',
-        body: 'A customer has sent you a direct job request',
-        priority: nm.NotificationPriority.high,
-      );
+      // Get current customer's profile and customer record
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-      // Send confirmation to customer
-      notificationManager.sendNotification(
-        receiverId: 'customer_123',
-        receiverType: 'customer',
-        type: nm.NotificationType.jobRequestSent,
-        title: '✅ Request Sent Successfully!',
-        body: 'Your job request has been sent to the provider',
-        priority: nm.NotificationPriority.medium,
-      );
+      final customerRecord = await supabase
+          .from('customers')
+          .select('id')
+          .eq('profile_id', profile['id'])
+          .single();
+
+      // Get provider ID from passed data
+      final providerId = widget.providerData['id']?.toString();
+      if (providerId == null) throw Exception('Provider ID not found');
+
+      // Build the direct request data
+      final requestData = {
+        'customer_id': customerRecord['id'],
+        'provider_id': providerId,
+        'package_type': selectedPackage,
+        'proposed_price': proposedPrice,
+        'scheduled_date': selectedDate != null
+            ? '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'
+            : null,
+        'scheduled_time': selectedTime.isNotEmpty ? selectedTime : null,
+        'special_instructions':
+            specialInstructions.isNotEmpty ? specialInstructions : null,
+        'negotiation_notes':
+            negotiationNote.isNotEmpty ? negotiationNote : null,
+        'duration_type': _selectedDurationType,
+        'is_priority_response': _isPriorityResponse,
+        'is_nda_required': _isNDARequired,
+        'custom_budget_min': _customBudgetMin,
+        'custom_budget_max': _customBudgetMax,
+        'customer_is_pro': _isProUser,
+        'status': 'pending',
+      };
+
+      // Insert into direct_job_requests table
+      await supabase.from('direct_job_requests').insert(requestData);
+
+      if (!mounted) return;
+
+      // Send notifications (keep exactly as before)
+      try {
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(context, listen: false);
+
+        notificationManager.sendNotification(
+          receiverId: providerId,
+          receiverType: 'provider',
+          type: nm.NotificationType.jobRequestReceived,
+          title: '🎯 New Job Request!',
+          body: 'A customer has sent you a direct job request',
+          priority: nm.NotificationPriority.high,
+        );
+
+        notificationManager.sendNotification(
+          receiverId: customerRecord['id'],
+          receiverType: 'customer',
+          type: nm.NotificationType.jobRequestSent,
+          title: '✅ Request Sent Successfully!',
+          body: 'Your job request has been sent to the provider',
+          priority: nm.NotificationPriority.medium,
+        );
+      } catch (e) {
+        debugPrint('Error sending notifications: $e');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        isSuccess = true;
+      });
+      _confettiController.forward();
     } catch (e) {
-      debugPrint('Error sending notifications: $e');
+      debugPrint('Error sending direct request: $e');
+      if (!mounted) return;
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send request: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
-
-    // Check if widget is still mounted before updating state
-    if (!mounted) return;
-
-    setState(() {
-      isLoading = false;
-      isSuccess = true;
-    });
-
-    _confettiController.forward();
   }
 
   Widget _buildStepIndicator() {
-    // For PRO users, skip Date step, so show 4 steps instead of 5
-    final stepLabels = _isProUser
-        ? ['Package', 'Price', 'Pay', 'Review']
-        : ['Package', 'Date', 'Price', 'Pay', 'Review'];
-    final totalSteps = _isProUser ? 4 : 5;
-
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Row(
         children: [
-          for (int i = 0; i < totalSteps; i++) ...[
+          for (int i = 0; i < 5; i++) ...[
             Expanded(
               child: Column(
                 children: [
@@ -366,7 +393,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    stepLabels[i],
+                    ['Package', 'Date', 'Price', 'Pay', 'Review'][i],
                     style: GoogleFonts.poppins(
                       fontSize: 12,
                       fontWeight:
@@ -437,8 +464,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.providerData['name']?.toString() ??
-                          'Service Provider',
+                      widget.providerData['name']?.toString() ?? '',
                       style: GoogleFonts.poppins(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -447,8 +473,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.providerData['category']?.toString() ??
-                          'Professional Service',
+                      widget.providerData['category']?.toString() ?? '',
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: Colors.grey.shade600,
@@ -689,9 +714,9 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
           const SizedBox(height: 16),
 
-          // Job Type Selection
+          // Custom Budget Range
           Text(
-            'Job Type',
+            'Custom Budget Range',
             style: GoogleFonts.inter(
               fontSize: 12,
               fontWeight: FontWeight.w900,
@@ -700,260 +725,113 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             ),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
-              _buildProOptionChip(
-                label: 'One-time Job',
-                value: 'one_time',
-                selected: _selectedJobType == 'one_time',
+              Expanded(
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'Min',
+                    hintStyle: GoogleFonts.poppins(fontSize: 12),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    _customBudgetMin = double.tryParse(value);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'to',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'Max',
+                    hintStyle: GoogleFonts.poppins(fontSize: 12),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    _customBudgetMax = double.tryParse(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Duration Type Selection
+          Text(
+            'Duration Type',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: Colors.grey.shade600,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _buildDurationOption(
+                label: 'Days',
+                value: 'days',
+                selected: _selectedDurationType == 'days',
                 onTap: () {
                   setState(() {
-                    _selectedJobType = 'one_time';
+                    _selectedDurationType = 'days';
                   });
                 },
               ),
-              _buildProOptionChip(
-                label: 'Hiring',
-                value: 'hire_only',
-                selected: _selectedJobType == 'hire_only',
+              const SizedBox(width: 8),
+              _buildDurationOption(
+                label: 'Weeks',
+                value: 'weeks',
+                selected: _selectedDurationType == 'weeks',
                 onTap: () {
                   setState(() {
-                    _selectedJobType = 'hire_only';
+                    _selectedDurationType = 'weeks';
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              _buildDurationOption(
+                label: 'Months',
+                value: 'months',
+                selected: _selectedDurationType == 'months',
+                onTap: () {
+                  setState(() {
+                    _selectedDurationType = 'months';
                   });
                 },
               ),
             ],
           ),
           const SizedBox(height: 16),
-
-          // Duration Type Selection - Only show for One-time Job
-          if (_selectedJobType == 'one_time') ...[
-            Text(
-              'Duration Type',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: Colors.grey.shade600,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _buildDurationOption(
-                  label: 'Days',
-                  value: 'days',
-                  selected: _selectedDurationType == 'days',
-                  onTap: () {
-                    setState(() {
-                      _selectedDurationType = 'days';
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildDurationOption(
-                  label: 'Weeks',
-                  value: 'weeks',
-                  selected: _selectedDurationType == 'weeks',
-                  onTap: () {
-                    setState(() {
-                      _selectedDurationType = 'weeks';
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildDurationOption(
-                  label: 'Months',
-                  value: 'months',
-                  selected: _selectedDurationType == 'months',
-                  onTap: () {
-                    setState(() {
-                      _selectedDurationType = 'months';
-                    });
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // Hire Duration - Only show for Hiring
-          if (_selectedJobType == 'hire_only') ...[
-            Text(
-              'Hire Duration',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: Colors.grey.shade600,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectDate(context, true),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.calendar_today,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _hireStartDate != null
-                                  ? '${_hireStartDate!.day}/${_hireStartDate!.month}/${_hireStartDate!.year}'
-                                  : 'From Date',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: _hireStartDate != null
-                                    ? Colors.black87
-                                    : Colors.grey.shade500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectDate(context, false),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.calendar_today,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _hireEndDate != null
-                                  ? '${_hireEndDate!.day}/${_hireEndDate!.month}/${_hireEndDate!.year}'
-                                  : 'To Date',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: _hireEndDate != null
-                                    ? Colors.black87
-                                    : Colors.grey.shade500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Time Selection for Hiring
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectTime(context, true),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.access_time,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _hireStartTime != null
-                                  ? _hireStartTime!.format(context)
-                                  : 'From Time',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: _hireStartTime != null
-                                    ? Colors.black87
-                                    : Colors.grey.shade500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectTime(context, false),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.access_time,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _hireEndTime != null
-                                  ? _hireEndTime!.format(context)
-                                  : 'To Time',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: _hireEndTime != null
-                                    ? Colors.black87
-                                    : Colors.grey.shade500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
 
           // Priority Response Toggle
           SwitchListTile(
@@ -1002,75 +880,58 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             },
             activeTrackColor: const Color(0xFF047A62),
           ),
+          const SizedBox(height: 8),
+
+          // NDA Toggle
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Row(
+              children: [
+                Text(
+                  'Confidentiality Agreement',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'PRO',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFFFD700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            subtitle: Text(
+              'Request NDA for sensitive work',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            value: _isNDARequired,
+            onChanged: (value) {
+              setState(() {
+                _isNDARequired = value;
+              });
+            },
+            activeTrackColor: const Color(0xFF047A62),
+          ),
         ],
       ),
     );
-  }
-
-  Widget _buildProOptionChip({
-    required String label,
-    required String value,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF047A62) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? const Color(0xFF047A62) : Colors.grey.shade300,
-            width: 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : Colors.grey.shade700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Select date for Hiring job type
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2027),
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStartDate) {
-          _hireStartDate = picked;
-        } else {
-          _hireEndDate = picked;
-        }
-      });
-    }
-  }
-
-  // Select time for Hiring job type
-  Future<void> _selectTime(BuildContext context, bool isStartTime) async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStartTime) {
-          _hireStartTime = picked;
-        } else {
-          _hireEndTime = picked;
-        }
-      });
-    }
   }
 
   Widget _buildDurationOption({
@@ -2356,8 +2217,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.providerData['name']?.toString() ??
-                                'Service Provider',
+                            widget.providerData['name']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -2610,9 +2470,9 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (_selectedJobType != null) ...[
+                  if (_customBudgetMin != null || _customBudgetMax != null) ...[
                     Text(
-                      'Job Type: ${_selectedJobType == 'one_time' ? 'One-time Job' : 'Hiring'}',
+                      'Custom Budget: ${_customBudgetMin != null ? 'Rs. ${_customBudgetMin!.toStringAsFixed(0)}' : 'Not set'} - ${_customBudgetMax != null ? 'Rs. ${_customBudgetMax!.toStringAsFixed(0)}' : 'Not set'}',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         color: Colors.black87,
@@ -2623,30 +2483,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   if (_selectedDurationType != null) ...[
                     Text(
                       'Duration Type: ${_selectedDurationType!.toUpperCase()}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_selectedJobType == 'hire_only' &&
-                      _hireStartDate != null &&
-                      _hireEndDate != null) ...[
-                    Text(
-                      'Hire Duration: ${_hireStartDate!.day}/${_hireStartDate!.month}/${_hireStartDate!.year} to ${_hireEndDate!.day}/${_hireEndDate!.month}/${_hireEndDate!.year}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_selectedJobType == 'hire_only' &&
-                      _hireStartTime != null &&
-                      _hireEndTime != null) ...[
-                    Text(
-                      'Hire Time: ${_hireStartTime!.format(context)} to ${_hireEndTime!.format(context)}',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         color: Colors.black87,
@@ -2670,6 +2506,22 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       ],
                     ),
                     const SizedBox(height: 8),
+                  ],
+                  if (_isNDARequired) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.lock_rounded,
+                            color: Color(0xFF047A62), size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Confidentiality Agreement Required',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ],
 
@@ -2911,20 +2763,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
-                      child: _isProUser
-                          ? [
-                              _buildStep1(),
-                              _buildStep3(),
-                              _buildStep4(),
-                              _buildStep5(),
-                            ][currentStep]
-                          : [
-                              _buildStep1(),
-                              _buildStep2(),
-                              _buildStep3(),
-                              _buildStep4(),
-                              _buildStep5(),
-                            ][currentStep],
+                      child: [
+                        _buildStep1(),
+                        _buildStep2(),
+                        _buildStep3(),
+                        _buildStep4(),
+                        _buildStep5(),
+                      ][currentStep],
                     ),
                   ),
                 ),

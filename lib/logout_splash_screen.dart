@@ -129,13 +129,13 @@ class _LogoutSplashScreenState extends State<LogoutSplashScreen>
                                     child: Text(
                                       'ہمیں معاونت کا موقع دینے کا شکریہ',
                                       style: TextStyle(
-                                        fontFamily: 'Amiri',
+                                        fontFamily: 'AlFarsAban',
                                         fontSize:
                                             MediaQuery.of(context).size.width <
                                                     400
                                                 ? 32
                                                 : 42,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w400,
                                         color: Colors.white
                                             .withValues(alpha: 0.95),
                                         height:

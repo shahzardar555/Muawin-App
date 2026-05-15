@@ -185,10 +185,9 @@ class LanguageProvider extends ChangeNotifier {
       AppLanguage.urdu: 'خوش آمدید، ',
     },
     'urdu_greeting': {
-      AppLanguage.english: 'Aapki Muawinat kesay karain?',
-      AppLanguage.bilingual:
-          'Aapki Muawinat kesay karain? / آپکی کیا مدد کر سکتے ہیں؟',
-      AppLanguage.urdu: 'آپکی کیا مدد کر سکتے ہیں؟',
+      AppLanguage.english: 'Muawin Rehnuma',
+      AppLanguage.bilingual: 'Muawin Rehnuma / معاہن رہنما',
+      AppLanguage.urdu: 'معاہن رہنما',
     },
     'welcome_message': {
       AppLanguage.english: 'Welcome',
@@ -196,10 +195,9 @@ class LanguageProvider extends ChangeNotifier {
       AppLanguage.urdu: 'خوش آمدید',
     },
     'how_can_help': {
-      AppLanguage.english: 'Aapki Muawinat kesay karain?',
-      AppLanguage.bilingual:
-          'Aapki Muawinat kesay karain? / آپکی کیا مدد کر سکتے ہیں؟',
-      AppLanguage.urdu: 'آپکی کیا مدد کر سکتے ہیں؟',
+      AppLanguage.english: 'Muawin Rehnuma',
+      AppLanguage.bilingual: 'Muawin Rehnuma / معاہن رہنما',
+      AppLanguage.urdu: 'معاہن رہنما',
     },
     'how_may_help': {
       AppLanguage.english: 'Apki Muawinat kesay karain?',

@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
 import 'service_provider_feed_screen.dart';
 import 'vendor_home_screen.dart';
 import 'customer_home_screen.dart';
 import 'get_started_screen.dart';
+import 'services/auth_service.dart';
+import 'provider_document_verification_screen.dart';
+import 'provider_rejection_screen.dart';
 
 /// Success celebration animation
 class _SuccessAnimation extends StatefulWidget {
@@ -223,25 +227,13 @@ class _LoadingSkeletonState extends State<_LoadingSkeleton>
         ),
         const SizedBox(height: 32),
         // Title skeleton
-        _buildSkeletonItem(
-          width: 200,
-          height: 28,
-          borderRadius: 4,
-        ),
+        _buildSkeletonItem(width: 200, height: 28, borderRadius: 4),
         const SizedBox(height: 8),
         // Subtitle skeleton
-        _buildSkeletonItem(
-          width: 160,
-          height: 20,
-          borderRadius: 4,
-        ),
+        _buildSkeletonItem(width: 160, height: 20, borderRadius: 4),
         const SizedBox(height: 40),
         // EMAIL label skeleton
-        _buildSkeletonItem(
-          width: 80,
-          height: 12,
-          borderRadius: 2,
-        ),
+        _buildSkeletonItem(width: 80, height: 12, borderRadius: 2),
         const SizedBox(height: 8),
         // Email field skeleton
         _buildSkeletonItem(
@@ -252,11 +244,7 @@ class _LoadingSkeletonState extends State<_LoadingSkeleton>
         ),
         const SizedBox(height: 16),
         // PASSWORD label skeleton
-        _buildSkeletonItem(
-          width: 100,
-          height: 12,
-          borderRadius: 2,
-        ),
+        _buildSkeletonItem(width: 100, height: 12, borderRadius: 2),
         const SizedBox(height: 8),
         // Password field skeleton
         _buildSkeletonItem(
@@ -310,7 +298,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _obscurePassword = true;
   bool _loading = false;
-  bool _showSuccess = false;
+  final bool _showSuccess = false;
   String? _errorMessage;
 
   bool get _isFormValid =>
@@ -326,56 +314,157 @@ class _LoginScreenState extends State<LoginScreen> {
   void _loginUser() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Store navigator before async gap
-    final navigator = Navigator.of(context);
-
     setState(() {
       _loading = true;
       _errorMessage = null;
     });
 
-    await Future.delayed(const Duration(seconds: 1)); // simulate login delay
+    try {
+      final authService = AuthService();
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
 
-    final email = _emailController.text.trim().toLowerCase();
+      final response = await authService.signIn(
+        email: email,
+        password: password,
+      );
 
-    if (email == 'am@pro.com' ||
-        email == 'am@vendor.com' ||
-        email == 'am@c.com') {
-      // Show success animation
-      setState(() {
-        _loading = false;
-        _showSuccess = true;
-      });
+      if (response.user == null) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Please verify your email first';
+        });
+        _shakeButton();
+        return;
+      }
 
-      // Wait for success animation to complete
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // Get user role from metadata first, then fallback to profiles table
+      String? role = response.user?.userMetadata?['role'] as String?;
 
+      if (role == null || role.isEmpty) {
+        final profile = await Supabase.instance.client
+            .from('profiles')
+            .select('role')
+            .eq('user_id', response.user!.id)
+            .maybeSingle();
+        role = profile?['role'] as String?;
+      }
+
+      if (role == null || role.isEmpty) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Unable to determine user role';
+        });
+        _shakeButton();
+        return;
+      }
+
+      // Navigate based on role
       if (!mounted) return;
 
-      // Navigate to appropriate screen
-      if (email == 'am@pro.com') {
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-              builder: (_) => const ServiceProviderFeedScreen()),
-          (route) => route.isFirst,
+      if (role == 'customer') {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const CustomerHomeScreen()),
+          (route) => false,
         );
-      } else if (email == 'am@vendor.com') {
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute<void>(builder: (_) => const VendorHomeScreen()),
-          (route) => route.isFirst,
+      } else if (role == 'provider') {
+        // Check verification status first!
+        final verificationStatus = await AuthService()
+            .getProviderVerificationStatus(response.user!.id);
+
+        if (!mounted) return;
+
+        if (verificationStatus == 'approved') {
+          // Verified provider → go to feed
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const ServiceProviderFeedScreen()),
+            (route) => false,
+          );
+        } else if (verificationStatus == 'rejected') {
+          // Rejected provider → show rejection screen
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const ProviderRejectionScreen()),
+            (route) => false,
+          );
+        } else {
+          // Pending/not verified → go to verification
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const ProviderDocumentVerificationScreen()),
+            (route) => false,
+          );
+        }
+      } else if (role == 'vendor') {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const VendorHomeScreen()),
+          (route) => false,
         );
-      } else if (email == 'am@c.com') {
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute<void>(builder: (_) => const CustomerHomeScreen()),
-          (route) => route.isFirst,
-        );
+      } else if (role == 'admin') {
+        // Admin cannot use mobile app!
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'Admin accounts use the web dashboard only. '
+            'Please visit the admin portal.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+        // Sign out admin immediately
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+        });
+        return;
+      } else {
+        // Unknown role
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'Account setup incomplete. '
+            'Please contact support.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.orange,
+        ));
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+        });
+        return;
       }
-    } else {
+    } on AuthException catch (e) {
+      // Show specific auth errors:
+      String message = 'Login failed';
+      if (e.message.contains('Email not confirmed')) {
+        message = 'Please verify your email first';
+      } else if (e.message.contains('Invalid login')) {
+        message = 'Invalid email or password';
+      } else if (e.message.contains('Database error')) {
+        message = 'Server error, please try again';
+      } else {
+        message = e.message;
+      }
       setState(() {
         _loading = false;
-        _errorMessage = 'Invalid email or password';
+        _errorMessage = message;
       });
-      // Trigger shake animation
+      _shakeButton();
+    } catch (e) {
+      debugPrint('Unexpected login error: $e');
+      setState(() {
+        _loading = false;
+        _errorMessage = 'An unexpected error occurred';
+      });
       _shakeButton();
     }
   }
@@ -399,8 +488,10 @@ class _LoginScreenState extends State<LoginScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.black87),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.black87,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -433,8 +524,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0.1 * 12,
-                                  color: theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.7),
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -449,7 +541,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     return 'Enter your email';
                                   }
                                   final emailRegex = RegExp(
-                                      r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$');
+                                    r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$',
+                                  );
                                   if (!emailRegex.hasMatch(v.trim())) {
                                     return 'Enter a valid email';
                                   }
@@ -512,8 +605,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ? Icons.visibility_off
                                         : Icons.visibility,
                                   ),
-                                  onPressed: () => setState(() =>
-                                      _obscurePassword = !_obscurePassword),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
                                 ),
                                 onChanged: (_) => setState(() {}),
                               ),
@@ -588,7 +682,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     children: [
                                       const TextSpan(
-                                          text: "Don't have an account? "),
+                                        text: "Don't have an account? ",
+                                      ),
                                       TextSpan(
                                         text: 'Sign Up',
                                         style: GoogleFonts.poppins(
@@ -644,7 +739,6 @@ class _LogoHero extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 32), // Spacing between icon and text
-
         // Attractive title text
         Column(
           children: [
@@ -735,9 +829,10 @@ class _LoginInputState extends State<_LoginInput>
       vsync: this,
     );
 
-    _containerOpacityAnimation = Tween<double>(begin: 0.05, end: 0.1).animate(
-      CurvedAnimation(parent: _focusController, curve: Curves.easeOut),
-    );
+    _containerOpacityAnimation = Tween<double>(
+      begin: 0.05,
+      end: 0.1,
+    ).animate(CurvedAnimation(parent: _focusController, curve: Curves.easeOut));
   }
 
   @override
@@ -803,8 +898,10 @@ class _LoginInputState extends State<_LoginInput>
               focusedBorder: InputBorder.none,
               errorBorder: InputBorder.none,
               focusedErrorBorder: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 18,
+              ),
               suffixIcon: widget.suffixIcon,
             ),
           ),
@@ -816,8 +913,11 @@ class _LoginInputState extends State<_LoginInput>
 
 /// Full-width login button with loading spinner.
 class _LoginButton extends StatefulWidget {
-  const _LoginButton(
-      {super.key, required this.onPressed, this.loading = false});
+  const _LoginButton({
+    super.key,
+    required this.onPressed,
+    this.loading = false,
+  });
 
   final VoidCallback? onPressed;
   final bool loading;
@@ -847,8 +947,10 @@ class _LoginButtonState extends State<_LoginButton>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _scale = Tween<double>(begin: 1, end: 0.95)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scale = Tween<double>(
+      begin: 1,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _shakeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _shakeController, curve: Curves.elasticOut),
     );
@@ -868,8 +970,9 @@ class _LoginButtonState extends State<_LoginButton>
   @override
   Widget build(BuildContext context) {
     final disabled = widget.onPressed == null;
-    const splashColor =
-        Color(0xFF047A62); // Muawin Primary Teal from splash screen
+    const splashColor = Color(
+      0xFF047A62,
+    ); // Muawin Primary Teal from splash screen
 
     return AnimatedBuilder(
       animation: Listenable.merge([_scale, _shakeAnimation]),
@@ -879,10 +982,7 @@ class _LoginButtonState extends State<_LoginButton>
             _shakeAnimation.value * 10 * sin(_shakeAnimation.value * pi * 4),
             0,
           ),
-          child: Transform.scale(
-            scale: _scale.value,
-            child: child,
-          ),
+          child: Transform.scale(scale: _scale.value, child: child),
         );
       },
       child: GestureDetector(
@@ -960,8 +1060,10 @@ class _ForgotPasswordScreenState extends State<_ForgotPasswordScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.black87),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.black87,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -1007,8 +1109,9 @@ class _ForgotPasswordScreenState extends State<_ForgotPasswordScreen> {
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.1 * 12,
-                        color:
-                            theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1022,8 +1125,9 @@ class _ForgotPasswordScreenState extends State<_ForgotPasswordScreen> {
                         if (v == null || v.trim().isEmpty) {
                           return 'Enter your email';
                         }
-                        final emailRegex =
-                            RegExp(r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$');
+                        final emailRegex = RegExp(
+                          r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$',
+                        );
                         if (!emailRegex.hasMatch(v.trim())) {
                           return 'Enter a valid email';
                         }

@@ -17,12 +17,8 @@ class UserProfileService {
       }
 
       // Get user type from email
+      // TODO: Load from Supabase
       String userType = 'customer';
-      if (userEmail == 'am@pro.com') {
-        userType = 'provider';
-      } else if (userEmail == 'am@vendor.com') {
-        userType = 'vendor';
-      }
 
       // Get stored profile data or use defaults
       final profileDataJson =
@@ -94,67 +90,72 @@ class UserProfileService {
   }
 
   /// Get default profile for fallback
+  // TODO: Connect to Supabase
   static Map<String, dynamic> _getDefaultProfile() {
     return {
       'userType': 'customer',
-      'userId': 'customer_default',
-      'userName': 'Guest User',
-      'userCategory': 'General',
-      'userRating': 4.0,
+      'userId': '',
+      'userName': '',
+      'userCategory': '',
+      'userRating': 0.0,
       'userEmail': null,
       'profileData': {},
     };
   }
 
   /// Get user ID based on type
+  // TODO: Connect to Supabase
   static String _getUserIdForType(String userType) {
     switch (userType) {
       case 'provider':
-        return 'provider_001';
+        return '';
       case 'vendor':
-        return 'vendor_001';
+        return '';
       case 'customer':
       default:
-        return 'customer_001';
+        return '';
     }
   }
 
   /// Get user name based on type
+  // TODO: Connect to Supabase
   static String _getUserNameForType(String userType) {
     switch (userType) {
       case 'provider':
-        return 'Professional Provider';
+        return '';
       case 'vendor':
-        return 'Local Vendor';
+        return '';
       case 'customer':
       default:
-        return 'Customer';
+        return '';
     }
   }
 
   /// Get user category based on type
+  // TODO: Connect to Supabase
   static String _getUserCategoryForType(String userType) {
     switch (userType) {
       case 'provider':
-        return 'Driver'; // Default provider category
+        return '';
       case 'vendor':
-        return 'Supermarket'; // Default vendor category
+        return '';
       case 'customer':
       default:
-        return 'General';
+        return '';
     }
   }
 
   /// Get user rating based on type
+  // TODO: Connect to Supabase
   static double _getUserRatingForType(String userType) {
     switch (userType) {
       case 'provider':
-        return 4.8;
+        return 0.0;
       case 'vendor':
-        return 4.5;
+        return 0.0;
       case 'customer':
       default:
-        return 4.0;
+        return 0.0;
     }
   }
 
