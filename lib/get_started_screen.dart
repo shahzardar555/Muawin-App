@@ -66,7 +66,7 @@ class GetStartedScreen extends StatelessWidget {
                             icon: Icons.home_work_rounded,
                             title: 'I need household help',
                             description:
-                                'Find verified professionals for cleaning, repairs, and daily tasks.',
+                                'Find verified professionals for your daily household tasks',
                             onTap: () {
                               HapticFeedback.lightImpact();
                               Navigator.push(
@@ -80,7 +80,7 @@ class GetStartedScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 20),
                           _RoleCard(
-                            icon: Icons.build_circle_rounded,
+                            icon: Icons.engineering_rounded,
                             title: 'I\'m a service professional',
                             description:
                                 'Offer your skills and get connected with clients across Pakistan.',
@@ -180,7 +180,7 @@ class _RoleCardState extends State<_RoleCard>
           curve: Curves.easeInOut,
           padding: const EdgeInsets.all(_RoleCard._padding),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
+            color: Colors.white,
             borderRadius: BorderRadius.circular(_RoleCard._radius),
             border: Border.all(
               color: primary.withValues(alpha: 0.15),

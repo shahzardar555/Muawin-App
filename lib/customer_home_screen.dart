@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
@@ -3794,6 +3796,9 @@ class _AIChatBottomSheet extends StatefulWidget {
 class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
+  final List<Map<String, dynamic>> _conversationHistory = [];
+  bool _isBotTyping = false;
+  static const String _backendUrl = 'http://localhost:3001';
 
   // Chat voice state variables
   bool _isChatListening = false;
@@ -3810,25 +3815,71 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   // Speech recognition instance
   final SpeechToText _speechToText = SpeechToText();
 
-  void _sendMessage({bool isVoiceMessage = false}) {
-    if (_controller.text.trim().isEmpty) return;
+  void _sendMessage({bool isVoiceMessage = false}) async {
+    final userMessage = _controller.text.trim();
+    if (userMessage.isEmpty) return;
 
     setState(() {
       _messages.add({
-        'text': _controller.text.trim(),
+        'text': userMessage,
         'isUser': true,
         'isVoiceMessage': isVoiceMessage,
       });
       _controller.clear();
+      _isBotTyping = true;
     });
 
-    Future.delayed(const Duration(milliseconds: 500), () {
+    // Add to conversation history for context
+    _conversationHistory.add({
+      'role': 'user',
+      'content': userMessage,
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/ai/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'message': userMessage,
+          'conversationHistory': _conversationHistory,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final botReply = data['response']?.toString() ?? 
+            'Sorry, I could not understand that.';
+
+        // Add bot response to history
+        _conversationHistory.add({
+          'role': 'assistant',
+          'content': botReply,
+        });
+
+        if (mounted) {
+          setState(() {
+            _isBotTyping = false;
+            _messages.add({
+              'text': botReply,
+              'isUser': false,
+            });
+          });
+        }
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
-          _messages.add({'text': 'I am here to help!', 'isUser': false});
+          _isBotTyping = false;
+          _messages.add({
+            'text': 'Sorry, I am having trouble connecting. Please check your internet connection and try again.',
+            'isUser': false,
+          });
         });
       }
-    });
+    }
   }
 
   // Chat Voice Handler
@@ -4389,58 +4440,94 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             ),
             const Divider(),
             Expanded(
-              child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final msg = _messages[index];
-                  final isUser = msg['isUser'] as bool;
-                  final isVoiceMessage =
-                      msg['isVoiceMessage'] as bool? ?? false;
-                  return Align(
-                    alignment:
-                        isUser ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: isUser
-                            ? const Color(0xFF088771)
-                            : Colors.grey[200]!,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isUser
-                              ? const Color(0xFF088771)
-                              : Colors.grey[200]!,
-                          width: 1,
-                        ),
-                      ),
-                      child: Stack(
-                        children: [
-                          Text(
-                            msg['text'] as String,
-                            style: GoogleFonts.poppins(
-                              color: isUser ? Colors.white : Colors.black87,
-                              fontSize: 14,
-                            ),
-                          ),
-                          if (isUser && isVoiceMessage)
-                            Positioned(
-                              bottom: 2,
-                              right: 2,
-                              child: Icon(
-                                Icons.mic,
-                                size: 10,
-                                color: Colors.white.withValues(alpha: 0.7),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        final isUser = msg['isUser'] as bool;
+                        final isVoiceMessage =
+                            msg['isVoiceMessage'] as bool? ?? false;
+                        return Align(
+                          alignment:
+                              isUser ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: isUser
+                                  ? const Color(0xFF088771)
+                                  : Colors.grey[200]!,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isUser
+                                    ? const Color(0xFF088771)
+                                    : Colors.grey[200]!,
+                                width: 1,
                               ),
                             ),
+                            child: Stack(
+                              children: [
+                                Text(
+                                  msg['text'] as String,
+                                  style: GoogleFonts.poppins(
+                                    color: isUser ? Colors.white : Colors.black87,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                if (isUser && isVoiceMessage)
+                                  Positioned(
+                                    bottom: 2,
+                                    right: 2,
+                                    child: Icon(
+                                      Icons.mic,
+                                      size: 10,
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_isBotTyping)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 40,
+                                  child: Text(
+                                    '...',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  );
-                },
+                ],
               ),
             ),
             // Voice indicator (shows when listening)

@@ -1,5 +1,7 @@
 import 'dart:ui';
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,8 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/get_featured_overlay.dart';
-import 'services/user_profile_service.dart';
 import 'services/service_locator.dart';
 import 'services/vendor_data_service.dart';
 import 'widgets/bottom_navigation_bar.dart';
@@ -62,6 +64,9 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   // Chat state
   bool _showChatBot = false;
   final List<Map<String, dynamic>> _chatMessages = [];
+  final List<Map<String, dynamic>> _conversationHistory = [];
+  bool _isBotTyping = false;
+  static const String _backendUrl = 'http://localhost:3001';
   final TextEditingController _chatController = TextEditingController();
 
   // Profile picture state for web/mobile compatibility
@@ -89,25 +94,74 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVendorData();
+    _initializeVendor();
   }
 
   // Service-based state management
+  String _currentProfileId = '';
+  String _currentVendorId = '';
   bool _isLoadingVendorData = true;
   Map<String, dynamic>? _vendorData;
 
-  Future<void> _loadVendorData() async {
+  Future<void> _initializeVendor() async {
     try {
-      final data = await vendorService.getVendorData();
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get profile
+      final profile = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone_number, profile_image_url')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profile['id'].toString();
+
+      // Get vendor record
+      final vendor = await supabase.from('vendors').select('''
+            id,
+            business_name,
+            business_type,
+            city,
+            area,
+            location,
+            address,
+            rating,
+            review_count,
+            is_pro,
+            years_in_business
+          ''').eq('profile_id', _currentProfileId).single();
+
+      _currentVendorId = vendor['id'].toString();
+
       setState(() {
-        _vendorData = data;
+        _vendorData = {
+          'name': vendor['business_name']?.toString() ??
+              profile['full_name']?.toString() ??
+              '',
+          'category': vendor['business_type']?.toString() ?? '',
+          'phone': profile['phone_number']?.toString() ?? '',
+          'address':
+              vendor['address']?.toString() ?? vendor['area']?.toString() ?? '',
+          'city': vendor['city']?.toString() ?? '',
+          'about': '',
+          'rating': vendor['rating']?.toString() ?? '0.0',
+          'reviewCount': vendor['review_count']?.toString() ?? '0',
+          'profileImageUrl': profile['profile_image_url']?.toString(),
+          'mapsLink': vendor['location']?.toString() ?? '',
+          'is_pro': vendor['is_pro'] == true,
+        };
         _isLoadingVendorData = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoadingVendorData = false;
-      });
+      debugPrint('Error initializing vendor: $e');
+      setState(() => _isLoadingVendorData = false);
     }
+  }
+
+  Future<void> _loadVendorData() async {
+    await _initializeVendor();
   }
 
   Future<void> _refreshVendorData() async {
@@ -127,32 +181,69 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
       int.tryParse(_vendorData?['reviewCount']?.toString() ?? '') ?? 0;
   String? get _vendorProfileImageUrl => _vendorData?['profileImageUrl'];
 
-  void _sendMessage({bool isVoiceMessage = false}) {
-    if (_chatController.text.trim().isEmpty) return;
+  void _sendMessage({bool isVoiceMessage = false}) async {
+    final userMessage = _chatController.text.trim();
+    if (userMessage.isEmpty) return;
 
     setState(() {
       _chatMessages.add({
-        'text': _chatController.text.trim(),
+        'text': userMessage,
         'isUser': true,
         'isVoiceMessage': isVoiceMessage,
-        'time': DateTime.now().toString(),
       });
       _chatController.clear();
+      _isBotTyping = true;
     });
 
-    // Add dummy AI response after delay
-    Future.delayed(const Duration(milliseconds: 800), () {
+    _conversationHistory.add({
+      'role': 'user',
+      'content': userMessage,
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/ai/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'message': userMessage,
+          'conversationHistory': _conversationHistory,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final botReply = data['response']?.toString() ??
+            'Sorry, I could not understand that.';
+
+        _conversationHistory.add({
+          'role': 'assistant',
+          'content': botReply,
+        });
+
+        if (mounted) {
+          setState(() {
+            _isBotTyping = false;
+            _chatMessages.add({
+              'text': botReply,
+              'isUser': false,
+            });
+          });
+        }
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
+          _isBotTyping = false;
           _chatMessages.add({
-            'text': 'I am here to help!',
+            'text': 'Sorry, I am having trouble connecting. Please try again.',
             'isUser': false,
-            'isVoiceMessage': false,
-            'time': DateTime.now().toString(),
           });
         });
       }
-    });
+    }
   }
 
   void _navigateBackFromChats() {
@@ -214,7 +305,23 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
                     setState(() {
                       _status = status;
                     });
-                    await VendorDataService.updateVendorStatus(status);
+                    if (_currentVendorId.isNotEmpty) {
+                      try {
+                        String statusStr = 'open';
+                        if (status == VendorStatus.busy) {
+                          statusStr = 'busy';
+                        } else if (status == VendorStatus.break_) {
+                          statusStr = 'break';
+                        } else if (status == VendorStatus.closed) {
+                          statusStr = 'closed';
+                        }
+
+                        await Supabase.instance.client.from('vendors').update(
+                            {'status': statusStr}).eq('id', _currentVendorId);
+                      } catch (e) {
+                        debugPrint('Error updating vendor status: $e');
+                      }
+                    }
                     await _refreshVendorData();
                   },
                   replyingReviewIndex: _replyingReviewIndex,
@@ -3355,19 +3462,14 @@ class _PremiumBanner extends StatefulWidget {
 class _PremiumBannerState extends State<_PremiumBanner> {
   // Get current user profile data
   Future<Map<String, dynamic>> _getCurrentUserProfile() async {
-    try {
-      return await UserProfileService.getCurrentUserProfile();
-    } catch (e) {
-      // Fallback to mock data if service fails
-      // TODO: Connect to Supabase
-      return {
-        'userType': 'vendor',
-        'userId': '',
-        'userName': '',
-        'userCategory': '',
-        'userRating': 0.0,
-      };
-    }
+    // Return default profile data
+    return {
+      'userType': 'vendor',
+      'userId': '',
+      'userName': '',
+      'userCategory': '',
+      'userRating': 0.0,
+    };
   }
 
   // Show GetFeaturedOverlay with real user data
@@ -3965,6 +4067,9 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   bool _isChatListening = false;
   String _chatLocale = 'en_US';
   double _chatSoundLevel = 0.0;
+  final List<Map<String, dynamic>> _conversationHistory = [];
+  bool _isBotTyping = false;
+  static const String _backendUrl = 'http://localhost:3001';
 
   // Phase 2: Smart language detection
   final String _detectedLanguage = 'unknown';

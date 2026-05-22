@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -40,6 +42,9 @@ class _ProviderDocumentVerificationScreenState
     with SingleTickerProviderStateMixin {
   int _stepIndex = 0; // 0: front, 1: back, 2: selfie
   bool _submitted = false;
+  bool _isUploading = false;
+  String _uploadError = '';
+  static const String _faceMatchingUrl = 'http://localhost:5000';
   final ImagePicker _imagePicker = ImagePicker();
 
   // Store captured images for each step
@@ -405,17 +410,132 @@ class _ProviderDocumentVerificationScreenState
     });
   }
 
-  void _handleConfirmPhoto() {
+  Future<void> _handleConfirmPhoto() async {
     HapticFeedback.lightImpact();
-    setState(() {
-      _showPreview = false;
-      // Move to next step or submit
-      if (_stepIndex < _stepTitles.length - 1) {
+
+    // If not on last step, just advance
+    if (_stepIndex < _stepTitles.length - 1) {
+      setState(() {
+        _showPreview = false;
         _stepIndex++;
-      } else {
-        _submitted = true;
-      }
+      });
+      return;
+    }
+
+    // Last step - upload and verify
+    setState(() {
+      _isUploading = true;
+      _uploadError = '';
+      _showPreview = false;
     });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
+
+      // Get provider profile
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+      final profileId = profile['id'].toString();
+
+      final provider = await supabase
+          .from('providers')
+          .select('id')
+          .eq('profile_id', profileId)
+          .single();
+      final providerId = provider['id'].toString();
+
+      // Upload images to Supabase Storage
+      final cnicFrontFile = _capturedImages[0];
+      final cnicBackFile = _capturedImages[1];
+      final selfieFile = _capturedImages[2];
+
+      if (cnicFrontFile == null || cnicBackFile == null || selfieFile == null) {
+        throw Exception('All images are required');
+      }
+
+      // Upload CNIC front
+      final cnicFrontPath = 'cnic/$providerId/front_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await supabase.storage
+          .from('verification-documents')
+          .upload(cnicFrontPath, cnicFrontFile);
+      final cnicFrontUrl = supabase.storage
+          .from('verification-documents')
+          .getPublicUrl(cnicFrontPath);
+
+      // Upload CNIC back
+      final cnicBackPath = 'cnic/$providerId/back_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await supabase.storage
+          .from('verification-documents')
+          .upload(cnicBackPath, cnicBackFile);
+
+      // Upload selfie
+      final selfiePath = 'selfies/$providerId/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await supabase.storage
+          .from('verification-documents')
+          .upload(selfiePath, selfieFile);
+      final selfieUrl = supabase.storage
+          .from('verification-documents')
+          .getPublicUrl(selfiePath);
+
+      // Call face matching service
+      bool faceMatched = false;
+      try {
+        final faceResponse = await http.post(
+          Uri.parse('$_faceMatchingUrl/api/match-faces'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'provider_id': providerId,
+            'cnic_url': cnicFrontUrl,
+            'selfie_url': selfieUrl,
+            'attempt_number': 1,
+          }),
+        ).timeout(const Duration(seconds: 30));
+
+        if (faceResponse.statusCode == 200) {
+          final faceData = jsonDecode(faceResponse.body);
+          faceMatched = faceData['match'] == true ||
+              faceData['verified'] == true ||
+              (faceData['confidence'] != null &&
+                  (faceData['confidence'] as num) > 0.6);
+        }
+      } catch (e) {
+        debugPrint('Face matching error: $e');
+        // Continue even if face matching fails
+        // Admin will review manually
+      }
+
+      // Update provider verification status in Supabase
+      await supabase.from('providers').update({
+        'verification_status': faceMatched ? 'under_review' : 'under_review',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', providerId);
+
+      // Save document URLs to providers table if columns exist
+      try {
+        await supabase.from('providers').update({
+          'cnic_number': 'PENDING_REVIEW',
+        }).eq('id', providerId);
+      } catch (e) {
+        debugPrint('Could not update CNIC number: $e');
+      }
+
+      setState(() {
+        _isUploading = false;
+        _submitted = true;
+      });
+
+    } catch (e) {
+      debugPrint('Verification error: $e');
+      setState(() {
+        _isUploading = false;
+        _uploadError = 'Upload failed: ${e.toString()}';
+      });
+    }
   }
 
   @override
@@ -426,6 +546,87 @@ class _ProviderDocumentVerificationScreenState
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
 
     final bool isSuccess = _submitted;
+
+    if (_isUploading) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFF047A62)),
+              const SizedBox(height: 24),
+              Text(
+                'Uploading documents...',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please wait while we verify your identity',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_uploadError.isNotEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  'Upload Failed',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _uploadError,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _uploadError = '';
+                      _stepIndex = 0;
+                      _capturedImages.fillRange(0, 3, null);
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF047A62),
+                  ),
+                  child: Text(
+                    'Try Again',
+                    style: GoogleFonts.poppins(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: isSuccess ? Colors.white : surface,

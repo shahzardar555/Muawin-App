@@ -2,9 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
+import 'safepay_webview_screen.dart';
 import '../services/featured_ad_manager.dart';
 import '../services/notification_manager.dart' as nm;
 import '../services/location_service.dart';
+import '../services/pro_status_checker.dart';
 
 class SubscriptionPurchaseScreen extends StatefulWidget {
   const SubscriptionPurchaseScreen({
@@ -30,6 +37,9 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   String _selectedPaymentMethod = '';
   bool _isLoading = false;
   bool _isSuccess = false;
+  bool _hasActivePro = false;
+  DateTime? _proExpiryDate;
+  bool _isCheckingSubscription = true;
 
   // Payment form data
   String _jazzCashNumber = '';
@@ -55,6 +65,7 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   @override
   void initState() {
     super.initState();
+    _checkExistingSubscription();
 
     // Initialize featured ad data extraction - will be processed in didChangeDependencies
     if (widget.purchaseType == 'featured_ad') {
@@ -78,6 +89,24 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
       parent: _successController,
       curve: Curves.elasticOut,
     ));
+  }
+
+  Future<void> _checkExistingSubscription() async {
+    try {
+      if (widget.purchaseType == 'pro') {
+        final hasActive = await ProStatusChecker.hasActiveSubscription();
+        final expiry = await ProStatusChecker.getProExpiryDate();
+        setState(() {
+          _hasActivePro = hasActive;
+          _proExpiryDate = expiry;
+          _isCheckingSubscription = false;
+        });
+      } else {
+        setState(() => _isCheckingSubscription = false);
+      }
+    } catch (e) {
+      setState(() => _isCheckingSubscription = false);
+    }
   }
 
   @override
@@ -629,15 +658,18 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
           onChanged: (value) {
             // Auto-format with spaces every 4 digits
             String formatted = value.replaceAll(RegExp(r'\s'), '');
-            if (formatted.length > 4 && formatted.length <= 8) {
+            if (formatted.length > 16) {
+              formatted = formatted.substring(0, 16);
+            }
+            if (formatted.length > 12) {
+              formatted =
+                  '${formatted.substring(0, 4)} ${formatted.substring(4, 8)} ${formatted.substring(8, 12)} ${formatted.substring(12)}';
+            } else if (formatted.length > 8) {
+              formatted =
+                  '${formatted.substring(0, 4)} ${formatted.substring(4, 8)} ${formatted.substring(8)}';
+            } else if (formatted.length > 4) {
               formatted =
                   '${formatted.substring(0, 4)} ${formatted.substring(4)}';
-            } else if (formatted.length > 8 && formatted.length <= 12) {
-              formatted =
-                  '${formatted.substring(0, 4)} ${formatted.substring(4, 4)} ${formatted.substring(8)}';
-            } else if (formatted.length > 12) {
-              formatted =
-                  '${formatted.substring(0, 4)} ${formatted.substring(4, 4)} ${formatted.substring(8, 4)} ${formatted.substring(12)}';
             }
             setState(() => _cardNumber = formatted);
           },
@@ -1031,9 +1063,31 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   }
 
   Future<void> _handlePurchase() async {
-    // Validate payment fields
     if (!_isPaymentValid()) {
       _showError('Please fill in all required payment details correctly.');
+      return;
+    }
+
+    // Block if already has active Pro subscription
+    if (widget.purchaseType == 'pro' && _hasActivePro) {
+      final expiryStr = _proExpiryDate != null
+          ? '${_proExpiryDate!.day}/${_proExpiryDate!.month}/${_proExpiryDate!.year}'
+          : 'unknown date';
+      _showError(
+        'You already have an active Muawin Pro subscription valid until $expiryStr. '
+        'You can renew after your current plan expires.'
+      );
+      return;
+    }
+
+    debugPrint('Selected payment method: $_selectedPaymentMethod');
+
+    // Use Safepay for card payments
+    if (_selectedPaymentMethod == 'card' || 
+        _selectedPaymentMethod == 'Card' ||
+        _selectedPaymentMethod == 'Credit/Debit Card') {
+      setState(() => _isLoading = true);
+      await _processWithSafepay();
       return;
     }
 
@@ -1044,33 +1098,129 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
 
     if (!mounted) return;
 
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user != null) {
+        // Get profile
+        final profile = await supabase
+            .from('profiles')
+            .select('id, role')
+            .eq('user_id', user.id)
+            .single();
+
+        final profileId = profile['id'].toString();
+        final role = profile['role'].toString();
+
+        // Calculate plan duration in days
+        int durationDays = 30;
+        if (widget.planPeriod.toLowerCase().contains('3 month')) {
+          durationDays = 90;
+        } else if (widget.planPeriod.toLowerCase().contains('year') ||
+            widget.planPeriod.toLowerCase().contains('annual')) {
+          durationDays = 365;
+        }
+
+        final now = DateTime.now();
+        final expiryDate = now.add(Duration(days: durationDays));
+
+        if (widget.purchaseType == 'pro') {
+          // Save subscription to Supabase
+          await supabase.from('subscriptions').insert({
+            'plan_name': widget.planName,
+            'plan_price': widget.planPrice,
+            'plan_period': widget.planPeriod,
+            'is_active': true,
+            'auto_renew': false,
+            'start_date': now.toIso8601String().substring(0, 10),
+            'end_date': expiryDate.toIso8601String().substring(0, 10),
+            // Set the correct user type column
+            'customer_id': role == 'customer'
+                ? await _getEntityId(supabase, profileId, 'customer')
+                : null,
+            'provider_id': role == 'provider'
+                ? await _getEntityId(supabase, profileId, 'provider')
+                : null,
+            'vendor_id': role == 'vendor'
+                ? await _getEntityId(supabase, profileId, 'vendor')
+                : null,
+          });
+
+          // Update is_pro flag based on role
+          if (role == 'customer') {
+            await supabase.from('customers').update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            }).eq('profile_id', profileId);
+          } else if (role == 'provider') {
+            await supabase.from('providers').update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            }).eq('profile_id', profileId);
+          } else if (role == 'vendor') {
+            await supabase.from('vendors').update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            }).eq('profile_id', profileId);
+          }
+        } else if (widget.purchaseType == 'featured_ad') {
+          // Save featured ad to Supabase
+          if (_featuredAdUserId != null) {
+            final adDurationDays =
+                widget.planName.toLowerCase().contains('premium')
+                    ? 30
+                    : widget.planName.toLowerCase().contains('standard')
+                        ? 14
+                        : 7;
+
+            final adExpiry = now.add(Duration(days: adDurationDays));
+
+            await supabase.from('featured_ads').insert({
+              'provider_id': role == 'provider' ? _featuredAdUserId : null,
+              'vendor_id': role == 'vendor' ? _featuredAdUserId : null,
+              'plan_type': _featuredAdPlanType ?? 'basic',
+              'tagline': _featuredAdTagline ?? '',
+              'amount_paid': widget.planPrice,
+              'currency': 'PKR',
+              'payment_method': _selectedPaymentMethod,
+              'is_active': true,
+              'start_date': now.toIso8601String(),
+              'end_date': adExpiry.toIso8601String(),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error saving payment to Supabase: $e');
+      // Continue to show success even if DB save fails
+      // Payment simulation succeeded
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _isLoading = false;
       _isSuccess = true;
     });
 
-    // Trigger success animation
     _successController.forward();
 
-    // Send notification and create featured ad
+    // Send notifications (keep existing code)
     try {
       final notificationManager =
           Provider.of<nm.NotificationManager>(context, listen: false);
 
       if (widget.purchaseType == 'featured_ad') {
-        // Send featured ad activation notification
         notificationManager.sendNotification(
           receiverId: _featuredAdUserId ?? 'user_123',
           receiverType: _featuredAdUserType ?? 'provider',
-          type: nm.NotificationType
-              .proUpgradeSuccess, // Using existing enum for now
+          type: nm.NotificationType.proUpgradeSuccess,
           title: '📢 Your Profile is Now Featured!',
-          body:
-              'Your profile is now visible to customers in featured ads. Get ready for more bookings!',
+          body: 'Your profile is now visible to customers in featured ads!',
           priority: nm.NotificationPriority.high,
         );
 
-        // Create featured ad with location data
         if (_featuredAdUserId != null &&
             _featuredAdUserType != null &&
             _featuredAdUserName != null &&
@@ -1078,16 +1228,14 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
             _featuredAdUserRating != null &&
             _featuredAdPlanType != null &&
             _featuredAdTagline != null) {
-          // Get user location for featured ad
           final userLocation = await LocationService.getCurrentLocation();
-
           FeaturedAdManager().purchaseFeaturedAd(
             userId: _featuredAdUserId!,
             userType: _featuredAdUserType!,
             userName: _featuredAdUserName!,
             userCategory: _featuredAdUserCategory!,
             userRating: _featuredAdUserRating!,
-            userDistance: 5.0, // Default distance
+            userDistance: 5.0,
             tagline: _featuredAdTagline!,
             planType: _featuredAdPlanType!,
             planPrice: widget.planPrice,
@@ -1096,19 +1244,125 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
           );
         }
       } else {
-        // Original Muawin Pro notification
         notificationManager.sendNotification(
-          receiverId: 'customer_123', // Placeholder user ID
+          receiverId: 'customer_123',
           receiverType: 'customer',
           type: nm.NotificationType.proUpgradeSuccess,
           title: '👑 Welcome to Muawin Pro!',
-          body:
-              'Your account has been successfully upgraded to Muawin Pro. Enjoy all premium features!',
+          body: 'Your account has been upgraded to Muawin Pro!',
           priority: nm.NotificationPriority.high,
         );
       }
     } catch (e) {
       debugPrint('Error sending notification: $e');
+    }
+  }
+
+  Future<String?> _getEntityId(
+      SupabaseClient supabase, String profileId, String role) async {
+    try {
+      final table = role == 'customer'
+          ? 'customers'
+          : role == 'provider'
+              ? 'providers'
+              : 'vendors';
+      final response = await supabase
+          .from(table)
+          .select('id')
+          .eq('profile_id', profileId)
+          .single();
+      return response['id']?.toString();
+    } catch (e) {
+      debugPrint('Error getting entity id: $e');
+      return null;
+    }
+  }
+
+  Future<void> _processWithSafepay() async {
+    // Simulate Safepay card payment processing
+    await Future.delayed(const Duration(seconds: 2));
+    await _savePaymentToSupabase();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isSuccess = true;
+      });
+      _successController.forward();
+    }
+  }
+
+  Future<void> _savePaymentToSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('user_id', user.id)
+          .single();
+
+      final profileId = profile['id'].toString();
+      final role = profile['role'].toString();
+
+      int durationDays = 30;
+      if (widget.planPeriod.toLowerCase().contains('3 month')) {
+        durationDays = 90;
+      } else if (widget.planPeriod.toLowerCase().contains('year') ||
+          widget.planPeriod.toLowerCase().contains('annual')) {
+        durationDays = 365;
+      }
+
+      final now = DateTime.now();
+      final expiryDate = now.add(Duration(days: durationDays));
+
+      await supabase.from('subscriptions').insert({
+        'plan_name': widget.planName,
+        'plan_price': widget.planPrice,
+        'plan_period': widget.planPeriod,
+        'is_active': true,
+        'auto_renew': false,
+        'start_date': now.toIso8601String().substring(0, 10),
+        'end_date': expiryDate.toIso8601String().substring(0, 10),
+        'customer_id': role == 'customer'
+            ? await _getEntityId(supabase, profileId, 'customer')
+            : null,
+        'provider_id': role == 'provider'
+            ? await _getEntityId(supabase, profileId, 'provider')
+            : null,
+        'vendor_id': role == 'vendor'
+            ? await _getEntityId(supabase, profileId, 'vendor')
+            : null,
+      });
+
+      if (role == 'customer') {
+        await supabase
+            .from('customers')
+            .update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            })
+            .eq('profile_id', profileId);
+      } else if (role == 'provider') {
+        await supabase
+            .from('providers')
+            .update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            })
+            .eq('profile_id', profileId);
+      } else if (role == 'vendor') {
+        await supabase
+            .from('vendors')
+            .update({
+              'is_pro': true,
+              'pro_expiry_date': expiryDate.toIso8601String(),
+            })
+            .eq('profile_id', profileId);
+      }
+    } catch (e) {
+      debugPrint('Error saving payment: $e');
     }
   }
 
@@ -1244,141 +1498,152 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
       );
     } else {
       // Original Muawin Pro Success Screen
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Spacer(),
+      return SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 24),
 
-          // Success animation
-          AnimatedBuilder(
-            animation: _scaleAnimation,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _scaleAnimation.value,
-                child: Column(
-                  children: [
-                    // Elegant success icon
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF047A62),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFF047A62).withValues(alpha: 0.2),
-                            blurRadius: 30,
-                            offset: const Offset(0, 15),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        color: Colors.white,
-                        size: 50,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-
-                    // Success message
-                    Text(
-                      'Welcome to Muawin Pro',
-                      style: GoogleFonts.poppins(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF047A62),
-                        letterSpacing: -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Your account has been successfully upgraded',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: Colors.grey.shade600,
-                        letterSpacing: 0.2,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Plan details card
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.grey.shade200,
-                          width: 1,
-                        ),
-                      ),
+                // Success animation
+                AnimatedBuilder(
+                  animation: _scaleAnimation,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: _scaleAnimation.value,
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            widget.planName.toUpperCase(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                              letterSpacing: 1.5,
+                          // Elegant success icon
+                          Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF047A62),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF047A62)
+                                      .withValues(alpha: 0.2),
+                                  blurRadius: 30,
+                                  offset: const Offset(0, 15),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 50,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 40),
+
+                          // Success message
                           Text(
-                            'Rs. ${widget.planPrice}/${widget.planPeriod}',
+                            'Welcome to Muawin Pro',
                             style: GoogleFonts.poppins(
-                              fontSize: 24,
+                              fontSize: 32,
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFF047A62),
+                              letterSpacing: -0.5,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Your account has been successfully upgraded',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 0.2,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 32),
+
+                          // Plan details card
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.grey.shade200,
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  widget.planName.toUpperCase(),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade600,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Rs. ${widget.planPrice}/${widget.planPeriod}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF047A62),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 40),
+
+                          // Start button
+                          SizedBox(
+                            width: 240,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                // Safely pop back to home screen
+                                Navigator.of(context)
+                                    .popUntil((route) => route.isFirst);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF047A62),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                'Continue',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 40),
-
-                    // Start button
-                    SizedBox(
-                      width: 240,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(); // Pop success screen
-                          Navigator.of(context).pop(); // Pop purchase screen
-                          Navigator.of(context)
-                              .pop(); // Pop get featured overlay
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF047A62),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Continue',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
-          const Spacer(),
-        ],
+        ),
       );
     }
   }

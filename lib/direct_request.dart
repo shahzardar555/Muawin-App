@@ -40,6 +40,9 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   double proposedPrice = 800.0;
   String specialInstructions = '';
   String negotiationNote = '';
+  final TextEditingController _cityController = TextEditingController();
+  final TextEditingController _areaController = TextEditingController();
+  String _selectedLocation = '';
 
   // PRO-only options
   String? _selectedDurationType; // 'days', 'weeks', 'months'
@@ -144,6 +147,8 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   void dispose() {
     _pulseController.dispose();
     _confettiController.dispose();
+    _cityController.dispose();
+    _areaController.dispose();
     super.dispose();
   }
 
@@ -279,6 +284,12 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       final requestData = {
         'customer_id': customerRecord['id'],
         'provider_id': providerId,
+        'service_category':
+            widget.providerData['service_category']?.toString() ?? '',
+        'title':
+            'Direct Request - ${widget.providerData['service_category']?.toString() ?? 'Service'}',
+        'description':
+            '${widget.providerData['service_category']?.toString() ?? 'Service'} request - $selectedPackage package',
         'package_type': selectedPackage,
         'proposed_price': proposedPrice,
         'scheduled_date': selectedDate != null
@@ -294,6 +305,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
         'is_nda_required': _isNDARequired,
         'custom_budget_min': _customBudgetMin,
         'custom_budget_max': _customBudgetMax,
+        'city': _cityController.text.trim().isNotEmpty
+            ? _cityController.text.trim()
+            : null,
+        'area': _areaController.text.trim().isNotEmpty
+            ? _areaController.text.trim()
+            : null,
+        'location': _selectedLocation.isNotEmpty ? _selectedLocation : null,
         'customer_is_pro': _isProUser,
         'status': 'pending',
       };
@@ -1140,6 +1158,84 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               ),
             );
           },
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Your Location',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Let the provider know where to come',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            color: Colors.grey,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // City field
+        TextField(
+          controller: _cityController,
+          decoration: InputDecoration(
+            labelText: 'City',
+            hintText: 'e.g. Karachi',
+            prefixIcon:
+                const Icon(Icons.location_city, color: Color(0xFF047A62)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF047A62), width: 2),
+            ),
+            filled: true,
+            fillColor: Colors.grey[50],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Area field
+        TextField(
+          controller: _areaController,
+          decoration: InputDecoration(
+            labelText: 'Area / Neighbourhood',
+            hintText: 'e.g. DHA Phase 5, Gulshan-e-Iqbal',
+            prefixIcon: const Icon(Icons.map, color: Color(0xFF047A62)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF047A62), width: 2),
+            ),
+            filled: true,
+            fillColor: Colors.grey[50],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Full address / landmark
+        TextField(
+          onChanged: (value) => setState(() => _selectedLocation = value),
+          decoration: InputDecoration(
+            labelText: 'Full Address / Landmark (optional)',
+            hintText: 'e.g. House 5, Street 3, near XYZ mosque',
+            prefixIcon: const Icon(Icons.home, color: Color(0xFF047A62)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF047A62), width: 2),
+            ),
+            filled: true,
+            fillColor: Colors.grey[50],
+          ),
         ),
         const SizedBox(height: 32),
 

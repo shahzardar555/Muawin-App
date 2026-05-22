@@ -38,8 +38,6 @@ import 'language_provider.dart';
 
 import 'logout_splash_screen.dart';
 
-import 'services/provider_data_service.dart';
-
 import 'constants/profile_constants.dart';
 
 // Enhanced feedback utilities
@@ -391,7 +389,7 @@ class _ServiceProviderProfileScreenState
 
   // Emergency contacts
 
-  List<Map<String, String>> _emergencyContacts = <Map<String, String>>[];
+  final List<Map<String, String>> _emergencyContacts = <Map<String, String>>[];
 
   // Service details state
   // TODO: Load from Supabase
@@ -428,6 +426,8 @@ class _ServiceProviderProfileScreenState
 
   bool _isLoading = true;
   bool _isSaving = false;
+  String _currentProviderId = '';
+  String _currentProfileId = '';
 
   // Enhanced CNIC state with interactive elements
   bool _isCNICExpanded = false;
@@ -3251,8 +3251,8 @@ class _ServiceProviderProfileScreenState
   String _currentMonthEarnings = '0'; // Will be loaded from actual data
   String _totalEarnings = '0'; // Will be loaded from actual data
   String _pendingPayouts = '0'; // Will be loaded from actual data
-  String _lastPayoutDate = ''; // Will be loaded from actual data
-  String _nextPayoutDate = ''; // Will be loaded from actual data
+  final String _lastPayoutDate = ''; // Will be loaded from actual data
+  final String _nextPayoutDate = ''; // Will be loaded from actual data
 
   // Withdrawal method state
   String _selectedWithdrawalMethod = 'Bank Account';
@@ -3260,89 +3260,60 @@ class _ServiceProviderProfileScreenState
   @override
   void initState() {
     super.initState();
-
-    _loadServiceDetails();
-
-    _loadEmergencyContacts();
-
-    _loadProviderCategory();
-
-    _loadEarningsData(); // Load actual earnings from app usage
-
-    _loadExistingPackages(); // Load saved packages from Supabase
-
-    // Add listeners to ensure text controllers update when slider values change
-    _basicPriceController.addListener(() {
-      // Trigger rebuild when text changes
-      if (mounted) setState(() {});
-      // ✅ NEW: Update hourly rate when basic price changes
-      _updateHourlyRate();
-    });
-    _standardPriceController.addListener(() {
-      // Trigger rebuild when text changes
-      if (mounted) setState(() {});
-    });
-    _premiumPriceController.addListener(() {
-      // Trigger rebuild when text changes
-      if (mounted) setState(() {});
-    });
+    _initializeProfile();
   }
 
-  // Load existing packages from Supabase
-  Future<void> _loadExistingPackages() async {
+  Future<void> _initializeProfile() async {
     try {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
       if (user == null) return;
 
+      // Get profile
       final profile = await supabase
           .from('profiles')
-          .select('id')
+          .select('id, full_name, email, phone_number, profile_image_url')
           .eq('user_id', user.id)
           .single();
 
-      final provider = await supabase
-          .from('providers')
-          .select('id')
-          .eq('profile_id', profile['id'])
-          .single();
+      _currentProfileId = profile['id'].toString();
 
-      final packages = await supabase
-          .from('service_pricing_packages')
-          .select('*')
-          .eq('provider_id', provider['id'])
-          .eq('is_active', true)
-          .order('sort_order');
+      // Get provider record
+      final provider = await supabase.from('providers').select('''
+            id,
+            service_category,
+            experience_years,
+            hourly_rate,
+            city,
+            area,
+            location,
+            tagline,
+            rating,
+            review_count,
+            is_pro,
+            is_available,
+            language
+          ''').eq('profile_id', _currentProfileId).single();
 
-      if (mounted && packages.isNotEmpty) {
-        setState(() {
-          for (final pkg in packages) {
-            if (pkg['package_type'] == 'basic') {
-              _basicPriceController.text = pkg['price']?.toString() ?? '500';
-              _basicDescriptionController.text = pkg['description'] ??
-                  'Basic service package with standard features and support';
-              _basicDurationController.text = pkg['duration'] ?? '2';
-            }
-            if (pkg['package_type'] == 'standard') {
-              _standardPriceController.text =
-                  pkg['price']?.toString() ?? '1000';
-              _standardDescriptionController.text = pkg['description'] ??
-                  'Enhanced service package with additional features and priority support';
-              _standardDurationController.text = pkg['duration'] ?? '4';
-            }
-            if (pkg['package_type'] == 'premium') {
-              _premiumPriceController.text = pkg['price']?.toString() ?? '2000';
-              _premiumDescriptionController.text = pkg['description'] ??
-                  'Premium service package with all features, priority support, and dedicated assistance';
-              _premiumDurationController.text = pkg['duration'] ?? '6';
-            }
-          }
-          _updateHourlyRate();
-        });
-        debugPrint('✅ Packages loaded from Supabase successfully');
-      }
+      _currentProviderId = provider['id'].toString();
+
+      setState(() {
+        _providerName = profile['full_name']?.toString() ?? '';
+        _email = profile['email']?.toString() ?? '';
+        _phoneNumber = profile['phone_number']?.toString() ?? '';
+        _providerCategory = provider['service_category']?.toString() ?? '';
+        _experience = provider['experience_years']?.toString() ?? '';
+        _description = provider['tagline']?.toString() ?? '';
+        _serviceLocation = provider['city']?.toString() ?? '';
+        _serviceArea = provider['area']?.toString() ?? '';
+        _isLoading = false;
+      });
+
+      // Load earnings separately
+      await _loadEarningsData();
     } catch (e) {
-      debugPrint('❌ Error loading packages: $e');
+      debugPrint('Error initializing profile: $e');
+      setState(() => _isLoading = false);
     }
   }
 
@@ -3362,171 +3333,36 @@ class _ServiceProviderProfileScreenState
   // Load actual earnings data from app usage
   Future<void> _loadEarningsData() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final currentEarnings =
-          double.tryParse(prefs.getString('current_month_earnings') ?? '0') ??
-              0.0;
+      if (_currentProviderId.isEmpty) return;
 
-      // Calculate real payout dates
-      final now = DateTime.now();
-      final lastPayout = DateTime(now.year, now.month - 1, 1); // Last month 1st
-      final nextPayout = DateTime(now.year, now.month, 1); // This month 1st
+      final supabase = Supabase.instance.client;
 
-      setState(() {
-        _currentMonthEarnings = currentEarnings.toStringAsFixed(0);
-        _totalEarnings = prefs.getString('total_earnings') ?? '0';
+      // Get wallet data
+      final wallet = await supabase
+          .from('wallets')
+          .select('balance, total_earnings, currency')
+          .eq('provider_id', _currentProviderId)
+          .maybeSingle();
 
-        // Calculate pending payouts as 90% of current monthly earnings (monthly earnings - 10%)
-        final pendingAmount = currentEarnings * 0.9; // 90% of monthly earnings
-        _pendingPayouts = pendingAmount.toStringAsFixed(0);
-
-        // Set real and proper payout dates
-        _lastPayoutDate = _formatDate(lastPayout);
-        _nextPayoutDate = _formatDate(nextPayout);
-      });
+      if (wallet != null) {
+        setState(() {
+          _currentMonthEarnings =
+              (wallet['balance'] as num?)?.toStringAsFixed(0) ?? '0';
+          _totalEarnings =
+              (wallet['total_earnings'] as num?)?.toStringAsFixed(0) ?? '0';
+          _pendingPayouts = '0';
+        });
+      }
     } catch (e) {
-      debugPrint('Error loading earnings data: $e');
+      debugPrint('Error loading earnings: $e');
     }
   }
 
   // Helper method to format dates consistently
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 
   // Load provider's category from registration data
 
-  Future<void> _loadProviderCategory() async {
-    try {
-      // For now, we'll use a mock phone number. In production, this would come from auth session
-
-      const mockPhoneNumber =
-          '03123456789'; // This should come from current user session
-
-      final category =
-          await ProviderDataManager.getProviderCategory(mockPhoneNumber);
-
-      if (category != null) {
-        setState(() {
-          _providerCategory = category;
-
-          _setDefaultDescriptions(category);
-        });
-      }
-
-      debugPrint('Loaded provider category: $_providerCategory');
-    } catch (e) {
-      debugPrint('Error loading provider category: $e');
-    }
-  }
-
   // Set default descriptions based on provider category
-
-  void _setDefaultDescriptions(String category) {
-    switch (category) {
-      case 'Maid':
-        _basicDescriptionController.text = 'Sweep, mop, dust';
-
-        _standardDescriptionController.text = 'Basic + kitchen + bathrooms';
-
-        _premiumDescriptionController.text =
-            'Deep clean of everything including Cupboards and windows';
-
-        break;
-
-      case 'Driver':
-        _basicDescriptionController.text =
-            '1-2 hours of Driver\'s services. Note: Vehicle will be provided by the family';
-
-        _standardDescriptionController.text =
-            'Half Day of Driver\'s services. Note: Vehicle will be provided by the family';
-
-        _premiumDescriptionController.text =
-            'Full Day of Driver\'s services. Note: Vehicle will be provided by the family';
-
-        break;
-
-      case 'Gardener':
-        _basicDescriptionController.text = 'Watering cleaning , basic care';
-
-        _standardDescriptionController.text = 'Trimming, cutting, weeding';
-
-        _premiumDescriptionController.text =
-            'Full Garden Service including fertilizing';
-
-        break;
-
-      case 'Cook':
-        _basicDescriptionController.text = 'Single Meal';
-
-        _standardDescriptionController.text = 'Full Day Cooking';
-
-        _premiumDescriptionController.text = 'Event Cooking';
-
-        break;
-
-      case 'Domestic Helper':
-        _basicDescriptionController.text = 'Standard Help';
-
-        _standardDescriptionController.text = 'Full House support';
-
-        _premiumDescriptionController.text =
-            'Event Cleanup / Moving assistance';
-
-        break;
-
-      case 'Security Guard':
-        _basicDescriptionController.text = 'Day Shift (8-10) hours';
-
-        _standardDescriptionController.text = 'Night shift (8-10) hours';
-
-        _premiumDescriptionController.text = '24 hours';
-
-        break;
-
-      case 'Babysitter':
-        _basicDescriptionController.text = 'Regular sitting (2-4 hours)';
-
-        _standardDescriptionController.text = 'Half Day';
-
-        _premiumDescriptionController.text = 'Full Day';
-
-        break;
-
-      case 'Washerman':
-        _basicDescriptionController.text = '10-20 items bundle wash';
-
-        _standardDescriptionController.text = '20-40 items bundle wash';
-
-        _premiumDescriptionController.text = '50+ items in bulk wash';
-
-        break;
-
-      case 'Tutor':
-        _basicDescriptionController.text =
-            'Nursery to Intermediate 1 hour session';
-
-        _standardDescriptionController.text = 'O/A levels 1 hour session';
-
-        _premiumDescriptionController.text =
-            'University level or higher 1 hour session';
-
-        break;
-
-      default:
-
-        // Default descriptions for other categories
-
-        _basicDescriptionController.text =
-            'Basic service offering with standard features and regular support.';
-
-        _standardDescriptionController.text =
-            'Enhanced service with additional features and priority support.';
-
-        _premiumDescriptionController.text =
-            'Premium service with all features, dedicated support, and customized solutions.';
-    }
-  }
 
   @override
   void dispose() {
@@ -3551,59 +3387,6 @@ class _ServiceProviderProfileScreenState
     _premiumDurationController.dispose();
 
     super.dispose();
-  }
-
-  Future<void> _loadServiceDetails() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      setState(() {
-        // TODO: Load from Supabase
-        _experience = prefs.getString('experience') ?? '';
-
-        _availability = prefs.getString('availability') ?? '';
-
-        _description = prefs.getString('description') ?? '';
-
-        // Load contact information from registration
-        _email = prefs.getString('provider_email') ?? '';
-        _phoneNumber = prefs.getString('provider_phone') ?? '';
-
-        // Load service location
-        _serviceLocation = prefs.getString('service_location') ?? '';
-
-        // Load provider name
-        // TODO: Load from Supabase
-        _providerName = prefs.getString('provider_name') ?? '';
-
-        // Load profile image path
-        final savedImagePath = prefs.getString('profile_image_path');
-        if (savedImagePath != null && File(savedImagePath).existsSync()) {
-          _profileImagePath = savedImagePath;
-          _profileImage = File(savedImagePath);
-        }
-
-        // Load cover photo path
-        final savedCoverPhotoPath = prefs.getString('cover_photo_path');
-        if (savedCoverPhotoPath != null &&
-            File(savedCoverPhotoPath).existsSync()) {
-          _coverPhotoPath = savedCoverPhotoPath;
-        }
-
-        // Alternative: Use ProviderDataService for consistency
-        // final providerData = await ProviderDataService.getProviderData('current_provider');
-        // if (providerData['profile_image_path'] != null && File(providerData['profile_image_path']).existsSync()) {
-        //   _profileImagePath = providerData['profile_image_path'];
-        //   _profileImage = File(providerData['profile_image_path']);
-        // }
-
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   // Input validation for service details
@@ -3692,18 +3475,13 @@ class _ServiceProviderProfileScreenState
   // Save profile image path to SharedPreferences
   Future<void> _saveProfileImagePath() async {
     try {
-      // Use ProviderDataService for consistency
-      await ProviderDataService.updateProviderData({
-        'profile_image_path': _profileImagePath,
-      });
-
-      // Alternative: Direct SharedPreferences access
-      // final prefs = await SharedPreferences.getInstance();
-      // if (_profileImagePath != null) {
-      //   await prefs.setString('profile_image_path', _profileImagePath!);
-      // }
-
-      debugPrint('Profile image path saved via ProviderDataService');
+      // Save profile image URL to Supabase profiles table
+      if (_currentProfileId.isNotEmpty && _profileImagePath != null) {
+        await Supabase.instance.client
+            .from('profiles')
+            .update({'profile_image_url': _profileImagePath}).eq(
+                'id', _currentProfileId);
+      }
     } catch (e) {
       debugPrint('Error saving profile image path: $e');
     }
@@ -3767,12 +3545,8 @@ class _ServiceProviderProfileScreenState
   // Save cover photo path to SharedPreferences
   Future<void> _saveCoverPhotoPath() async {
     try {
-      // Use ProviderDataService for consistency
-      await ProviderDataService.updateProviderData({
-        'cover_photo_path': _coverPhotoPath,
-      });
-
-      debugPrint('Cover photo path saved via ProviderDataService');
+      // Cover photo - skip Supabase for now as no column exists
+      debugPrint('Cover photo updated locally');
     } catch (e) {
       debugPrint('Error saving cover photo path: $e');
     }
@@ -3833,10 +3607,13 @@ class _ServiceProviderProfileScreenState
                     _providerName = newName;
                   });
 
-                  // Save to ProviderDataService
-                  await ProviderDataService.updateProviderData({
-                    'provider_name': _providerName,
-                  });
+                  // Save provider name to Supabase
+                  if (_currentProfileId.isNotEmpty) {
+                    await Supabase.instance.client
+                        .from('profiles')
+                        .update({'full_name': _providerName}).eq(
+                            'id', _currentProfileId);
+                  }
 
                   // Show success feedback
                   if (mounted) {
@@ -5058,48 +4835,57 @@ class _ServiceProviderProfileScreenState
 
   void _saveWizardServiceDetails() async {
     try {
-      // Show loading feedback
+      debugPrint('=== Saving service details ===');
+      debugPrint('_currentProviderId: $_currentProviderId');
+      debugPrint('_currentProfileId: $_currentProfileId');
+      debugPrint('_experience: $_experience');
+      debugPrint('_description: $_description');
+      debugPrint('_serviceLocation: $_serviceLocation');
+      debugPrint('_serviceArea: $_serviceArea');
       HapticFeedbackUtils.lightImpact();
 
-      // Validate service location (required field)
-      if (_serviceLocation.trim().isEmpty) {
+      if (_serviceLocation.trim().isEmpty && _serviceArea.trim().isEmpty) {
         if (mounted) {
           HapticFeedbackUtils.error();
-          FeedbackUtils.showErrorToast('Service location is required',
-              context: context);
+          FeedbackUtils.showErrorToast(
+            'Please enter your city or service area',
+            context: context,
+          );
         }
         return;
       }
 
-      // Validate Google Maps link format
-      if (!_serviceLocation.startsWith('https://maps.google.com/') &&
-          !_serviceLocation.startsWith('https://www.google.com/maps/')) {
-        if (mounted) {
-          HapticFeedbackUtils.error();
-          FeedbackUtils.showErrorToast('Please enter a valid Google Maps link',
-              context: context);
-        }
-        return;
-      }
+      setState(() => _isSaving = true);
 
-      // Save to ProviderDataService (email, phone, and hourly_rate are read-only from registration)
-      await ProviderDataService.updateProviderData({
-        'experience': _experience,
-        'availability': _availability,
-        'service_area': _serviceArea,
-        'service_location': _serviceLocation, // New field
-        'description': _description,
-        // Note: email, phone, and hourly_rate are not saved here as they are from registration
-      });
+      final supabase = Supabase.instance.client;
 
-      // Show success feedback
+      // Update providers table
+      await supabase.from('providers').update({
+        'experience_years': int.tryParse(_experience) ?? 0,
+        'tagline': _description,
+        'city': _serviceLocation.trim().isNotEmpty
+            ? _serviceLocation.trim()
+            : _serviceArea.trim(),
+        'area': _serviceArea,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', _currentProviderId);
+
+      // Update profiles table
+      await supabase.from('profiles').update({
+        'phone_number': _phoneNumber,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', _currentProfileId);
+
+      setState(() => _isSaving = false);
+
       if (mounted) {
         HapticFeedbackUtils.success();
         FeedbackUtils.showSuccessToast('Service details updated successfully!',
             context: context);
       }
     } catch (e) {
-      // Show error feedback
+      debugPrint('Error saving service details: $e');
+      setState(() => _isSaving = false);
       if (mounted) {
         HapticFeedbackUtils.error();
         FeedbackUtils.showErrorToast('Error updating service details',
@@ -7787,26 +7573,6 @@ class _ServiceProviderProfileScreenState
     });
 
     _saveEmergencyContacts();
-  }
-
-  Future<void> _loadEmergencyContacts() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      final contactsJson = prefs.getString('emergency_contacts') ?? '[]';
-
-      final List<dynamic> contactsList = jsonDecode(contactsJson);
-
-      final contacts = contactsList.map((contact) {
-        return Map<String, String>.from(contact);
-      }).toList();
-
-      setState(() {
-        _emergencyContacts = contacts;
-      });
-    } catch (e) {
-      debugPrint('Error loading emergency contacts: $e');
-    }
   }
 
   Future<void> _saveEmergencyContacts() async {

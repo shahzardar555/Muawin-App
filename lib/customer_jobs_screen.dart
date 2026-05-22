@@ -4,13 +4,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
-import 'dart:io';
 import 'widgets/bottom_navigation_bar.dart';
 import 'customer_home_screen.dart';
 import 'post_job_screen.dart';
 import 'customer_profile_screen.dart';
 import 'customer_messages_screen.dart';
-import 'services/provider_data_service.dart';
 
 /// Customer Jobs Screen (/customer/jobs)
 /// Provides clear status tracking and safety protocols through a tiered card hierarchy.
@@ -3615,78 +3613,26 @@ class _JobCard extends StatelessWidget {
 
   // Helper method to build provider profile image with cross-platform support
   Widget _buildProviderProfileImage(Map<String, dynamic> job) {
-    final providerId = job['providerId'] as String?;
+    // Use provider image already loaded with job data from Supabase
+    final imageUrl =
+        job['providers']?['profiles']?['profile_image_url']?.toString();
 
-    if (providerId != null) {
-      // Try to load real provider profile picture
-      return FutureBuilder<Map<String, dynamic>>(
-        future: ProviderDataService.getProviderData(providerId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingAvatar();
-          }
-
-          if (snapshot.hasData &&
-              snapshot.data!['profile_image_path'] != null) {
-            final profileImagePath =
-                snapshot.data!['profile_image_path'] as String;
-
-            if (profileImagePath.startsWith('blob:')) {
-              // Web: Use Image.network with blob URL
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: Image.network(
-                  profileImagePath,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildDefaultAvatar();
-                  },
-                ),
-              );
-            } else {
-              // Mobile: Use Image.file
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: Image.file(
-                  File(profileImagePath),
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildDefaultAvatar();
-                  },
-                ),
-              );
-            }
-          } else {
-            // Fallback to placeholder or default avatar
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Image.network(
+          imageUrl,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
             return _buildDefaultAvatar();
-          }
-        },
+          },
+        ),
       );
     } else {
-      // No providerId available, use default avatar
       return _buildDefaultAvatar();
     }
-  }
-
-  Widget _buildLoadingAvatar() {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: const Center(
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
-        ),
-      ),
-    );
   }
 
   Widget _buildDefaultAvatar() {

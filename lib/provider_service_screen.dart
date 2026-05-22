@@ -16,7 +16,7 @@ class ProviderServiceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(context).colorScheme.surface;
+    final surface = Colors.white;
     final muted =
         Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
 
@@ -69,7 +69,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         const SizedBox(height: 32), // space-y-8 = 2rem
                         // Selection cards
                         _ProviderRoleCard(
-                          icon: Icons.person_rounded,
+                          icon: Icons.handyman,
                           title: 'Service Provider',
                           description:
                               'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
@@ -202,7 +202,7 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
             decoration: BoxDecoration(
               color: _hovered
                   ? primary.withValues(alpha: 0.05)
-                  : theme.colorScheme.surface,
+                  : Colors.white,
               borderRadius: BorderRadius.circular(_ProviderRoleCard._radius),
               border: Border.all(
                 color: _hovered

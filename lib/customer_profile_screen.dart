@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'theme_provider.dart';
@@ -32,9 +33,11 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
   List<Map<String, String>> _emergencyContacts = [];
 
   // Profile data state
-  String _userName = 'Ahmed Hassan';
-  String _userEmail = 'ahmed@example.com';
-  String _userPhone = '+92 300 123 4567';
+  String _currentProfileId = '';
+  String _currentCustomerId = '';
+  String _userName = '';
+  String _userEmail = '';
+  String _userPhone = '';
   String _profileImagePath = '';
   Uint8List? _profileImageBytes;
   bool _isProfileLoaded = false;
@@ -46,7 +49,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
 
   // PRO status state
   bool _isProUser = false;
-  bool _testProMode = false; // Testing toggle
 
   @override
   void initState() {
@@ -59,10 +61,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
-    _loadEmergencyContacts();
     _loadUserProfile();
     _checkProStatus();
-    _loadTestProMode();
   }
 
   // Check if user is a PRO user
@@ -75,79 +75,83 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
     }
   }
 
-  // Load test PRO mode preference
-  Future<void> _loadTestProMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final testMode = prefs.getBool('test_pro_mode') ?? false;
-    if (mounted) {
-      setState(() {
-        _testProMode = testMode;
-      });
-    }
-  }
-
-  // Toggle test PRO mode
-  Future<void> _toggleTestProMode(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('test_pro_mode', value);
-
-    if (value) {
-      // Enable test PRO mode
-      await ProStatusChecker.markSubscriptionCompleted(
-        subscriptionType: 'pro',
-        startDate: '2026-04-26',
-        endDate: '2027-04-26',
+  // Change password via Supabase Auth
+  Future<void> _changePassword(String currentPassword, String newPassword) async {
+    try {
+      // Update password via Supabase Auth
+      final response = await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: newPassword),
       );
-    } else {
-      // Disable test PRO mode
-      await ProStatusChecker.clearSubscriptionData();
-    }
-
-    if (mounted) {
-      setState(() {
-        _testProMode = value;
-      });
-      await _checkProStatus();
+      if (response.user != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Password updated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error changing password: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update password: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  // Load user profile from SharedPreferences
+  // Load user profile from Supabase
   Future<void> _loadUserProfile() async {
     try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone_number, profile_image_url')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profile['id'].toString();
+
+      // Get customer record
+      final customer = await supabase
+          .from('customers')
+          .select('id, is_pro')
+          .eq('profile_id', _currentProfileId)
+          .single();
+
+      _currentCustomerId = customer['id'].toString();
+
+      // Load notification prefs from SharedPreferences (keep as is)
       final prefs = await SharedPreferences.getInstance();
+
       setState(() {
-        _userName = prefs.getString('user_name') ?? 'Ahmed Hassan';
-        _userEmail = prefs.getString('user_email') ?? 'ahmed@example.com';
-        _userPhone = prefs.getString('user_phone') ?? '+92 300 123 4567';
-        _profileImagePath = prefs.getString('profile_image_path') ?? '';
+        _userName = profile['full_name']?.toString() ?? '';
+        _userEmail = profile['email']?.toString() ?? '';
+        _userPhone = profile['phone_number']?.toString() ?? '';
+        _profileImagePath = profile['profile_image_url']?.toString() ?? '';
         _isProfileLoaded = true;
-      });
-
-      // Initialize default password if not set
-      if (!prefs.containsKey('user_password')) {
-        await prefs.setString('user_password', 'password123');
-      }
-
-      // Load notification preferences with explicit null checks
-      setState(() {
         _jobUpdatesEnabled = prefs.getBool('notification_job_updates') ?? true;
-        _newMessagesEnabled =
-            prefs.getBool('notification_new_messages') ?? true;
-        _paymentUpdatesEnabled =
-            prefs.getBool('notification_payment_updates') ?? true;
+        _newMessagesEnabled = prefs.getBool('notification_new_messages') ?? true;
+        _paymentUpdatesEnabled = prefs.getBool('notification_payment_updates') ?? true;
       });
+
+      // Load emergency contacts after customer ID is available
+      _loadEmergencyContacts();
     } catch (e) {
-      debugPrint('Error loading user profile: $e');
-      // Ensure default values on error
+      debugPrint('Error loading customer profile: $e');
       setState(() {
-        _userName = 'Ahmed Hassan';
-        _userEmail = 'ahmed@example.com';
-        _userPhone = '+92 300 123 4567';
-        _profileImagePath = '';
+        _userName = '';
+        _userEmail = '';
+        _userPhone = '';
         _isProfileLoaded = true;
-        _jobUpdatesEnabled = true;
-        _newMessagesEnabled = true;
-        _paymentUpdatesEnabled = true;
       });
     }
   }
@@ -272,10 +276,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
 
   Future<void> _saveProfileImagePath(String imagePath) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('profile_image_path', imagePath);
+      if (_currentProfileId.isNotEmpty) {
+        await Supabase.instance.client
+            .from('profiles')
+            .update({'profile_image_url': imagePath})
+            .eq('id', _currentProfileId);
+      }
     } catch (e) {
-      debugPrint('Error saving profile image path: $e');
+      debugPrint('Error saving profile image: $e');
     }
   }
 
@@ -467,37 +475,51 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
 
   void _loadEmergencyContacts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final contactsJson = prefs.getString('emergency_contacts');
+      if (_currentCustomerId.isEmpty) return;
+      
+      final response = await Supabase.instance.client
+          .from('emergency_contacts')
+          .select('id, name, phone_number, relationship')
+          .eq('customer_id', _currentCustomerId)
+          .order('created_at');
 
-      if (contactsJson != null) {
-        // Parse the JSON string back to list of maps
-        final contactsList = jsonDecode(contactsJson) as List<dynamic>;
-        final contacts = contactsList
-            .map((contact) => {
-                  'name': contact['name'] as String? ?? '',
-                  'phone': contact['phone'] as String? ?? '',
-                })
-            .toList();
-
-        setState(() {
-          _emergencyContacts = contacts;
-        });
-      }
+      setState(() {
+        _emergencyContacts = (response as List).map((c) => {
+          'id': c['id']?.toString() ?? '',
+          'name': c['name']?.toString() ?? '',
+          'phone': c['phone_number']?.toString() ?? '',
+          'relationship': c['relationship']?.toString() ?? '',
+        }).toList();
+      });
     } catch (e) {
-      // Handle error silently in production
       debugPrint('Error loading emergency contacts: $e');
     }
   }
 
   void _saveEmergencyContacts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // Convert the list of maps to JSON string
-      final contactsJson = jsonEncode(_emergencyContacts);
-      await prefs.setString('emergency_contacts', contactsJson);
+      if (_currentCustomerId.isEmpty) return;
+
+      // Delete existing contacts
+      await Supabase.instance.client
+          .from('emergency_contacts')
+          .delete()
+          .eq('customer_id', _currentCustomerId);
+
+      // Insert new contacts
+      if (_emergencyContacts.isNotEmpty) {
+        final contacts = _emergencyContacts.map((c) => {
+          'customer_id': _currentCustomerId,
+          'name': c['name'] ?? '',
+          'phone_number': c['phone'] ?? '',
+          'relationship': c['relationship'] ?? 'Family',
+        }).toList();
+
+        await Supabase.instance.client
+            .from('emergency_contacts')
+            .insert(contacts);
+      }
     } catch (e) {
-      // Handle error silently in production
       debugPrint('Error saving emergency contacts: $e');
     }
   }
@@ -1343,12 +1365,19 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                   _userPhone = phoneController.text.trim();
                 });
 
-                // Save to SharedPreferences
+                // Save to Supabase
                 try {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('user_name', _userName);
-                  await prefs.setString('user_email', _userEmail);
-                  await prefs.setString('user_phone', _userPhone);
+                  if (_currentProfileId.isNotEmpty) {
+                    await Supabase.instance.client
+                        .from('profiles')
+                        .update({
+                          'full_name': _userName,
+                          'phone_number': _userPhone,
+                          'email': _userEmail,
+                          'updated_at': DateTime.now().toIso8601String(),
+                        })
+                        .eq('id', _currentProfileId);
+                  }
                 } catch (e) {
                   debugPrint('Error saving profile: $e');
                 }
@@ -1920,54 +1949,20 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                   ),
                 );
 
-                try {
-                  // Verify current password and update new password
-                  final prefs = await SharedPreferences.getInstance();
-                  final storedPassword = prefs.getString('user_password') ??
-                      'password123'; // Default password for demo
+                // Close loading dialog
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
 
-                  if (currentPasswordController.text != storedPassword) {
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop(); // Close loading dialog
-                      _showErrorSnackBar('Current password is incorrect');
-                    }
-                    return;
-                  }
+                // Call Supabase Auth to change password
+                await _changePassword(
+                  currentPasswordController.text,
+                  newPasswordController.text,
+                );
 
-                  // Simulate API call delay
-                  await Future.delayed(const Duration(seconds: 2));
-
-                  // Update password in storage
-                  await prefs.setString(
-                      'user_password', newPasswordController.text);
-
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop(); // Close loading dialog
-
-                    // Show success message
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Password updated successfully!',
-                          style: GoogleFonts.poppins(color: Colors.white),
-                        ),
-                        backgroundColor: Colors.green,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                    Navigator.of(dialogContext)
-                        .pop(); // Close change password dialog
-                  }
-                } catch (e) {
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop(); // Close loading dialog
-                    _showErrorSnackBar(
-                        'Failed to update password. Please try again.');
-                  }
+                // Close change password dialog
+                if (context.mounted) {
+                  Navigator.of(context).pop();
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -2064,25 +2059,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                         setState(() {
                           _paymentUpdatesEnabled = value;
                         });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Test PRO Mode Section
-                _buildNotificationSection(
-                  title: 'Developer Options',
-                  icon: Icons.bug_report,
-                  iconColor: Colors.orange,
-                  children: [
-                    _buildNotificationToggle(
-                      title: 'Test PRO Mode',
-                      subtitle:
-                          'Toggle PRO features for testing (restart required)',
-                      value: _testProMode,
-                      onChanged: (value) async {
-                        await _toggleTestProMode(value);
-                        setState(() {});
                       },
                     ),
                   ],

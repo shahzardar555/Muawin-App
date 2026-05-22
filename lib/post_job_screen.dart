@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'customer_home_screen.dart';
 import 'customer_jobs_screen.dart';
 import 'customer_messages_screen.dart';
 import 'customer_profile_screen.dart';
 import 'services/pro_status_checker.dart';
+import 'services/notification_manager.dart' as nm;
 
 /// Post Job Screen (/customer/post-job)
 /// Progressive Disclosure Form with multi-step flow for posting jobs.
@@ -37,18 +40,13 @@ class _PostJobScreenState extends State<PostJobScreen> {
   TimeOfDay? _selectedTime;
   final TextEditingController _budgetController = TextEditingController();
 
-  final List<Map<String, dynamic>> _categories = [
-    {'label': 'Maid', 'icon': Icons.cleaning_services},
-    {'label': 'Driver', 'icon': Icons.directions_car},
-    {'label': 'Cook', 'icon': Icons.restaurant},
-    {'label': 'Tutor', 'icon': Icons.school},
-    {'label': 'Electrician', 'icon': Icons.electrical_services},
-    {'label': 'Plumber', 'icon': Icons.plumbing},
-  ];
+  List<Map<String, dynamic>> _categories = [];
+  bool _categoriesLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _loadCategories();
     _checkProStatus();
   }
 
@@ -60,6 +58,57 @@ class _PostJobScreenState extends State<PostJobScreen> {
       setState(() {
         _isProUser = isPro;
       });
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('service_categories')
+          .select('id, name, icon')
+          .eq('is_active', true)
+          .eq('category_type', 'provider')
+          .order('sort_order');
+
+      setState(() {
+        _categories = (response as List).map((c) => {
+          'label': c['name']?.toString() ?? '',
+          'icon': _getIconForCategory(c['name']?.toString() ?? ''),
+        }).toList();
+        _categoriesLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading categories: $e');
+      // Fallback to hardcoded
+      setState(() {
+        _categories = [
+          {'label': 'Maid', 'icon': Icons.cleaning_services},
+          {'label': 'Driver', 'icon': Icons.directions_car},
+          {'label': 'Cook', 'icon': Icons.restaurant},
+          {'label': 'Tutor', 'icon': Icons.school},
+          {'label': 'Domestic Helper', 'icon': Icons.home},
+          {'label': 'Gardener', 'icon': Icons.grass},
+          {'label': 'Babysitter', 'icon': Icons.child_care},
+          {'label': 'Security Guard', 'icon': Icons.security},
+          {'label': 'Washerman', 'icon': Icons.local_laundry_service},
+        ];
+        _categoriesLoading = false;
+      });
+    }
+  }
+
+  IconData _getIconForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'maid': return Icons.cleaning_services;
+      case 'driver': return Icons.directions_car;
+      case 'cook': return Icons.restaurant;
+      case 'tutor': return Icons.school;
+      case 'domestic helper': return Icons.home;
+      case 'gardener': return Icons.grass;
+      case 'babysitter': return Icons.child_care;
+      case 'security guard': return Icons.security;
+      case 'washerman': return Icons.local_laundry_service;
+      default: return Icons.work;
     }
   }
 
@@ -908,33 +957,103 @@ class _PostJobScreenState extends State<PostJobScreen> {
     }
   }
 
-  void _confirmAndPostJob(Color primary) {
-    // Generate job ID
-    final jobId =
-        '#MUA-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+  void _confirmAndPostJob(Color primary) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
 
-    // Show success confirmation
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _SuccessConfirmationDialog(
-        jobId: jobId,
-        primary: primary,
-        onTrackJob: () {
-          Navigator.of(context).pop(); // Close dialog
-          Navigator.of(context).pop(); // Go back to home
-        },
-        onBackToHome: () {
-          Navigator.of(context).pop(); // Close dialog
-          Navigator.of(context).pop(); // Go back to home
-        },
-      ),
-    );
+      // Get customer profile
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-    // Set job as posted
-    setState(() {
-      _isJobPosted = true;
-    });
+      final customer = await supabase
+          .from('customers')
+          .select('id')
+          .eq('profile_id', profile['id'])
+          .single();
+
+      // Build scheduled date and time
+      String? scheduledDate;
+      String? scheduledTime;
+      if (_selectedDate != null) {
+        scheduledDate = _selectedDate!.toIso8601String().substring(0, 10);
+      }
+      if (_selectedTime != null) {
+        scheduledTime =
+            '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00';
+      }
+
+      // Insert job into Supabase
+      final jobResponse = await supabase.from('jobs').insert({
+        'customer_id': customer['id'],
+        'service_category': _selectedCategory,
+        'title': '$_selectedCategory Service Request',
+        'description': _descriptionController.text.trim(),
+        'location': _locationController.text.trim(),
+        'status': 'open',
+        'scheduled_date': _selectedDate != null
+            ? '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}'
+            : null,
+        'scheduled_time': _selectedTime != null
+            ? '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00'
+            : null,
+      }).select('id').single();
+
+      final jobId = jobResponse['id'].toString();
+      final shortId = '#MUA-${jobId.substring(0, 8).toUpperCase()}';
+
+      // Send notification
+      try {
+        final notificationManager = Provider.of<nm.NotificationManager>(
+          context, listen: false);
+        notificationManager.sendNotification(
+          receiverId: customer['id'],
+          receiverType: 'customer',
+          type: nm.NotificationType.jobPosted,
+          title: '🎉 Job Posted Successfully!',
+          body: 'Your $_selectedCategory job request is now live.',
+          priority: nm.NotificationPriority.medium,
+        );
+      } catch (e) {
+        debugPrint('Notification error: $e');
+      }
+
+      if (!mounted) return;
+
+      // Show success dialog with real job ID
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _SuccessConfirmationDialog(
+          jobId: shortId,
+          primary: primary,
+          onTrackJob: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop();
+          },
+          onBackToHome: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).pop();
+          },
+        ),
+      );
+      setState(() { _isJobPosted = true; });
+
+    } catch (e) {
+      debugPrint('Error posting job: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to post job: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

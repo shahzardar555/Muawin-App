@@ -6,10 +6,11 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert'; // Add this import for jsonDecode
+import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/get_featured_overlay.dart';
-import 'services/provider_data_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'widgets/chat_voice_input.dart';
 import 'widgets/service_provider_notification_bell.dart';
@@ -82,7 +83,8 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
 
   // Current provider ID (this would come from authentication/user profile)
   // TODO: Load from Supabase
-  final String _currentProviderId = '';
+  String _currentProviderId = '';
+  String _currentProfileId = '';
 
   // Real provider data from ProviderDataService
   Map<String, dynamic>? _providerData;
@@ -90,17 +92,15 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   // Service provider profile data
   // TODO: Load from Supabase
   Map<String, dynamic> get _providerProfile {
-    // Use real provider data if available, otherwise fallback to mock data
     if (_providerData != null) {
       return {
-        'name': _providerData!['provider_name'] ?? '',
-        'category': _providerData!['service_type'] ?? '',
-        'rating': '0.0',
-        'profilePicture': '',
+        'name': _providerData!['profiles']?['full_name'] ?? '',
+        'category': _providerData!['service_category'] ?? '',
+        'rating': _providerData!['rating']?.toString() ?? '0.0',
+        'profilePicture':
+            _providerData!['profiles']?['profile_image_url'] ?? '',
       };
     }
-
-    // Fallback empty data
     return {
       'name': '',
       'category': '',
@@ -110,7 +110,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   }
 
   // TODO: Load from Supabase
-  final List<Map<String, dynamic>> _jobAlerts = [];
+  List<Map<String, dynamic>> _jobAlerts = [];
 
   void _showStatusSheet() {
     showModalBottomSheet(
@@ -380,14 +380,86 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   // Method to load direct requests for this provider
   Future<void> _loadDirectRequests() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final directRequestsKey = 'direct_requests_$_currentProviderId';
-      final directRequestsJson = prefs.getString(directRequestsKey) ?? '[]';
-      final directRequests = jsonDecode(directRequestsJson) as List<dynamic>;
+      if (_currentProviderId.isEmpty) return;
+      debugPrint('Loading requests for provider ID: $_currentProviderId');
 
-      // Add direct requests to the job alerts
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('direct_job_requests')
+          .select('''
+            id,
+            title,
+            service_category,
+            package_type,
+            proposed_price,
+            scheduled_date,
+            scheduled_time,
+            city,
+            area,
+            location,
+            special_instructions,
+            status,
+            is_priority_response,
+            created_at,
+            customer_id,
+            customers!inner(
+              profile_id,
+              profiles!inner(
+                full_name,
+                phone_number,
+                profile_image_url
+              )
+            )
+          ''')
+          .eq('provider_id', _currentProviderId)
+          .eq('status', 'pending')
+          .order('created_at', ascending: false);
+
+      debugPrint('Direct requests count: ${response.length}');
+      debugPrint(
+          'First request if any: ${response.isNotEmpty ? response.first : 'empty'}');
+
+      final requests = List<Map<String, dynamic>>.from(response);
+
+      // Map to format expected by _JobLeadCard
+      final mapped = requests.map((req) {
+        final customerName =
+            req['customers']?['profiles']?['full_name']?.toString() ??
+                'Customer';
+        final city = req['city']?.toString() ?? '';
+        final area = req['area']?.toString() ?? '';
+        final location = area.isNotEmpty ? '$area, $city' : city;
+
+        return {
+          'id': req['id']?.toString() ?? '',
+          'supabase_id': req['id']?.toString() ?? '',
+          'title': req['title']?.toString() ?? 'Direct Request',
+          'category': req['service_category']?.toString() ?? '',
+          'package': req['package_type']?.toString() ?? 'basic',
+          'budget': req['proposed_price']?.toString() ?? '0',
+          'price': req['proposed_price']?.toString() ?? '0',
+          'details': req['title']?.toString() ??
+              req['special_instructions']?.toString() ??
+              'Service request',
+          'distance': '',
+          'location': location,
+          'city': city,
+          'area': area,
+          'date': req['scheduled_date']?.toString() ?? '',
+          'time': req['scheduled_time']?.toString() ?? '',
+          'customer': customerName,
+          'instructions': req['special_instructions']?.toString() ?? '',
+          'is_priority': req['is_priority_response'] == true,
+          'highPriority': true,
+          'status': req['status']?.toString() ?? 'pending',
+          'created_at': req['created_at']?.toString() ?? '',
+          'customer_id': req['customer_id']?.toString() ?? '',
+        };
+      }).toList();
+
       setState(() {
-        _jobAlerts.addAll(directRequests.cast<Map<String, dynamic>>());
+        _jobAlerts = mapped;
       });
     } catch (e) {
       debugPrint('Error loading direct requests: $e');
@@ -439,26 +511,63 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDirectRequests(); // Load direct requests when screen initializes
-    _loadProviderData(); // Load real provider data
+    _initializeProvider();
   }
 
-  // Load real provider data from ProviderDataService
-  Future<void> _loadProviderData() async {
+  Future<void> _initializeProvider() async {
     try {
-      final data =
-          await ProviderDataService.getProviderData(_currentProviderId);
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get profile
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profile['id'].toString();
+
+      // Get provider record
+      final provider = await supabase
+          .from('providers')
+          .select('id')
+          .eq('profile_id', _currentProfileId)
+          .single();
+
       setState(() {
-        _providerData = data;
+        _currentProviderId = provider['id'].toString();
       });
 
-      // Listen for real-time service details changes
-      ProviderDataService.addProviderDataChangeListener((updatedData) {
-        if (mounted) {
-          setState(() {
-            _providerData = updatedData;
-          });
-        }
+      // Now load data with real provider ID
+      await _loadProviderData();
+      await _loadDirectRequests();
+    } catch (e) {
+      debugPrint('Error initializing provider: $e');
+    }
+  }
+
+  // Load real provider data from Supabase
+  Future<void> _loadProviderData() async {
+    try {
+      if (_currentProviderId.isEmpty) return;
+
+      final supabase = Supabase.instance.client;
+
+      final data = await supabase.from('providers').select('''
+            *,
+            profiles!inner(
+              full_name,
+              email,
+              phone_number,
+              profile_image_url,
+              city
+            )
+          ''').eq('id', _currentProviderId).single();
+
+      setState(() {
+        _providerData = data;
       });
     } catch (e) {
       debugPrint('Error loading provider data: $e');
@@ -675,7 +784,22 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                 child: _JobLeadCard(
                                   job: job,
                                   primary: primary,
-                                  onDecline: () {
+                                  onDecline: () async {
+                                    // Update status in Supabase
+                                    final supabaseId =
+                                        job['supabase_id']?.toString() ?? '';
+                                    if (supabaseId.isNotEmpty) {
+                                      try {
+                                        await Supabase.instance.client
+                                            .from('direct_job_requests')
+                                            .update({'status': 'cancelled'}).eq(
+                                                'id', supabaseId);
+                                      } catch (e) {
+                                        debugPrint(
+                                            'Error updating request status: $e');
+                                      }
+                                    }
+
                                     // Safe haptic feedback alternative
                                     try {
                                       // Haptic feedback removed for compatibility
@@ -685,7 +809,26 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                     setState(() => _jobAlerts.remove(job));
                                   },
                                   onNegotiate: () => _showNegotiationModal(job),
-                                  onAccept: () {
+                                  onAccept: () async {
+                                    // Capture ScaffoldMessenger before async gap
+                                    final messenger =
+                                        ScaffoldMessenger.of(context);
+
+                                    // Update status in Supabase
+                                    final supabaseId =
+                                        job['supabase_id']?.toString() ?? '';
+                                    if (supabaseId.isNotEmpty) {
+                                      try {
+                                        await Supabase.instance.client
+                                            .from('direct_job_requests')
+                                            .update({'status': 'confirmed'}).eq(
+                                                'id', supabaseId);
+                                      } catch (e) {
+                                        debugPrint(
+                                            'Error updating request status: $e');
+                                      }
+                                    }
+
                                     // Safe haptic feedback alternative
                                     try {
                                       // Haptic feedback removed for compatibility
@@ -700,7 +843,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                     setState(() => _jobAlerts.remove(job));
 
                                     // Show success message
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    messenger.showSnackBar(
                                       SnackBar(
                                         content: Text(
                                           'Job ${job['id']} accepted and moved to My Jobs!',
@@ -1050,7 +1193,7 @@ class _JobLeadCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isHighPriority = job['highPriority'] as bool;
+    final bool isHighPriority = (job['highPriority'] ?? false) as bool;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1614,30 +1757,13 @@ class _PromotionHeroState extends State<_PromotionHero>
 
   // Get current user profile data
   Future<Map<String, dynamic>> _getCurrentUserProfile() async {
-    try {
-      // First try to get provider data from ProviderDataService
-      final providerData =
-          await ProviderDataService.getProviderData('provider_001');
-
-      return {
-        'userType': 'provider',
-        'userId': 'provider_001',
-        'userName': providerData['provider_name'] ?? 'Provider Name Here',
-        'userCategory':
-            providerData['service_type'] ?? 'Provider Category Here',
-        'userRating': 4.8, // Could be added to ProviderDataService later
-      };
-    } catch (e) {
-      debugPrint('Error loading provider data: $e');
-      // Fallback to mock data if service fails
-      return {
-        'userType': 'provider',
-        'userId': 'provider_001',
-        'userName': 'Ahmed Hassan',
-        'userCategory': 'Driver Service',
-        'userRating': 4.8,
-      };
-    }
+    return {
+      'userType': 'provider',
+      'userId': 'provider_001',
+      'userName': 'Ahmed Hassan',
+      'userCategory': 'Driver Service',
+      'userRating': 4.8,
+    };
   }
 
   // Show GetFeaturedOverlay with real user data
@@ -1971,6 +2097,9 @@ class _AIChatBottomSheet extends StatefulWidget {
 class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
+  final List<Map<String, dynamic>> _conversationHistory = [];
+  bool _isBotTyping = false;
+  static const String _backendUrl = 'http://localhost:3001';
 
   // Chat voice state variables
   bool _isChatListening = false;
@@ -1987,25 +2116,69 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   // Speech recognition instance
   final SpeechToText _speechToText = SpeechToText();
 
-  void _sendMessage({bool isVoiceMessage = false}) {
-    if (_controller.text.trim().isEmpty) return;
+  void _sendMessage({bool isVoiceMessage = false}) async {
+    final userMessage = _controller.text.trim();
+    if (userMessage.isEmpty) return;
 
     setState(() {
       _messages.add({
-        'text': _controller.text.trim(),
+        'text': userMessage,
         'isUser': true,
         'isVoiceMessage': isVoiceMessage,
       });
       _controller.clear();
+      _isBotTyping = true;
     });
 
-    Future.delayed(const Duration(milliseconds: 500), () {
+    _conversationHistory.add({
+      'role': 'user',
+      'content': userMessage,
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/ai/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'message': userMessage,
+          'conversationHistory': _conversationHistory,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final botReply = data['response']?.toString() ??
+            'Sorry, I could not understand that.';
+
+        _conversationHistory.add({
+          'role': 'assistant',
+          'content': botReply,
+        });
+
+        if (mounted) {
+          setState(() {
+            _isBotTyping = false;
+            _messages.add({
+              'text': botReply,
+              'isUser': false,
+            });
+          });
+        }
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
-          _messages.add({'text': 'I am here to help!', 'isUser': false});
+          _isBotTyping = false;
+          _messages.add({
+            'text': 'Sorry, I am having trouble connecting. Please try again.',
+            'isUser': false,
+          });
         });
       }
-    });
+    }
   }
 
   // Chat Voice Handler

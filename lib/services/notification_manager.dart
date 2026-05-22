@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'emergency_banner_service.dart';
 import '../utils/haptic_feedback.dart';
 
@@ -426,6 +427,9 @@ class NotificationManager extends ChangeNotifier {
     // Auto-save to persistent storage
     _saveToStorage();
 
+    // Also save to Supabase asynchronously
+    _saveNotificationToSupabase(notification);
+
     notifyListeners();
   }
 
@@ -447,6 +451,10 @@ class NotificationManager extends ChangeNotifier {
 
     // Save to persistent storage
     _saveToStorage();
+
+    // Also mark as read in Supabase
+    markAsReadInSupabase(notificationId);
+
     notifyListeners();
   }
 
@@ -688,6 +696,132 @@ class NotificationManager extends ChangeNotifier {
     emergencyService.showBanner(notification);
   }
 
+  // Save notification to Supabase
+  Future<void> _saveNotificationToSupabase(Notification notification) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get profile id
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      await supabase.from('notifications').insert({
+        'user_id': profile['id'],
+        'type': notification.type.toString().split('.').last,
+        'title': notification.title,
+        'body': notification.body,
+        'priority': notification.priority.toString().split('.').last,
+        'category': notification.category?.toString().split('.').last ?? '',
+        'is_read': notification.isRead,
+        'action_data': notification.actionData,
+      });
+    } catch (e) {
+      debugPrint('Error saving notification to Supabase: $e');
+    }
+  }
+
+  Future<void> loadNotificationsFromSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('user_id', user.id)
+          .single();
+
+      final profileId = profile['id'].toString();
+      final role = profile['role'].toString();
+
+      final response = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', profileId)
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      final notifications = (response as List).map((n) => Notification(
+        id: n['id']?.toString() ?? _generateId(),
+        type: _parseNotificationType(n['type']?.toString() ?? ''),
+        title: n['title']?.toString() ?? '',
+        body: n['body']?.toString() ?? '',
+        timestamp: DateTime.tryParse(n['created_at']?.toString() ?? '') ?? DateTime.now(),
+        priority: _parseNotificationPriority(n['priority']?.toString() ?? ''),
+        senderId: 'system',
+        receiverId: profileId,
+        receiverType: role,
+        isRead: n['is_read'] == true,
+        category: _parseNotificationCategory(n['category']?.toString() ?? ''),
+        actionData: n['action_data'] as Map<String, dynamic>?,
+      )).toList();
+
+      // Merge with existing notifications
+      if (role == 'customer') {
+        _customerNotifications = notifications;
+      } else if (role == 'provider') {
+        _providerNotifications = notifications;
+      } else if (role == 'vendor') {
+        _vendorNotifications = notifications;
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading notifications from Supabase: $e');
+    }
+  }
+
+  // Mark notification as read in Supabase
+  Future<void> markAsReadInSupabase(String notificationId) async {
+    try {
+      await Supabase.instance.client
+          .from('notifications')
+          .update({'is_read': true})
+          .eq('id', notificationId);
+    } catch (e) {
+      debugPrint('Error marking notification as read: $e');
+    }
+  }
+
+  NotificationType _parseNotificationType(String type) {
+    try {
+      return NotificationType.values.firstWhere(
+        (e) => e.toString().split('.').last == type,
+        orElse: () => NotificationType.jobRequestReceived,
+      );
+    } catch (_) {
+      return NotificationType.jobRequestReceived;
+    }
+  }
+
+  NotificationPriority _parseNotificationPriority(String priority) {
+    try {
+      return NotificationPriority.values.firstWhere(
+        (e) => e.toString().split('.').last == priority,
+        orElse: () => NotificationPriority.medium,
+      );
+    } catch (_) {
+      return NotificationPriority.medium;
+    }
+  }
+
+  NotificationCategory _parseNotificationCategory(String category) {
+    try {
+      return NotificationCategory.values.firstWhere(
+        (e) => e.toString().split('.').last == category,
+        orElse: () => NotificationCategory.jobs,
+      );
+    } catch (_) {
+      return NotificationCategory.jobs;
+    }
+  }
+
   // Persistent Storage Methods
   Future<void> _initializeStorage() async {
     if (_isInitialized) return;
@@ -700,6 +834,9 @@ class NotificationManager extends ChangeNotifier {
 
       // Load notifications from storage
       await _loadFromStorage(prefs);
+
+      // Load notifications from Supabase
+      loadNotificationsFromSupabase();
 
       _isInitialized = true;
       debugPrint('✅ Notification storage initialized');

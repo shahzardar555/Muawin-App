@@ -156,7 +156,7 @@ class AuthService {
       final isVerified = response['is_verified'] as bool? ?? false;
       final status = response['verification_status'] as String? ?? 'pending';
 
-      if (isVerified && status == 'approved') {
+      if (isVerified && (status == 'verified' || status == 'approved')) {
         return 'approved';
       } else if (status == 'rejected') {
         return 'rejected';
