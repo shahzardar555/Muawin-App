@@ -9,7 +9,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'services/featured_ad_manager.dart';
@@ -74,13 +73,28 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
   }
 
-  // Load user profile from SharedPreferences
+  // Load user profile from Supabase
   Future<void> _loadUserProfile() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _customerName = prefs.getString('user_name') ?? 'Customer';
-      });
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final profile = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('user_id', user.id)
+            .single();
+        final fullName = profile['full_name']?.toString() ?? 'Customer';
+        // Extract first name
+        final firstName = fullName.split(' ').first;
+        setState(() {
+          _customerName = firstName;
+        });
+      } else {
+        setState(() {
+          _customerName = 'Customer';
+        });
+      }
     } catch (e) {
       debugPrint('Error loading user profile: $e');
       setState(() {
@@ -3836,18 +3850,20 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$_backendUrl/api/ai/chat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'message': userMessage,
-          'conversationHistory': _conversationHistory,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('$_backendUrl/api/ai/chat'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'message': userMessage,
+              'conversationHistory': _conversationHistory,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final botReply = data['response']?.toString() ?? 
+        final botReply = data['response']?.toString() ??
             'Sorry, I could not understand that.';
 
         // Add bot response to history
@@ -3874,7 +3890,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
         setState(() {
           _isBotTyping = false;
           _messages.add({
-            'text': 'Sorry, I am having trouble connecting. Please check your internet connection and try again.',
+            'text':
+                'Sorry, I am having trouble connecting. Please check your internet connection and try again.',
             'isUser': false,
           });
         });
@@ -4444,8 +4461,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                 children: [
                   Expanded(
                     child: ListView.builder(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
                         final msg = _messages[index];
@@ -4453,8 +4470,9 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                         final isVoiceMessage =
                             msg['isVoiceMessage'] as bool? ?? false;
                         return Align(
-                          alignment:
-                              isUser ? Alignment.centerRight : Alignment.centerLeft,
+                          alignment: isUser
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
                           child: Container(
                             margin: const EdgeInsets.symmetric(vertical: 4),
                             padding: const EdgeInsets.symmetric(
@@ -4476,7 +4494,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                                 Text(
                                   msg['text'] as String,
                                   style: GoogleFonts.poppins(
-                                    color: isUser ? Colors.white : Colors.black87,
+                                    color:
+                                        isUser ? Colors.white : Colors.black87,
                                     fontSize: 14,
                                   ),
                                 ),
@@ -4487,7 +4506,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                                     child: Icon(
                                       Icons.mic,
                                       size: 10,
-                                      color: Colors.white.withValues(alpha: 0.7),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.7),
                                     ),
                                   ),
                               ],
@@ -4499,11 +4519,13 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                   ),
                   if (_isBotTyping)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(18),

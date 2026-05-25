@@ -372,9 +372,9 @@ class NotificationManager extends ChangeNotifier {
   static const int _currentStorageVersion = 1;
   static const int _maxNotificationsPerType = 100;
 
-  final List<Notification> _customerNotifications = [];
-  final List<Notification> _providerNotifications = [];
-  final List<Notification> _vendorNotifications = [];
+  List<Notification> _customerNotifications = [];
+  List<Notification> _providerNotifications = [];
+  List<Notification> _vendorNotifications = [];
 
   bool _isInitialized = false;
 
@@ -716,7 +716,7 @@ class NotificationManager extends ChangeNotifier {
         'title': notification.title,
         'body': notification.body,
         'priority': notification.priority.toString().split('.').last,
-        'category': notification.category?.toString().split('.').last ?? '',
+        'category': notification.category.toString().split('.').last,
         'is_read': notification.isRead,
         'action_data': notification.actionData,
       });
@@ -747,20 +747,26 @@ class NotificationManager extends ChangeNotifier {
           .order('created_at', ascending: false)
           .limit(50);
 
-      final notifications = (response as List).map((n) => Notification(
-        id: n['id']?.toString() ?? _generateId(),
-        type: _parseNotificationType(n['type']?.toString() ?? ''),
-        title: n['title']?.toString() ?? '',
-        body: n['body']?.toString() ?? '',
-        timestamp: DateTime.tryParse(n['created_at']?.toString() ?? '') ?? DateTime.now(),
-        priority: _parseNotificationPriority(n['priority']?.toString() ?? ''),
-        senderId: 'system',
-        receiverId: profileId,
-        receiverType: role,
-        isRead: n['is_read'] == true,
-        category: _parseNotificationCategory(n['category']?.toString() ?? ''),
-        actionData: n['action_data'] as Map<String, dynamic>?,
-      )).toList();
+      final notifications = (response as List)
+          .map((n) => Notification(
+                id: n['id']?.toString() ?? _generateId(),
+                type: _parseNotificationType(n['type']?.toString() ?? ''),
+                title: n['title']?.toString() ?? '',
+                body: n['body']?.toString() ?? '',
+                timestamp:
+                    DateTime.tryParse(n['created_at']?.toString() ?? '') ??
+                        DateTime.now(),
+                priority:
+                    _parseNotificationPriority(n['priority']?.toString() ?? ''),
+                senderId: 'system',
+                receiverId: profileId,
+                receiverType: role,
+                isRead: n['is_read'] == true,
+                category:
+                    _parseNotificationCategory(n['category']?.toString() ?? ''),
+                actionData: n['action_data'] as Map<String, dynamic>?,
+              ))
+          .toList();
 
       // Merge with existing notifications
       if (role == 'customer') {
@@ -782,8 +788,7 @@ class NotificationManager extends ChangeNotifier {
     try {
       await Supabase.instance.client
           .from('notifications')
-          .update({'is_read': true})
-          .eq('id', notificationId);
+          .update({'is_read': true}).eq('id', notificationId);
     } catch (e) {
       debugPrint('Error marking notification as read: $e');
     }

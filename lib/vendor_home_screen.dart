@@ -65,7 +65,6 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   bool _showChatBot = false;
   final List<Map<String, dynamic>> _chatMessages = [];
   final List<Map<String, dynamic>> _conversationHistory = [];
-  bool _isBotTyping = false;
   static const String _backendUrl = 'http://localhost:3001';
   final TextEditingController _chatController = TextEditingController();
 
@@ -192,7 +191,6 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
         'isVoiceMessage': isVoiceMessage,
       });
       _chatController.clear();
-      _isBotTyping = true;
     });
 
     _conversationHistory.add({
@@ -201,14 +199,16 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$_backendUrl/api/ai/chat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'message': userMessage,
-          'conversationHistory': _conversationHistory,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('$_backendUrl/api/ai/chat'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'message': userMessage,
+              'conversationHistory': _conversationHistory,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -222,7 +222,6 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
 
         if (mounted) {
           setState(() {
-            _isBotTyping = false;
             _chatMessages.add({
               'text': botReply,
               'isUser': false,
@@ -236,7 +235,6 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
       debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
-          _isBotTyping = false;
           _chatMessages.add({
             'text': 'Sorry, I am having trouble connecting. Please try again.',
             'isUser': false,
@@ -4067,9 +4065,6 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   bool _isChatListening = false;
   String _chatLocale = 'en_US';
   double _chatSoundLevel = 0.0;
-  final List<Map<String, dynamic>> _conversationHistory = [];
-  bool _isBotTyping = false;
-  static const String _backendUrl = 'http://localhost:3001';
 
   // Phase 2: Smart language detection
   final String _detectedLanguage = 'unknown';

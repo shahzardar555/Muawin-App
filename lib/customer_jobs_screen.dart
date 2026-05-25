@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'customer_home_screen.dart';
 import 'post_job_screen.dart';
@@ -24,17 +24,25 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   late Function(BuildContext, Map<String, dynamic>, Color)? onShowDetails;
   late TabController _tabController;
   List<Map<String, dynamic>> _ongoingJobs = [];
+  List<Map<String, dynamic>> _futureJobs = [];
   List<Map<String, dynamic>> _historyJobs = [];
   bool _isLoading = true;
   bool _hasError = false;
   String? _customerId;
+  Timer? _jobStatusTimer;
 
   @override
   void initState() {
     super.initState();
     onShowDetails = null; // Initialize to null
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadJobs(); // Add this line
+
+    // Check job status every 60 seconds
+    _jobStatusTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _checkAndActivateJobs(),
+    );
   }
 
   Future<String?> _getCustomerId() async {
@@ -58,6 +66,93 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     } catch (e) {
       debugPrint('Error getting customer: $e');
       return null;
+    }
+  }
+
+  Future<void> _checkAndActivateJobs() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final now = DateTime.now();
+      final today =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // Activate jobs whose scheduled time has arrived
+      await supabase
+          .from('jobs')
+          .update({
+            'status': 'active',
+            'updated_at': now.toIso8601String(),
+          })
+          .eq('customer_id', _customerId ?? '')
+          .eq('status', 'scheduled')
+          .not('provider_id', 'is', null)
+          .lte('scheduled_date', today);
+
+      // Reload jobs to reflect changes
+      await _loadJobs();
+    } catch (e) {
+      debugPrint('Error checking job activation: $e');
+    }
+  }
+
+  Future<List<Map<String, String>>> _getEmergencyContacts() async {
+    try {
+      if (_customerId == null) return [];
+
+      final response = await Supabase.instance.client
+          .from('emergency_contacts')
+          .select('name, phone_number')
+          .eq('customer_id', _customerId!);
+
+      if ((response as List).isNotEmpty) {
+        return response
+            .map((c) => {
+                  'name': c['name'] as String? ?? '',
+                  'phone': c['phone_number'] as String? ?? '',
+                })
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Error loading emergency contacts: $e');
+    }
+
+    return [];
+  }
+
+  Future<void> _saveReviewData(String jobId, int rating, String review) async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Get provider_id from the job
+      final job = _ongoingJobs.firstWhere(
+        (j) => j['id'] == jobId,
+        orElse: () => _historyJobs.firstWhere(
+          (j) => j['id'] == jobId,
+          orElse: () => {},
+        ),
+      );
+
+      final providerId =
+          job['provider_id']?.toString() ?? job['providers']?['id']?.toString();
+
+      if (providerId == null) {
+        debugPrint('No provider ID found for job $jobId');
+        return;
+      }
+
+      // Insert review into Supabase
+      await supabase.from('reviews').insert({
+        'job_id': jobId,
+        'customer_id': _customerId,
+        'provider_id': providerId,
+        'rating': rating,
+        'review': review,
+        'is_verified': true,
+      });
+
+      debugPrint('Review saved to Supabase for job $jobId: $rating stars');
+    } catch (e) {
+      debugPrint('Error saving review to Supabase: $e');
     }
   }
 
@@ -87,7 +182,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           status,
           scheduled_date,
           scheduled_time,
-          total_amount,
           created_at,
           service_category,
           location,
@@ -107,17 +201,18 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           .eq('customer_id', _customerId!)
           .order('created_at', ascending: false);
 
-      // Split into ongoing and history
+      // Split into ongoing, future, and history
       final ongoing = <Map<String, dynamic>>[];
+      final future = <Map<String, dynamic>>[];
       final history = <Map<String, dynamic>>[];
 
       for (final job in allJobs) {
         final status = job['status'] as String? ?? '';
 
-        if (status == 'active' ||
-            status == 'scheduled' ||
-            status == 'pending') {
+        if (status == 'active') {
           ongoing.add(job);
+        } else if (status == 'scheduled' || status == 'pending') {
+          future.add(job);
         } else {
           history.add(job);
         }
@@ -126,6 +221,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       if (mounted) {
         setState(() {
           _ongoingJobs = ongoing;
+          _futureJobs = future;
           _historyJobs = history;
           _isLoading = false;
         });
@@ -224,6 +320,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
 
   @override
   void dispose() {
+    _jobStatusTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -471,6 +568,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         ),
         tabs: const [
           Tab(text: 'Ongoing'),
+          Tab(text: 'Future'),
           Tab(text: 'History'),
         ],
       ),
@@ -482,14 +580,27 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       controller: _tabController,
       children: [
         _OngoingJobsView(
-            jobs: _ongoingJobs,
-            primary: Theme.of(context).colorScheme.primary,
-            onShowDetails: _showJobDetailsDialog,
-            onCancelJob: _cancelJob),
+          jobs: _ongoingJobs,
+          primary: Theme.of(context).colorScheme.primary,
+          onShowDetails: _showJobDetailsDialog,
+          onCancelJob: _cancelJob,
+          onGetEmergencyContacts: _getEmergencyContacts,
+          onSaveReviewData: _saveReviewData,
+        ),
+        _FutureJobsView(
+          jobs: _futureJobs,
+          primary: Theme.of(context).colorScheme.primary,
+          onShowDetails: _showJobDetailsDialog,
+          onGetEmergencyContacts: _getEmergencyContacts,
+          onSaveReviewData: _saveReviewData,
+        ),
         _HistoryJobsView(
-            jobs: _historyJobs,
-            primary: Theme.of(context).colorScheme.primary,
-            onShowDetails: _showJobDetailsDialog),
+          jobs: _historyJobs,
+          primary: Theme.of(context).colorScheme.primary,
+          onShowDetails: _showJobDetailsDialog,
+          onGetEmergencyContacts: _getEmergencyContacts,
+          onSaveReviewData: _saveReviewData,
+        ),
       ],
     );
   }
@@ -546,7 +657,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
                     _buildJobDetailRow('Category', _getValidCategory(job)),
                     _buildJobDetailRow('Status', job['status']),
                     _buildJobDetailRow('Posted', job['postedDate']),
-                    _buildJobDetailRow('Budget', 'PKR ${job['total_amount']}'),
+                    _buildJobDetailRow('Budget', 'PKR ${job['total_amount'] ?? 0}'),
                   ],
                 ),
               ),
@@ -657,20 +768,26 @@ class _OngoingJobsView extends StatelessWidget {
     required this.primary,
     required this.onShowDetails,
     required this.onCancelJob,
+    this.onGetEmergencyContacts,
+    this.onSaveReviewData,
   });
 
   final List<Map<String, dynamic>> jobs;
   final Color primary;
   final Function(BuildContext, Map<String, dynamic>, Color)? onShowDetails;
   final Function(String) onCancelJob;
+  final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
+  final Future<void> Function(String jobId, int rating, String review)?
+      onSaveReviewData;
 
   @override
   Widget build(BuildContext context) {
     // Separate jobs by status
-    final activeJobs =
-        jobs.where((job) => job['status'] == 'In Progress').toList();
-    final scheduledJobs =
-        jobs.where((job) => job['status'] == 'Scheduled').toList();
+    final activeJobs = jobs.where((job) => job['status'] == 'active').toList();
+    final scheduledJobs = jobs
+        .where(
+            (job) => job['status'] == 'scheduled' || job['status'] == 'pending')
+        .toList();
 
     return SingleChildScrollView(
       child: Column(
@@ -679,10 +796,13 @@ class _OngoingJobsView extends StatelessWidget {
           if (activeJobs.isNotEmpty) ...[
             _buildSectionHeader('Active Jobs', Icons.circle, Colors.green),
             ...activeJobs.map((job) => _JobCard(
-                job: job,
-                primary: primary,
-                onShowDetails: onShowDetails,
-                onCancelJob: onCancelJob)),
+                  job: job,
+                  primary: primary,
+                  onShowDetails: onShowDetails,
+                  onCancelJob: onCancelJob,
+                  onGetEmergencyContacts: onGetEmergencyContacts,
+                  onSaveReviewData: onSaveReviewData,
+                )),
           ],
 
           // Scheduled Jobs Section
@@ -690,10 +810,13 @@ class _OngoingJobsView extends StatelessWidget {
             const SizedBox(height: 24),
             _buildSectionHeader('Scheduled Jobs', Icons.schedule, Colors.blue),
             ...scheduledJobs.map((job) => _JobCard(
-                job: job,
-                primary: primary,
-                onShowDetails: onShowDetails,
-                onCancelJob: onCancelJob)),
+                  job: job,
+                  primary: primary,
+                  onShowDetails: onShowDetails,
+                  onCancelJob: onCancelJob,
+                  onGetEmergencyContacts: onGetEmergencyContacts,
+                  onSaveReviewData: onSaveReviewData,
+                )),
           ],
         ],
       ),
@@ -725,17 +848,22 @@ class _OngoingJobsView extends StatelessWidget {
   }
 }
 
-// History Jobs View
-class _HistoryJobsView extends StatelessWidget {
-  const _HistoryJobsView({
+// Future Jobs View
+class _FutureJobsView extends StatelessWidget {
+  const _FutureJobsView({
     required this.jobs,
     required this.primary,
     required this.onShowDetails,
+    this.onGetEmergencyContacts,
+    this.onSaveReviewData,
   });
 
   final List<Map<String, dynamic>> jobs;
   final Color primary;
   final Function(BuildContext, Map<String, dynamic>, Color)? onShowDetails;
+  final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
+  final Future<void> Function(String jobId, int rating, String review)?
+      onSaveReviewData;
 
   @override
   Widget build(BuildContext context) {
@@ -744,7 +872,48 @@ class _HistoryJobsView extends StatelessWidget {
         children: [
           const SizedBox(height: 16),
           ...jobs.map((job) => _JobCard(
-              job: job, primary: primary, onShowDetails: onShowDetails)),
+                job: job,
+                primary: primary,
+                onShowDetails: onShowDetails,
+                onGetEmergencyContacts: onGetEmergencyContacts,
+                onSaveReviewData: onSaveReviewData,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+// History Jobs View
+class _HistoryJobsView extends StatelessWidget {
+  const _HistoryJobsView({
+    required this.jobs,
+    required this.primary,
+    required this.onShowDetails,
+    this.onGetEmergencyContacts,
+    this.onSaveReviewData,
+  });
+
+  final List<Map<String, dynamic>> jobs;
+  final Color primary;
+  final Function(BuildContext, Map<String, dynamic>, Color)? onShowDetails;
+  final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
+  final Future<void> Function(String jobId, int rating, String review)?
+      onSaveReviewData;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          ...jobs.map((job) => _JobCard(
+                job: job,
+                primary: primary,
+                onShowDetails: onShowDetails,
+                onGetEmergencyContacts: onGetEmergencyContacts,
+                onSaveReviewData: onSaveReviewData,
+              )),
         ],
       ),
     );
@@ -758,12 +927,17 @@ class _JobCard extends StatelessWidget {
     required this.primary,
     this.onShowDetails,
     this.onCancelJob,
+    this.onGetEmergencyContacts,
+    this.onSaveReviewData,
   });
 
   final Map<String, dynamic> job;
   final Color primary;
   final Function(BuildContext, Map<String, dynamic>, Color)? onShowDetails;
   final Function(String)? onCancelJob;
+  final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
+  final Future<void> Function(String jobId, int rating, String review)?
+      onSaveReviewData;
 
   @override
   Widget build(BuildContext context) {
@@ -2943,8 +3117,8 @@ class _JobCard extends StatelessWidget {
               const SizedBox(width: 16),
               Icon(Icons.attach_money, size: 16, color: Colors.grey[500]),
               const SizedBox(width: 4),
-              Text(
-                'PKR ${job['total_amount']}',
+                      Text(
+                'PKR ${job['total_amount'] ?? 0}',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -3080,7 +3254,9 @@ class _JobCard extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
 
     // First check if there are any emergency contacts
-    final emergencyContacts = await _getEmergencyContacts();
+    final emergencyContacts = onGetEmergencyContacts != null
+        ? await onGetEmergencyContacts!()
+        : <Map<String, String>>[];
 
     if (emergencyContacts.isEmpty) {
       // Show error message for no contacts
@@ -3219,30 +3395,15 @@ class _JobCard extends StatelessWidget {
   }
 
   Future<void> _sendEmergencyAlert(String message, Position position) async {
-    // Send to emergency contacts
-    // In a real app, this would integrate with:
-    // - SMS API to send text messages to emergency contacts
-    // - Email API to send emails with location details
-    // - Push notification service to emergency contact apps
-    // - Emergency contact management system from profile screen
-
-    // Get emergency contacts from profile (in real app, this would be from shared preferences)
-    final emergencyContacts = await _getEmergencyContacts();
-
-    // Generate location URL for sharing
-    final locationUrl =
-        'https://maps.google.com/?q=${position.latitude},${position.longitude}';
+    // Get emergency contacts from callback
+    final emergencyContacts = onGetEmergencyContacts != null
+        ? await onGetEmergencyContacts!()
+        : <Map<String, String>>[];
 
     for (final contact in emergencyContacts) {
-      // Simulate sending SMS to each contact with location
-      final messageWithLocation = '$message\n\nLocation: $locationUrl';
-      await _sendSMSToContact(contact['phone']!, messageWithLocation);
+      // Send WhatsApp message with location
+      await _sendWhatsAppToContact(contact['phone']!, message);
     }
-
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network delay
-
-    // Emergency alert sent successfully
-    // In production, this would log to a proper logging service
   }
 
   void _showLocationLoadingDialog(BuildContext context) {
@@ -3271,50 +3432,35 @@ class _JobCard extends StatelessWidget {
     );
   }
 
-  Future<List<Map<String, String>>> _getEmergencyContacts() async {
+  Future<void> _sendWhatsAppToContact(String phone, String message) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final contactsJson = prefs.getString('emergency_contacts');
+      // Remove any non-digit characters from phone number
+      final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
 
-      if (contactsJson != null) {
-        // Parse the JSON string back to list of maps
-        final contactsList = jsonDecode(contactsJson) as List<dynamic>;
-        return contactsList
-            .map((contact) => {
-                  'name': contact['name'] as String? ?? '',
-                  'phone': contact['phone'] as String? ?? '',
-                })
-            .toList();
+      // Use WhatsApp URL scheme with encoded message
+      final uri = Uri.parse(
+        'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}',
+      );
+
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        debugPrint('Could not open WhatsApp for $cleanPhone');
       }
     } catch (e) {
-      // Handle error silently in production
-      debugPrint('Error loading emergency contacts: $e');
+      debugPrint('Error sending WhatsApp message: $e');
     }
-
-    // Return empty list if no contacts found or error occurred
-    return [];
   }
 
-  Future<void> _sendSMSToContact(String phone, String message) async {
-    // In a real app, this would use an SMS API like Twilio
-    // For now, we'll just simulate the sending
-    await Future.delayed(const Duration(milliseconds: 500));
-    // Simulate SMS sent to: $phone with message: $message
-  }
-
-  void _launchMaps(BuildContext context, String url) async {
-    // In a real app, this would use url_launcher package
-    // For now, we'll just show a message with the location
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Location: ${url.substring(0, 50)}...',
-          style: GoogleFonts.poppins(fontSize: 12, color: Colors.white),
-        ),
-        backgroundColor: Colors.blue[600],
-        duration: const Duration(seconds: 3),
-      ),
-    );
+  Future<void> _launchMaps(BuildContext context, String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Error launching maps: $e');
+    }
   }
 
   void _showComplaintDialog(BuildContext context) {
@@ -3560,7 +3706,7 @@ class _JobCard extends StatelessWidget {
   void _submitReview(
       BuildContext context, String jobId, int rating, String review) {
     // Save the review data to SharedPreferences for retrieval by service provider
-    _saveReviewData(jobId, rating, review);
+    onSaveReviewData?.call(jobId, rating, review);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -3580,35 +3726,6 @@ class _JobCard extends StatelessWidget {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  Future<void> _saveReviewData(String jobId, int rating, String review) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      // Create review data map
-      final reviewData = {
-        'jobId': jobId,
-        'rating': rating,
-        'review': review,
-        'timestamp': DateTime.now().toIso8601String(),
-        'customerName': 'Customer', // In real app, get actual customer name
-      };
-
-      // Get existing reviews or create new list
-      final existingReviewsJson = prefs.getString('customer_reviews') ?? '[]';
-      final existingReviews = jsonDecode(existingReviewsJson) as List<dynamic>;
-
-      // Add new review
-      existingReviews.add(reviewData);
-
-      // Save back to SharedPreferences
-      await prefs.setString('customer_reviews', jsonEncode(existingReviews));
-
-      debugPrint('Review saved for job $jobId: $rating stars - "$review"');
-    } catch (e) {
-      debugPrint('Error saving review data: $e');
-    }
   }
 
   // Helper method to build provider profile image with cross-platform support
@@ -3721,21 +3838,66 @@ class _ComplaintDialogState extends State<_ComplaintDialog> {
         ),
         ElevatedButton(
           onPressed: _hasText
-              ? () {
+              ? () async {
                   Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Complaint registered successfully',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.white,
+                  try {
+                    final supabase = Supabase.instance.client;
+                    final user = supabase.auth.currentUser;
+                    if (user == null) return;
+
+                    // Get customer ID
+                    final profile = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('user_id', user.id)
+                        .single();
+
+                    final customer = await supabase
+                        .from('customers')
+                        .select('id')
+                        .eq('profile_id', profile['id'])
+                        .single();
+
+                    final providerId = widget.job['provider_id']?.toString() ??
+                        widget.job['providers']?['id']?.toString();
+
+                    // Insert complaint into Supabase
+                    await supabase.from('complaints').insert({
+                      'customer_id': customer['id'],
+                      'provider_id': providerId,
+                      'job_id': widget.job['id']?.toString(),
+                      'complaint_type': 'service_quality',
+                      'description': _complaintController.text.trim(),
+                      'priority': 'medium',
+                      'status': 'open',
+                    });
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Complaint registered successfully',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                          backgroundColor: Colors.grey[600],
+                          duration: const Duration(seconds: 2),
                         ),
-                      ),
-                      backgroundColor: Colors.grey[600],
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
+                      );
+                    }
+                  } catch (e) {
+                    debugPrint('Error saving complaint: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to submit complaint'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 }
               : null,
           style: ElevatedButton.styleFrom(

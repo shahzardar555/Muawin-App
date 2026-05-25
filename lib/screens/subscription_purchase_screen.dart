@@ -3,11 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
-import 'safepay_webview_screen.dart';
 import '../services/featured_ad_manager.dart';
 import '../services/notification_manager.dart' as nm;
 import '../services/location_service.dart';
@@ -39,7 +34,6 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   bool _isSuccess = false;
   bool _hasActivePro = false;
   DateTime? _proExpiryDate;
-  bool _isCheckingSubscription = true;
 
   // Payment form data
   String _jazzCashNumber = '';
@@ -99,13 +93,12 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
         setState(() {
           _hasActivePro = hasActive;
           _proExpiryDate = expiry;
-          _isCheckingSubscription = false;
         });
       } else {
-        setState(() => _isCheckingSubscription = false);
+        // Not a 'pro' purchase type, skip subscription check
       }
     } catch (e) {
-      setState(() => _isCheckingSubscription = false);
+      debugPrint('Error checking existing subscription: $e');
     }
   }
 
@@ -1074,16 +1067,15 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
           ? '${_proExpiryDate!.day}/${_proExpiryDate!.month}/${_proExpiryDate!.year}'
           : 'unknown date';
       _showError(
-        'You already have an active Muawin Pro subscription valid until $expiryStr. '
-        'You can renew after your current plan expires.'
-      );
+          'You already have an active Muawin Pro subscription valid until $expiryStr. '
+          'You can renew after your current plan expires.');
       return;
     }
 
     debugPrint('Selected payment method: $_selectedPaymentMethod');
 
     // Use Safepay for card payments
-    if (_selectedPaymentMethod == 'card' || 
+    if (_selectedPaymentMethod == 'card' ||
         _selectedPaymentMethod == 'Card' ||
         _selectedPaymentMethod == 'Credit/Debit Card') {
       setState(() => _isLoading = true);
@@ -1337,29 +1329,20 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
       });
 
       if (role == 'customer') {
-        await supabase
-            .from('customers')
-            .update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            })
-            .eq('profile_id', profileId);
+        await supabase.from('customers').update({
+          'is_pro': true,
+          'pro_expiry_date': expiryDate.toIso8601String(),
+        }).eq('profile_id', profileId);
       } else if (role == 'provider') {
-        await supabase
-            .from('providers')
-            .update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            })
-            .eq('profile_id', profileId);
+        await supabase.from('providers').update({
+          'is_pro': true,
+          'pro_expiry_date': expiryDate.toIso8601String(),
+        }).eq('profile_id', profileId);
       } else if (role == 'vendor') {
-        await supabase
-            .from('vendors')
-            .update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            })
-            .eq('profile_id', profileId);
+        await supabase.from('vendors').update({
+          'is_pro': true,
+          'pro_expiry_date': expiryDate.toIso8601String(),
+        }).eq('profile_id', profileId);
       }
     } catch (e) {
       debugPrint('Error saving payment: $e');

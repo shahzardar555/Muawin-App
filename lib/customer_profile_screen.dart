@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:convert';
 import 'dart:io';
 import 'theme_provider.dart';
 import 'language_provider.dart';
@@ -76,7 +75,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
   }
 
   // Change password via Supabase Auth
-  Future<void> _changePassword(String currentPassword, String newPassword) async {
+  Future<void> _changePassword(
+      String currentPassword, String newPassword) async {
     try {
       // Update password via Supabase Auth
       final response = await Supabase.instance.client.auth.updateUser(
@@ -139,8 +139,10 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
         _profileImagePath = profile['profile_image_url']?.toString() ?? '';
         _isProfileLoaded = true;
         _jobUpdatesEnabled = prefs.getBool('notification_job_updates') ?? true;
-        _newMessagesEnabled = prefs.getBool('notification_new_messages') ?? true;
-        _paymentUpdatesEnabled = prefs.getBool('notification_payment_updates') ?? true;
+        _newMessagesEnabled =
+            prefs.getBool('notification_new_messages') ?? true;
+        _paymentUpdatesEnabled =
+            prefs.getBool('notification_payment_updates') ?? true;
       });
 
       // Load emergency contacts after customer ID is available
@@ -277,10 +279,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
   Future<void> _saveProfileImagePath(String imagePath) async {
     try {
       if (_currentProfileId.isNotEmpty) {
-        await Supabase.instance.client
-            .from('profiles')
-            .update({'profile_image_url': imagePath})
-            .eq('id', _currentProfileId);
+        await Supabase.instance.client.from('profiles').update(
+            {'profile_image_url': imagePath}).eq('id', _currentProfileId);
       }
     } catch (e) {
       debugPrint('Error saving profile image: $e');
@@ -476,7 +476,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
   void _loadEmergencyContacts() async {
     try {
       if (_currentCustomerId.isEmpty) return;
-      
+
       final response = await Supabase.instance.client
           .from('emergency_contacts')
           .select('id, name, phone_number, relationship')
@@ -484,12 +484,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
           .order('created_at');
 
       setState(() {
-        _emergencyContacts = (response as List).map((c) => {
-          'id': c['id']?.toString() ?? '',
-          'name': c['name']?.toString() ?? '',
-          'phone': c['phone_number']?.toString() ?? '',
-          'relationship': c['relationship']?.toString() ?? '',
-        }).toList();
+        _emergencyContacts = (response as List)
+            .map((c) => {
+                  'id': c['id']?.toString() ?? '',
+                  'name': c['name']?.toString() ?? '',
+                  'phone': c['phone_number']?.toString() ?? '',
+                  'relationship': c['relationship']?.toString() ?? '',
+                })
+            .toList();
       });
     } catch (e) {
       debugPrint('Error loading emergency contacts: $e');
@@ -508,12 +510,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
 
       // Insert new contacts
       if (_emergencyContacts.isNotEmpty) {
-        final contacts = _emergencyContacts.map((c) => {
-          'customer_id': _currentCustomerId,
-          'name': c['name'] ?? '',
-          'phone_number': c['phone'] ?? '',
-          'relationship': c['relationship'] ?? 'Family',
-        }).toList();
+        final contacts = _emergencyContacts
+            .map((c) => {
+                  'customer_id': _currentCustomerId,
+                  'name': c['name'] ?? '',
+                  'phone_number': c['phone'] ?? '',
+                  'relationship': c['relationship'] ?? 'Family',
+                })
+            .toList();
 
         await Supabase.instance.client
             .from('emergency_contacts')
@@ -1368,15 +1372,12 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                 // Save to Supabase
                 try {
                   if (_currentProfileId.isNotEmpty) {
-                    await Supabase.instance.client
-                        .from('profiles')
-                        .update({
-                          'full_name': _userName,
-                          'phone_number': _userPhone,
-                          'email': _userEmail,
-                          'updated_at': DateTime.now().toIso8601String(),
-                        })
-                        .eq('id', _currentProfileId);
+                    await Supabase.instance.client.from('profiles').update({
+                      'full_name': _userName,
+                      'phone_number': _userPhone,
+                      'email': _userEmail,
+                      'updated_at': DateTime.now().toIso8601String(),
+                    }).eq('id', _currentProfileId);
                   }
                 } catch (e) {
                   debugPrint('Error saving profile: $e');

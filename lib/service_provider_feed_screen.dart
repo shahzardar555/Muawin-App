@@ -111,7 +111,6 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
 
   // TODO: Load from Supabase
   List<Map<String, dynamic>> _jobAlerts = [];
-
   void _showStatusSheet() {
     showModalBottomSheet(
       context: context,
@@ -466,6 +465,122 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
     }
   }
 
+  Future<void> _loadOpenJobs() async {
+    try {
+      if (_currentProviderId.isEmpty) return;
+
+      final supabase = Supabase.instance.client;
+
+      // Get provider's service category
+      final provider = await supabase
+          .from('providers')
+          .select('service_category')
+          .eq('id', _currentProviderId)
+          .single();
+
+      final serviceCategory = provider['service_category']?.toString() ?? '';
+      if (serviceCategory.isEmpty) return;
+
+      // Get open jobs matching provider's category
+      final response = await supabase
+          .from('jobs')
+          .select('''
+            id,
+            title,
+            service_category,
+            description,
+            location,
+            status,
+            scheduled_date,
+            scheduled_time,
+            created_at,
+            customer_id,
+            customers!inner(
+              profile_id,
+              profiles!inner(
+                full_name,
+                phone_number,
+                profile_image_url
+              )
+            )
+          ''')
+          .eq('service_category', serviceCategory)
+          .eq('status', 'scheduled')
+          .isFilter('provider_id', null)
+          .order('created_at', ascending: false);
+
+      final jobs = List<Map<String, dynamic>>.from(response);
+
+      final mapped = jobs.map((job) {
+        final customerName =
+            job['customers']?['profiles']?['full_name']?.toString() ??
+                'Customer';
+        final scheduledDate = job['scheduled_date']?.toString() ?? '';
+        final scheduledTime = job['scheduled_time']?.toString() ?? '';
+        final jobId = job['id']?.toString() ?? '';
+        final shortId = 'JOB-${jobId.substring(0, 8).toUpperCase()}';
+
+        // Format time nicely
+        // Format time nicely - show both date and time with space
+        String timeDisplay = 'Flexible';
+        if (scheduledDate.isNotEmpty || scheduledTime.isNotEmpty) {
+          timeDisplay = '';
+          if (scheduledDate.isNotEmpty) {
+            timeDisplay = scheduledDate;
+          }
+          if (scheduledTime.isNotEmpty) {
+            if (timeDisplay.isNotEmpty) {
+              timeDisplay += ' ';
+            }
+            timeDisplay += scheduledTime;
+          }
+        }
+
+        // Format location - convert coordinates to readable text
+        String locationDisplay = job['location']?.toString() ?? '';
+        if (locationDisplay.contains(',') &&
+            double.tryParse(locationDisplay.split(',')[0].trim()) != null) {
+          locationDisplay = 'Customer Location';
+        }
+        if (locationDisplay.isEmpty) locationDisplay = 'Location TBD';
+
+        return {
+          'id': shortId,
+          'supabase_id': jobId,
+          'title': job['title']?.toString() ?? 'Job Request',
+          'category': job['service_category']?.toString() ?? '',
+          'details': job['description']?.toString() ??
+              job['title']?.toString() ??
+              'Service requested',
+          'budget': '0',
+          'price': 'Negotiable',
+          'location': locationDisplay,
+          'distance': locationDisplay,
+          'date': scheduledDate,
+          'time': timeDisplay,
+          'customer': customerName,
+          'instructions': job['description']?.toString() ?? '',
+          'is_priority': false,
+          'highPriority': false,
+          'status': 'scheduled',
+          'created_at': job['created_at']?.toString() ?? '',
+          'customer_id': job['customer_id']?.toString() ?? '',
+          'is_open_job': true,
+        };
+      }).toList();
+
+      setState(() {
+        // Add open jobs to feed (avoid duplicates)
+        final existingIds = _jobAlerts.map((j) => j['id']).toSet();
+        final newJobs =
+            mapped.where((j) => !existingIds.contains(j['id'])).toList();
+        _jobAlerts.addAll(newJobs);
+      });
+    } catch (e) {
+      debugPrint('Error loading open jobs: $e');
+    }
+  }
+
   void _moveJobToMyJobs(Map<String, dynamic> job) async {
     try {
       // Debug: Print job data structure
@@ -543,6 +658,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
       // Now load data with real provider ID
       await _loadProviderData();
       await _loadDirectRequests();
+      await _loadOpenJobs();
     } catch (e) {
       debugPrint('Error initializing provider: $e');
     }
@@ -785,18 +901,25 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                   job: job,
                                   primary: primary,
                                   onDecline: () async {
-                                    // Update status in Supabase
                                     final supabaseId =
                                         job['supabase_id']?.toString() ?? '';
+                                    final isOpenJob =
+                                        job['is_open_job'] == true;
+
                                     if (supabaseId.isNotEmpty) {
                                       try {
-                                        await Supabase.instance.client
-                                            .from('direct_job_requests')
-                                            .update({'status': 'cancelled'}).eq(
-                                                'id', supabaseId);
+                                        if (!isOpenJob) {
+                                          // Only cancel direct requests, not open jobs
+                                          // (open jobs stay available for other providers)
+                                          await Supabase.instance.client
+                                              .from('direct_job_requests')
+                                              .update({
+                                            'status': 'cancelled'
+                                          }).eq('id', supabaseId);
+                                        }
+                                        // For open jobs, just remove from this provider's feed locally
                                       } catch (e) {
-                                        debugPrint(
-                                            'Error updating request status: $e');
+                                        debugPrint('Error declining job: $e');
                                       }
                                     }
 
@@ -814,18 +937,34 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                     final messenger =
                                         ScaffoldMessenger.of(context);
 
-                                    // Update status in Supabase
                                     final supabaseId =
                                         job['supabase_id']?.toString() ?? '';
+                                    final isOpenJob =
+                                        job['is_open_job'] == true;
+
                                     if (supabaseId.isNotEmpty) {
                                       try {
-                                        await Supabase.instance.client
-                                            .from('direct_job_requests')
-                                            .update({'status': 'confirmed'}).eq(
-                                                'id', supabaseId);
+                                        if (isOpenJob) {
+                                          // Assign open job to this provider
+                                          await Supabase.instance.client
+                                              .from('jobs')
+                                              .update({
+                                            'provider_id': _currentProviderId,
+                                            'status': 'active',
+                                            'updated_at': DateTime.now()
+                                                .toIso8601String(),
+                                          }).eq('id', supabaseId);
+                                        } else {
+                                          // Confirm direct request
+                                          await Supabase.instance.client
+                                              .from('direct_job_requests')
+                                              .update({
+                                            'status': 'confirmed'
+                                          }).eq('id', supabaseId);
+                                        }
                                       } catch (e) {
                                         debugPrint(
-                                            'Error updating request status: $e');
+                                            'Error updating job status: $e');
                                       }
                                     }
 
@@ -1245,7 +1384,7 @@ class _JobLeadCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  job['customer'] as String,
+                  job['customer']?.toString() ?? '',
                   style: GoogleFonts.poppins(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -1253,17 +1392,9 @@ class _JobLeadCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                job['distance'] as String,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black45,
-                ),
-              ),
               const SizedBox(width: 8),
               Text(
-                job['id'] as String,
+                job['id']?.toString() ?? '',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -1275,7 +1406,7 @@ class _JobLeadCard extends StatelessWidget {
           const SizedBox(height: 10),
           // Lead Details
           Text(
-            job['details'] as String,
+            job['details']?.toString() ?? '',
             style: GoogleFonts.poppins(
               fontSize: 13,
               fontWeight: FontWeight.w400,
@@ -1289,7 +1420,7 @@ class _JobLeadCard extends StatelessWidget {
             children: [
               _DataChip(
                 icon: Icons.location_on_outlined,
-                text: job['location'] as String,
+                text: job['location']?.toString() ?? '',
               ),
             ],
           ),
@@ -1298,12 +1429,16 @@ class _JobLeadCard extends StatelessWidget {
             children: [
               _DataChip(
                 icon: Icons.access_time_rounded,
-                text: job['time'] as String,
+                text: job['time']?.toString() ?? '',
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               _DataChip(
                 icon: Icons.payments_outlined,
-                text: job['price'] as String,
+                text: job['price']?.toString() ?? '',
               ),
             ],
           ),
@@ -1721,15 +1856,15 @@ class _DataChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 14, color: Colors.black45),
+            Icon(icon, size: 18, color: Colors.black45),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 text,
                 style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black54,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -2098,7 +2233,6 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
   final List<Map<String, dynamic>> _conversationHistory = [];
-  bool _isBotTyping = false;
   static const String _backendUrl = 'http://localhost:3001';
 
   // Chat voice state variables
@@ -2127,7 +2261,6 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
         'isVoiceMessage': isVoiceMessage,
       });
       _controller.clear();
-      _isBotTyping = true;
     });
 
     _conversationHistory.add({
@@ -2136,14 +2269,16 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$_backendUrl/api/ai/chat'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'message': userMessage,
-          'conversationHistory': _conversationHistory,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('$_backendUrl/api/ai/chat'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'message': userMessage,
+              'conversationHistory': _conversationHistory,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2157,7 +2292,6 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
 
         if (mounted) {
           setState(() {
-            _isBotTyping = false;
             _messages.add({
               'text': botReply,
               'isUser': false,
@@ -2171,7 +2305,6 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
       debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
-          _isBotTyping = false;
           _messages.add({
             'text': 'Sorry, I am having trouble connecting. Please try again.',
             'isUser': false,

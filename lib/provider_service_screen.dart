@@ -16,7 +16,7 @@ class ProviderServiceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = Colors.white;
+    const surface = Colors.white;
     final muted =
         Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
 
@@ -200,9 +200,7 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
             curve: Curves.easeInOut,
             padding: const EdgeInsets.all(_ProviderRoleCard._padding),
             decoration: BoxDecoration(
-              color: _hovered
-                  ? primary.withValues(alpha: 0.05)
-                  : Colors.white,
+              color: _hovered ? primary.withValues(alpha: 0.05) : Colors.white,
               borderRadius: BorderRadius.circular(_ProviderRoleCard._radius),
               border: Border.all(
                 color: _hovered

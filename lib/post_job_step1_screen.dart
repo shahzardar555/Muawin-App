@@ -49,8 +49,6 @@ class _PostJobStep1ScreenState extends State<PostJobStep1Screen>
 
   String? _selectedJobType; // 'one_time', 'hire_only'
 
-  bool _isPriorityJob = false;
-
   DateTime? _hireStartDate;
 
   DateTime? _hireEndDate;
@@ -745,55 +743,6 @@ class _PostJobStep1ScreenState extends State<PostJobStep1Screen>
 
             const SizedBox(height: 16),
           ],
-
-          // Priority Job Toggle
-
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Row(
-              children: [
-                Text(
-                  'Priority Job',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'PRO',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFFFD700),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            subtitle: Text(
-              'Get faster responses from providers',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            value: _isPriorityJob,
-            onChanged: (value) {
-              setState(() {
-                _isPriorityJob = value;
-              });
-            },
-            activeTrackColor: const Color(0xFF047A62),
-          ),
         ],
       ),
     );
@@ -967,7 +916,8 @@ class _PostJobStep1ScreenState extends State<PostJobStep1Screen>
                         context,
                         MaterialPageRoute(
                           builder: (context) => PostJobStep2Screen(
-                              selectedCategory: _selectedCategory),
+                              selectedCategory: _selectedCategory,
+                              selectedJobType: _selectedJobType),
                         ),
                       );
                     }
@@ -1371,7 +1321,9 @@ class PostJobStep2Screen extends StatefulWidget {
 
   final String? location;
 
-  const PostJobStep2Screen({super.key, this.selectedCategory, this.location});
+  final String? selectedJobType;
+
+  const PostJobStep2Screen({super.key, this.selectedCategory, this.location, this.selectedJobType});
 
   @override
   State<PostJobStep2Screen> createState() => _PostJobStep2ScreenState();
@@ -1741,8 +1693,9 @@ class _PostJobStep2ScreenState extends State<PostJobStep2Screen> {
                       const SizedBox(
                           height: 32), // Additional space below location field
 
-                      // PREFERRED DATE Heading - Hide for PRO users (handled in Step 1)
-                      if (!_isProUser) ...[
+                      // PREFERRED DATE Heading - Hide for PRO users with Hiring (handled in Step 1)
+                      // Show for non-PRO users and PRO users who selected One-time job
+                      if (!_isProUser || widget.selectedJobType == 'one_time') ...[
                         Text(
                           'PREFERRED DATE',
                           style: GoogleFonts.inter(

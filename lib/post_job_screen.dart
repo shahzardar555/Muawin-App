@@ -71,10 +71,12 @@ class _PostJobScreenState extends State<PostJobScreen> {
           .order('sort_order');
 
       setState(() {
-        _categories = (response as List).map((c) => {
-          'label': c['name']?.toString() ?? '',
-          'icon': _getIconForCategory(c['name']?.toString() ?? ''),
-        }).toList();
+        _categories = (response as List)
+            .map((c) => {
+                  'label': c['name']?.toString() ?? '',
+                  'icon': _getIconForCategory(c['name']?.toString() ?? ''),
+                })
+            .toList();
         _categoriesLoading = false;
       });
     } catch (e) {
@@ -99,16 +101,26 @@ class _PostJobScreenState extends State<PostJobScreen> {
 
   IconData _getIconForCategory(String category) {
     switch (category.toLowerCase()) {
-      case 'maid': return Icons.cleaning_services;
-      case 'driver': return Icons.directions_car;
-      case 'cook': return Icons.restaurant;
-      case 'tutor': return Icons.school;
-      case 'domestic helper': return Icons.home;
-      case 'gardener': return Icons.grass;
-      case 'babysitter': return Icons.child_care;
-      case 'security guard': return Icons.security;
-      case 'washerman': return Icons.local_laundry_service;
-      default: return Icons.work;
+      case 'maid':
+        return Icons.cleaning_services;
+      case 'driver':
+        return Icons.directions_car;
+      case 'cook':
+        return Icons.restaurant;
+      case 'tutor':
+        return Icons.school;
+      case 'domestic helper':
+        return Icons.home;
+      case 'gardener':
+        return Icons.grass;
+      case 'babysitter':
+        return Icons.child_care;
+      case 'security guard':
+        return Icons.security;
+      case 'washerman':
+        return Icons.local_laundry_service;
+      default:
+        return Icons.work;
     }
   }
 
@@ -293,64 +305,72 @@ class _PostJobScreenState extends State<PostJobScreen> {
             ),
           ),
           const SizedBox(height: 16),
+// Show loading indicator while categories are being fetched
+          if (_categoriesLoading)
+            Center(
+              child: CircularProgressIndicator.adaptive(
+                valueColor: AlwaysStoppedAnimation<Color>(primary),
+                backgroundColor: Colors.grey[200],
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio:
+                    1.2, // Increased from 1.0 to 1.2 for better text visibility on mobile
+              ),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                final isSelected = _selectedCategory == category['label'];
 
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio:
-                  1.2, // Increased from 1.0 to 1.2 for better text visibility on mobile
-            ),
-            itemCount: _categories.length,
-            itemBuilder: (context, index) {
-              final category = _categories[index];
-              final isSelected = _selectedCategory == category['label'];
-
-              return GestureDetector(
-                onTap: () =>
-                    setState(() => _selectedCategory = category['label']),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? primary.withValues(alpha: 0.1)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? primary : Colors.grey[300]!,
-                      width: 2,
+                return GestureDetector(
+                  onTap: () =>
+                      setState(() => _selectedCategory = category['label']),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primary.withValues(alpha: 0.1)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected ? primary : Colors.grey[300]!,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          category['icon'],
+                          size: 32,
+                          color: isSelected ? primary : Colors.grey[600],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          category['label'],
+                          style: GoogleFonts.poppins(
+                            fontSize:
+                                12, // Reduced from 14 to 12 for better fit
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? primary : Colors.black87,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2, // Allow up to 2 lines for long text
+                          overflow: TextOverflow
+                              .ellipsis, // Show ellipsis if still too long
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        category['icon'],
-                        size: 32,
-                        color: isSelected ? primary : Colors.grey[600],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        category['label'],
-                        style: GoogleFonts.poppins(
-                          fontSize: 12, // Reduced from 14 to 12 for better fit
-                          fontWeight: FontWeight.bold,
-                          color: isSelected ? primary : Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2, // Allow up to 2 lines for long text
-                        overflow: TextOverflow
-                            .ellipsis, // Show ellipsis if still too long
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
+                );
+              },
+            ),
           const SizedBox(height: 24),
 
           // Description Area
@@ -776,7 +796,10 @@ class _PostJobScreenState extends State<PostJobScreen> {
                     const SizedBox(width: 16),
                     Expanded(
                       child: FilledButton(
-                        onPressed: () => _confirmAndPostJob(primary),
+                        onPressed: () {
+                          debugPrint('BUTTON TAPPED!!!');
+                          _confirmAndPostJob(primary);
+                        },
                         style: FilledButton.styleFrom(
                           backgroundColor: primary,
                           shape: RoundedRectangleBorder(
@@ -958,10 +981,25 @@ class _PostJobScreenState extends State<PostJobScreen> {
   }
 
   void _confirmAndPostJob(Color primary) async {
+    debugPrint('=== _confirmAndPostJob CALLED ===');
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    debugPrint('Current user: ${currentUser?.id ?? 'NULL - NOT LOGGED IN'}');
     try {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        debugPrint('USER IS NULL - cannot post job');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please log in again to post a job'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      debugPrint('User logged in: ${user.id}');
 
       // Get customer profile
       final profile = await supabase
@@ -977,43 +1015,49 @@ class _PostJobScreenState extends State<PostJobScreen> {
           .single();
 
       // Build scheduled date and time
-      String? scheduledDate;
-      String? scheduledTime;
-      if (_selectedDate != null) {
-        scheduledDate = _selectedDate!.toIso8601String().substring(0, 10);
-      }
-      if (_selectedTime != null) {
-        scheduledTime =
-            '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00';
-      }
+      if (_selectedDate != null) {}
+      if (_selectedTime != null) {}
+
+      debugPrint('=== Posting job ===');
+      debugPrint('customer_id: ${customer['id']}');
+      debugPrint('service_category: $_selectedCategory');
+      debugPrint('description: ${_descriptionController.text.trim()}');
+      debugPrint('location: ${_locationController.text.trim()}');
 
       // Insert job into Supabase
-      final jobResponse = await supabase.from('jobs').insert({
-        'customer_id': customer['id'],
-        'service_category': _selectedCategory,
-        'title': '$_selectedCategory Service Request',
-        'description': _descriptionController.text.trim(),
-        'location': _locationController.text.trim(),
-        'status': 'open',
-        'scheduled_date': _selectedDate != null
-            ? '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}'
-            : null,
-        'scheduled_time': _selectedTime != null
-            ? '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00'
-            : null,
-      }).select('id').single();
+      final jobResponse = await supabase
+          .from('jobs')
+          .insert({
+            'customer_id': customer['id'],
+            'service_category': _selectedCategory,
+            'title': '$_selectedCategory Service Request',
+            'description': _descriptionController.text.trim(),
+            'location': _locationController.text.trim(),
+            'status': 'open',
+            'scheduled_date': _selectedDate != null
+                ? '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}'
+                : null,
+            'scheduled_time': _selectedTime != null
+                ? '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00'
+                : null,
+          })
+          .select('id')
+          .single();
 
       final jobId = jobResponse['id'].toString();
       final shortId = '#MUA-${jobId.substring(0, 8).toUpperCase()}';
 
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+
       // Send notification
       try {
-        final notificationManager = Provider.of<nm.NotificationManager>(
-          context, listen: false);
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(context, listen: false);
         notificationManager.sendNotification(
           receiverId: customer['id'],
           receiverType: 'customer',
-          type: nm.NotificationType.jobPosted,
+          type: nm.NotificationType.jobRequestSent,
           title: '🎉 Job Posted Successfully!',
           body: 'Your $_selectedCategory job request is now live.',
           priority: nm.NotificationPriority.medium,
@@ -1021,8 +1065,6 @@ class _PostJobScreenState extends State<PostJobScreen> {
       } catch (e) {
         debugPrint('Notification error: $e');
       }
-
-      if (!mounted) return;
 
       // Show success dialog with real job ID
       showDialog(
@@ -1041,10 +1083,12 @@ class _PostJobScreenState extends State<PostJobScreen> {
           },
         ),
       );
-      setState(() { _isJobPosted = true; });
-
+      setState(() {
+        _isJobPosted = true;
+      });
     } catch (e) {
-      debugPrint('Error posting job: $e');
+      debugPrint('FULL ERROR posting job: $e');
+      debugPrint('Error type: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

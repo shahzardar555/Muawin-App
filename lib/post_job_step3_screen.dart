@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Step 3 Screen - Confirm Details
-class PostJobStep3Screen extends StatelessWidget {
+class PostJobStep3Screen extends StatefulWidget {
   final Map<String, dynamic>? selectedCategory;
   final String? location;
   final DateTime? selectedDate;
@@ -17,6 +18,13 @@ class PostJobStep3Screen extends StatelessWidget {
     this.selectedTime,
     this.price,
   });
+
+  @override
+  State<PostJobStep3Screen> createState() => _PostJobStep3ScreenState();
+}
+
+class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
+  bool _isPosting = false;
 
   String _formatDateTime(DateTime? date, TimeOfDay? time) {
     if (date == null || time == null) return 'Not scheduled';
@@ -144,7 +152,7 @@ class PostJobStep3Screen extends StatelessWidget {
                   ),
                   alignment: Alignment.topLeft,
                   padding: const EdgeInsets.all(40),
-                  child: selectedCategory != null
+                  child: widget.selectedCategory != null
                       ? Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -159,7 +167,7 @@ class PostJobStep3Screen extends StatelessWidget {
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
-                                    selectedCategory!['icon'],
+                                    widget.selectedCategory!['icon'],
                                     size: 50,
                                     color: Colors.green.shade600,
                                   ),
@@ -177,7 +185,7 @@ class PostJobStep3Screen extends StatelessWidget {
                                                   : 24;
 
                                       return Text(
-                                        selectedCategory!['name'],
+                                        widget.selectedCategory!['name'],
                                         style: GoogleFonts.poppins(
                                           fontSize: fontSize,
                                           fontWeight: FontWeight.w700,
@@ -237,7 +245,8 @@ class PostJobStep3Screen extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        location ?? 'No location specified',
+                                        widget.location ??
+                                            'No location specified',
                                         style: GoogleFonts.inter(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w400,
@@ -294,8 +303,8 @@ class PostJobStep3Screen extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        _formatDateTime(
-                                            selectedDate, selectedTime),
+                                        _formatDateTime(widget.selectedDate,
+                                            widget.selectedTime),
                                         style: GoogleFonts.inter(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w400,
@@ -352,8 +361,8 @@ class PostJobStep3Screen extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        price != null
-                                            ? 'Rs. $price'
+                                        widget.price != null
+                                            ? 'Rs. ${widget.price}'
                                             : 'Not specified',
                                         style: GoogleFonts.inter(
                                           fontSize:
@@ -384,36 +393,102 @@ class PostJobStep3Screen extends StatelessWidget {
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: const Text('Confirm Posting'),
-                            content: const Text(
-                                'Are you sure, You want to Post this Request'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('No'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Job posted successfully!'),
-                                      backgroundColor: Colors.green,
+                    onPressed: _isPosting
+                        ? null
+                        : () {
+                            debugPrint('=== CONFIRM & POST BUTTON TAPPED ===');
+                            showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text('Confirm Posting'),
+                                  content: const Text(
+                                      'Are you sure, You want to Post this Request'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(),
+                                      child: const Text('No'),
                                     ),
-                                  );
-                                },
-                                child: const Text('Yes'),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
+                                    TextButton(
+                                      onPressed: () async {
+                                        debugPrint('=== YES BUTTON TAPPED ===');
+                                        debugPrint(
+                                            'user: ${Supabase.instance.client.auth.currentUser?.id ?? 'NULL'}');
+                                        final navigator = Navigator.of(context);
+                                        navigator.pop();
+                                        setState(() => _isPosting = true);
+
+                                        try {
+                                          final supabase =
+                                              Supabase.instance.client;
+                                          final user =
+                                              supabase.auth.currentUser;
+
+                                          if (user == null) {
+                                            setState(() => _isPosting = false);
+                                            return;
+                                          }
+
+                                          final profile = await supabase
+                                              .from('profiles')
+                                              .select('id')
+                                              .eq('user_id', user.id)
+                                              .single();
+
+                                          final customer = await supabase
+                                              .from('customers')
+                                              .select('id')
+                                              .eq('profile_id', profile['id'])
+                                              .single();
+
+                                          final categoryName = widget
+                                                  .selectedCategory?['name']
+                                                  ?.toString() ??
+                                              '';
+
+                                          await supabase.from('jobs').insert({
+                                            'customer_id': customer['id'],
+                                            'service_category': categoryName,
+                                            'title':
+                                                '$categoryName Service Request',
+                                            'location': widget.location ?? '',
+                                            'status': 'scheduled',
+                                            'scheduled_date': widget
+                                                        .selectedDate !=
+                                                    null
+                                                ? '${widget.selectedDate!.year}-${widget.selectedDate!.month.toString().padLeft(2, '0')}-${widget.selectedDate!.day.toString().padLeft(2, '0')}'
+                                                : null,
+                                            'scheduled_time': widget
+                                                        .selectedTime !=
+                                                    null
+                                                ? '${widget.selectedTime!.hour.toString().padLeft(2, '0')}:${widget.selectedTime!.minute.toString().padLeft(2, '0')}:00'
+                                                : null,
+                                          });
+
+                                          debugPrint(
+                                              'Job posted successfully!');
+
+                                          if (mounted) {
+                                            setState(() => _isPosting = false);
+                                            // Navigate back to home after dialog closes
+                                            navigator.popUntil(
+                                                (route) => route.isFirst);
+                                          }
+                                        } catch (e) {
+                                          debugPrint('Error posting job: $e');
+                                          if (mounted) {
+                                            setState(() => _isPosting = false);
+                                          }
+                                        }
+                                      },
+                                      child: const Text('Yes'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
@@ -422,13 +497,15 @@ class PostJobStep3Screen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text(
-                      'Confirm & Post',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: _isPosting
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            'Confirm & Post',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 ),
               ),
