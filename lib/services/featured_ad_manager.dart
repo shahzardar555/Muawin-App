@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_service.dart';
 
 class FeaturedAd {
@@ -90,10 +91,10 @@ class FeaturedAdManager extends ChangeNotifier {
   static final FeaturedAdManager _instance = FeaturedAdManager._internal();
   factory FeaturedAdManager() => _instance;
   FeaturedAdManager._internal() {
-    // TODO: Load from Supabase
+    // In-memory cache is populated on demand via Supabase queries
   }
 
-  // TODO: Load from Supabase
+  // In-memory fallback list (populated by purchaseFeaturedAd for instant display)
   List<FeaturedAd> _activeFeaturedAds = [];
 
   List<FeaturedAd> get activeFeaturedAds =>
@@ -169,23 +170,94 @@ class FeaturedAdManager extends ChangeNotifier {
   Future<List<FeaturedAd>> getFeaturedAdsForCustomer(
       String customerId, double maxDistanceKm) async {
     try {
-      // Get all active featured ads
-      final allAds = getActiveFeaturedAds();
+      final supabase = Supabase.instance.client;
+      final now = DateTime.now().toIso8601String();
 
-      // Get customer location
+      // Fetch active featured ads from Supabase with joined profile data
+      final response = await supabase
+          .from('featured_ads')
+          .select('''
+            *,
+            vendors!left (
+              id,
+              business_name,
+              business_type,
+              rating,
+              city,
+              area,
+              profiles!inner (
+                full_name,
+                profile_image_url
+              )
+            ),
+            providers!left (
+              id,
+              service_category,
+              rating,
+              city,
+              area,
+              profiles!inner (
+                full_name,
+                profile_image_url
+              )
+            )
+          ''')
+          .eq('is_active', true)
+          .gt('end_date', now)
+          .order('created_at', ascending: false)
+          .limit(10);
+
+      final List<FeaturedAd> ads = [];
+
+      for (final row in response) {
+        final isVendor = row['vendor_id'] != null;
+        final entity = isVendor
+            ? (row['vendors'] as Map<String, dynamic>?)
+            : (row['providers'] as Map<String, dynamic>?);
+        final profile = entity?['profiles'] as Map<String, dynamic>?;
+
+        final ad = FeaturedAd(
+          id: row['id']?.toString() ?? '',
+          userId: isVendor
+              ? (row['vendor_id']?.toString() ?? '')
+              : (row['provider_id']?.toString() ?? ''),
+          userType: row['user_type']?.toString() ??
+              (isVendor ? 'vendor' : 'provider'),
+          userName: profile?['full_name']?.toString() ??
+              entity?['business_name']?.toString() ??
+              'Featured Partner',
+          userCategory: isVendor
+              ? (entity?['business_type']?.toString() ?? '')
+              : (entity?['service_category']?.toString() ?? ''),
+          userRating: (entity?['rating'] as num?)?.toDouble() ?? 0.0,
+          userDistance: 0.0,
+          tagline: row['tagline']?.toString() ?? '',
+          planType: row['plan_type']?.toString() ?? 'weekly',
+          planPrice: (row['plan_price'] as num?)?.toInt() ?? 0,
+          startDate: DateTime.tryParse(row['start_date']?.toString() ?? '') ??
+              DateTime.now(),
+          endDate: DateTime.tryParse(row['end_date']?.toString() ?? '') ??
+              DateTime.now(),
+          isActive: row['is_active'] == true,
+          profileImageUrl: profile?['profile_image_url']?.toString() ?? '',
+          userProfileData: row,
+        );
+        ads.add(ad);
+      }
+
+      // Get customer location and filter by distance (keep existing location logic)
       final customerLocation =
           await LocationService.getUserLocation(customerId);
 
       if (customerLocation == null) {
-        // If no location data, return all ads with default distance
-        return allAds;
+        return ads;
       }
 
-      // Use LocationService to filter by location
       return await LocationService.filterByLocation(
-          allAds, customerLocation, maxDistanceKm);
+          ads, customerLocation, maxDistanceKm);
     } catch (e) {
-      // Return all ads as fallback
+      debugPrint('Error fetching featured ads from Supabase: $e');
+      // Fallback to in-memory list
       return getActiveFeaturedAds();
     }
   }

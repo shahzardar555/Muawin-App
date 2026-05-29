@@ -245,6 +245,22 @@ class _VendorResultsScreenState extends State<VendorResultsScreen> {
                               itemCount: _filteredVendors.length,
                               itemBuilder: (context, index) {
                                 final vendor = _filteredVendors[index];
+                                final vendorStatus =
+                                    vendor['status']?.toString() ?? 'open';
+                                final statusLabel = vendorStatus == 'busy'
+                                    ? 'Busy'
+                                    : vendorStatus == 'break'
+                                        ? 'Break'
+                                        : vendorStatus == 'closed'
+                                            ? 'Closed'
+                                            : 'Open';
+                                final statusColor = vendorStatus == 'busy'
+                                    ? const Color(0xFFFBBF24)
+                                    : vendorStatus == 'break'
+                                        ? const Color(0xFF60A5FA)
+                                        : vendorStatus == 'closed'
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF4ADE80);
                                 return GestureDetector(
                                   onTap: () {
                                     Navigator.of(context).push(
@@ -348,12 +364,12 @@ class _VendorResultsScreenState extends State<VendorResultsScreen> {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF4CAF50),
+                                            color: statusColor,
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                           ),
                                           child: Text(
-                                            'Open',
+                                            statusLabel,
                                             style: GoogleFonts.poppins(
                                               fontSize: 10,
                                               fontWeight: FontWeight.bold,

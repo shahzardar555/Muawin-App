@@ -654,6 +654,10 @@ class _GetFeaturedOverlayState extends State<GetFeaturedOverlay>
                                 ? '1 week'
                                 : '1 month',
                             purchaseType: 'featured_ad',
+                            featuredAdUserId: widget.userId,
+                            featuredAdUserType: widget.userType,
+                            featuredAdTagline: _tagline,
+                            featuredAdPlanType: _selectedPlan,
                           ),
                         ),
                       );

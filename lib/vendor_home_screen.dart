@@ -218,6 +218,10 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   bool _isLoadingVendorData = true;
   Map<String, dynamic>? _vendorData;
 
+  // Featured ad state
+  bool _hasActiveFeaturedAd = false;
+  String _activeFeaturedEndDate = '';
+
   Future<void> _initializeVendor() async {
     try {
       final supabase = Supabase.instance.client;
@@ -251,7 +255,8 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
             rating,
             review_count,
             is_pro,
-            years_in_business
+            years_in_business,
+            cover_photo_url
           ''').eq('profile_id', _currentProfileId).maybeSingle();
       debugPrint('Vendor init — vendor: $vendor');
 
@@ -280,9 +285,11 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
           'profileImageUrl': profile['profile_image_url']?.toString(),
           'mapsLink': vendor['location']?.toString() ?? '',
           'is_pro': vendor['is_pro'] == true,
+          'coverPhotoUrl': vendor['cover_photo_url']?.toString(),
         };
         _isLoadingVendorData = false;
       });
+      _checkActiveFeaturedAd();
       debugPrint('Vendor profileImageUrl: ${_vendorData?['profileImageUrl']}');
     } catch (e) {
       debugPrint('Error initializing vendor: $e');
@@ -310,6 +317,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   int get _vendorReviewCount =>
       int.tryParse(_vendorData?['reviewCount']?.toString() ?? '') ?? 0;
   String? get _vendorProfileImageUrl => _vendorData?['profileImageUrl'];
+  String? get _vendorCoverPhotoUrl => _vendorData?['coverPhotoUrl'];
 
   void _sendMessage({bool isVoiceMessage = false}) async {
     final userMessage = _chatController.text.trim();
@@ -375,6 +383,69 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
     }
   }
 
+  Future<void> _checkActiveFeaturedAd() async {
+    if (_currentVendorId.isEmpty) {
+      setState(() {
+        _hasActiveFeaturedAd = false;
+        _activeFeaturedEndDate = '';
+      });
+      return;
+    }
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('featured_ads')
+          .select('id, end_date')
+          .eq('vendor_id', _currentVendorId)
+          .eq('is_active', true)
+          .gt('end_date', DateTime.now().toIso8601String())
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null) {
+        final endDate =
+            DateTime.tryParse(response['end_date']?.toString() ?? '');
+        final months = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec'
+        ];
+        if (endDate != null) {
+          setState(() {
+            _hasActiveFeaturedAd = true;
+            _activeFeaturedEndDate =
+                '${endDate.day} ${months[endDate.month - 1]} ${endDate.year}';
+          });
+        } else {
+          setState(() {
+            _hasActiveFeaturedAd = true;
+            _activeFeaturedEndDate = '';
+          });
+        }
+      } else {
+        setState(() {
+          _hasActiveFeaturedAd = false;
+          _activeFeaturedEndDate = '';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking active featured ad: $e');
+      setState(() {
+        _hasActiveFeaturedAd = false;
+        _activeFeaturedEndDate = '';
+      });
+    }
+  }
+
   void _navigateBackFromChats() {
     setState(() {
       _selectedNavIndex = 0; // Navigate back to dashboard tab
@@ -431,6 +502,9 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
               sizing: StackFit.expand,
               children: [
                 _DashboardTab(
+                  vendorId: _currentVendorId,
+                  hasActiveFeaturedAd: _hasActiveFeaturedAd,
+                  activeFeaturedEndDate: _activeFeaturedEndDate,
                   vendorName: _vendorName,
                   vendorRating: _vendorRating,
                   vendorReviewCount: _vendorReviewCount,
@@ -492,6 +566,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
                   currentVendorMapsLink: _vendorMapsLink,
                   currentVendorAbout: _vendorAbout,
                   currentVendorProfileImageUrl: _vendorProfileImageUrl,
+                  currentVendorCoverPhotoUrl: _vendorCoverPhotoUrl,
                   onStoreNameUpdated: (newName) async {
                     await vendorService.updateVendorField('name', newName);
                     await _refreshVendorData();
@@ -631,6 +706,9 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
 /// Dashboard tab content (Vendor Hub).
 class _DashboardTab extends StatelessWidget {
   const _DashboardTab({
+    required this.vendorId,
+    required this.hasActiveFeaturedAd,
+    required this.activeFeaturedEndDate,
     required this.vendorName,
     required this.vendorRating,
     required this.vendorReviewCount,
@@ -648,6 +726,9 @@ class _DashboardTab extends StatelessWidget {
     this.vendorProfileImageUrl, // Added profile picture URL parameter
   });
 
+  final String vendorId;
+  final bool hasActiveFeaturedAd;
+  final String activeFeaturedEndDate;
   final String vendorName;
   final String vendorRating;
   final int vendorReviewCount;
@@ -701,9 +782,13 @@ class _DashboardTab extends StatelessWidget {
             const SizedBox(height: 20),
             _ManagementCard(status: statusLabel),
             const SizedBox(height: 20),
-            _PremiumBanner(),
+            _PremiumBanner(
+              hasActive: hasActiveFeaturedAd,
+              endDate: activeFeaturedEndDate,
+            ),
             const SizedBox(height: 24),
             _ReviewsSection(
+              vendorId: vendorId,
               replyingIndex: replyingReviewIndex,
               vendorReplies: vendorReplies,
               onReplyTap: onReplyTap,
@@ -1421,6 +1506,7 @@ class _VendorProfileTab extends StatefulWidget {
     required this.onReviewCountUpdated,
     required this.onProfilePictureUpdated,
     this.currentVendorProfileImageUrl,
+    this.currentVendorCoverPhotoUrl,
   });
 
   final String currentVendorName;
@@ -1430,6 +1516,7 @@ class _VendorProfileTab extends StatefulWidget {
   final String currentVendorMapsLink;
   final String currentVendorAbout;
   final String? currentVendorProfileImageUrl;
+  final String? currentVendorCoverPhotoUrl;
   final Function(String) onStoreNameUpdated;
   final Function(String) onCategoryUpdated;
   final Function(String) onPhoneUpdated;
@@ -1539,11 +1626,26 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
     }
   }
 
+  bool _hasCoverPhotoSource() {
+    return _coverPhotoFile != null ||
+        _coverPhotoUrl != null ||
+        (widget.currentVendorCoverPhotoUrl != null &&
+            widget.currentVendorCoverPhotoUrl!.isNotEmpty &&
+            widget.currentVendorCoverPhotoUrl!.startsWith('http'));
+  }
+
   ImageProvider _getCoverImageProvider() {
     if (_coverPhotoFile != null) {
       return FileImage(_coverPhotoFile!);
     } else if (_coverPhotoUrl != null) {
       return NetworkImage(_coverPhotoUrl!);
+    }
+
+    // Fallback to Supabase-stored cover photo URL from vendor data
+    if (widget.currentVendorCoverPhotoUrl != null &&
+        widget.currentVendorCoverPhotoUrl!.isNotEmpty &&
+        widget.currentVendorCoverPhotoUrl!.startsWith('http')) {
+      return NetworkImage(widget.currentVendorCoverPhotoUrl!);
     }
 
     // Fallback to a solid color background (will be handled by gradient)
@@ -1579,7 +1681,7 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
                   decoration: BoxDecoration(
                     // Use cover photo as background if available, otherwise use gradient
-                    image: _coverPhotoFile != null || _coverPhotoUrl != null
+                    image: _hasCoverPhotoSource()
                         ? DecorationImage(
                             image: _getCoverImageProvider(),
                             fit: BoxFit.cover,
@@ -1588,7 +1690,7 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                             },
                           )
                         : null,
-                    gradient: _coverPhotoFile == null && _coverPhotoUrl == null
+                    gradient: !_hasCoverPhotoSource()
                         ? LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -1773,7 +1875,7 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          'SUPERMARKET',
+                          widget.currentVendorCategory.toUpperCase(),
                           style: GoogleFonts.poppins(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -2479,18 +2581,44 @@ class _AccountSecuritySheetState extends State<_AccountSecuritySheet> {
     setState(() => _isLoading = true);
 
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      final supabase = Supabase.instance.client;
 
-      // In a real app, you would call your API here
-      // await authService.changePassword(
-      //   currentPassword: _currentPasswordController.text,
-      //   newPassword: _newPasswordController.text,
-      // );
+      // Step 1: Re-authenticate by signing in with current password
+      final user = supabase.auth.currentUser;
+      if (user == null || user.email == null) {
+        _showError('Session expired. Please log in again.');
+        return;
+      }
+
+      // Step 2: Verify current password is correct by attempting sign in
+      final authResponse = await supabase.auth.signInWithPassword(
+        email: user.email!,
+        password: _currentPasswordController.text.trim(),
+      );
+
+      if (authResponse.user == null) {
+        _showError('Current password is incorrect.');
+        return;
+      }
+
+      // Step 3: Update to new password
+      await supabase.auth.updateUser(
+        UserAttributes(password: _newPasswordController.text.trim()),
+      );
 
       if (mounted) {
         _showSuccess('Password updated successfully!');
         Navigator.pop(context);
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        if (e.message.toLowerCase().contains('invalid') ||
+            e.message.toLowerCase().contains('wrong') ||
+            e.message.toLowerCase().contains('incorrect')) {
+          _showError('Current password is incorrect.');
+        } else {
+          _showError('Failed to update password: ${e.message}');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -3581,6 +3709,14 @@ class _ManagementCard extends StatelessWidget {
 
 /// Premium Promotion Banner: gradient, "Boost Your Sales", Rs. 99 / per day.
 class _PremiumBanner extends StatefulWidget {
+  final bool hasActive;
+  final String endDate;
+
+  const _PremiumBanner({
+    this.hasActive = false,
+    this.endDate = '',
+  });
+
   @override
   State<_PremiumBanner> createState() => _PremiumBannerState();
 }
@@ -3588,14 +3724,70 @@ class _PremiumBanner extends StatefulWidget {
 class _PremiumBannerState extends State<_PremiumBanner> {
   // Get current user profile data
   Future<Map<String, dynamic>> _getCurrentUserProfile() async {
-    // Return default profile data
-    return {
-      'userType': 'vendor',
-      'userId': '',
-      'userName': '',
-      'userCategory': '',
-      'userRating': 0.0,
-    };
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        return {
+          'userType': 'vendor',
+          'userId': '',
+          'userName': '',
+          'userCategory': '',
+          'userRating': 0.0,
+        };
+      }
+
+      // Get profile
+      final profile = await supabase
+          .from('profiles')
+          .select('id, full_name, profile_image_url')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (profile == null) {
+        return {
+          'userType': 'vendor',
+          'userId': '',
+          'userName': '',
+          'userCategory': '',
+          'userRating': 0.0,
+        };
+      }
+
+      // Get vendor record
+      final vendor = await supabase
+          .from('vendors')
+          .select('id, business_type, rating')
+          .eq('profile_id', profile['id'])
+          .maybeSingle();
+
+      if (vendor == null) {
+        return {
+          'userType': 'vendor',
+          'userId': '',
+          'userName': profile['full_name']?.toString() ?? '',
+          'userCategory': '',
+          'userRating': 0.0,
+        };
+      }
+
+      return {
+        'userType': 'vendor',
+        'userId': vendor['id'].toString(),
+        'userName': profile['full_name']?.toString() ?? '',
+        'userCategory': vendor['business_type']?.toString() ?? '',
+        'userRating': (vendor['rating'] as num?)?.toDouble() ?? 0.0,
+      };
+    } catch (e) {
+      debugPrint('Error getting current user profile: $e');
+      return {
+        'userType': 'vendor',
+        'userId': '',
+        'userName': '',
+        'userCategory': '',
+        'userRating': 0.0,
+      };
+    }
   }
 
   // Show GetFeaturedOverlay with real user data
@@ -3622,6 +3814,109 @@ class _PremiumBannerState extends State<_PremiumBanner> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.hasActive) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF22C55E), // green-500
+              Color(0xFF16A34A), // green-600
+            ],
+          ),
+          borderRadius: BorderRadius.circular(_kCardRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Featured Ad Active',
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.endDate.isNotEmpty
+                            ? 'Active until: ${widget.endDate}'
+                            : 'Your ad is running',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Your profile is being shown to customers as a featured ad. Customers can see your business at the top of their feed.',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: Colors.white.withValues(alpha: 0.8),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.check_rounded, size: 16),
+              label: Text(
+                'Running',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.5),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 32,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -3663,7 +3958,7 @@ class _PremiumBannerState extends State<_PremiumBanner> {
                     Text(
                       'Boost Your Profile',
                       style: GoogleFonts.poppins(
-                        fontSize: 14, // Reduced from 16 to 14 for mobile
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Colors.white.withValues(alpha: 0.9),
                       ),
@@ -3701,12 +3996,11 @@ class _PremiumBannerState extends State<_PremiumBanner> {
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: _showGetFeaturedOverlay,
-            icon: const Icon(Icons.workspace_premium_rounded,
-                size: 16), // Reduced from 18 to 16
+            icon: const Icon(Icons.workspace_premium_rounded, size: 16),
             label: Text(
               'Get Featured',
               style: GoogleFonts.poppins(
-                fontSize: 12, // Reduced from 14 to 12 for mobile
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -3715,7 +4009,7 @@ class _PremiumBannerState extends State<_PremiumBanner> {
               foregroundColor: const Color(0xFF6366F1),
               padding: const EdgeInsets.symmetric(
                 vertical: 14,
-                horizontal: 32, // Increased horizontal padding for wider button
+                horizontal: 32,
               ),
             ),
           ),
@@ -3728,6 +4022,7 @@ class _PremiumBannerState extends State<_PremiumBanner> {
 /// Reviews Section: list of reviews with reply functionality.
 class _ReviewsSection extends StatefulWidget {
   const _ReviewsSection({
+    required this.vendorId,
     required this.replyingIndex,
     required this.vendorReplies,
     required this.onReplyTap,
@@ -3737,6 +4032,7 @@ class _ReviewsSection extends StatefulWidget {
     required this.onRatingChanged, // Added rating callback
   });
 
+  final String vendorId;
   final int? replyingIndex;
   final Map<int, String> vendorReplies;
   final ValueChanged<int> onReplyTap;
@@ -3750,10 +4046,11 @@ class _ReviewsSection extends StatefulWidget {
 }
 
 class _ReviewsSectionState extends State<_ReviewsSection> {
-  final List<Map<String, dynamic>> _reviews = [
+  // Hardcoded fallback reviews
+  final List<Map<String, dynamic>> _fallbackReviews = [
     {
       'customerName': 'Sarah Johnson',
-      'avatar': 'https://i.pravatar.cc/150?img=47', // Real female profile
+      'avatar': 'https://i.pravatar.cc/150?img=47',
       'rating': 5.0,
       'date': '2 days ago',
       'comment': 'Excellent service! Very professional and quick response.',
@@ -3761,7 +4058,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
     },
     {
       'customerName': 'Ahmed Hassan',
-      'avatar': 'https://i.pravatar.cc/150?img=11', // Real male profile
+      'avatar': 'https://i.pravatar.cc/150?img=11',
       'rating': 4.5,
       'date': '1 week ago',
       'comment': 'Good quality work, but could improve communication.',
@@ -3770,7 +4067,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
     },
     {
       'customerName': 'Fatima Sheikh',
-      'avatar': 'https://i.pravatar.cc/150?img=23', // Real female profile
+      'avatar': 'https://i.pravatar.cc/150?img=23',
       'rating': 4.0,
       'date': '2 weeks ago',
       'comment': 'Decent prices, but delivery was slightly delayed.',
@@ -3778,15 +4075,103 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
     },
   ];
   late List<Map<String, dynamic>> _displayedReviews;
+  bool _isLoadingReviews = false;
 
   @override
   void initState() {
     super.initState();
-    _displayedReviews = List.from(_reviews);
-    // Notify parent of the current review count and rating
+    _displayedReviews = [];
+    _fetchVendorReviews();
+  }
+
+  Future<void> _fetchVendorReviews() async {
+    if (widget.vendorId.isEmpty) {
+      setState(() => _displayedReviews = List.from(_fallbackReviews));
+      _notifyParent();
+      return;
+    }
+
+    setState(() => _isLoadingReviews = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('reviews')
+          .select('''
+            id,
+            rating,
+            review,
+            created_at,
+            customers!inner (
+              profile_id,
+              profiles!inner (
+                full_name,
+                profile_image_url
+              )
+            )
+          ''')
+          .eq('vendor_id', widget.vendorId)
+          .order('created_at', ascending: false)
+          .limit(10);
+
+      if (response.isNotEmpty) {
+        final reviews = response.map<Map<String, dynamic>>((r) {
+          final customer = r['customers'] as Map<String, dynamic>?;
+          final profile = customer?['profiles'] as Map<String, dynamic>?;
+          final createdAt =
+              DateTime.tryParse(r['created_at']?.toString() ?? '');
+          final now = DateTime.now();
+
+          String relativeDate = '';
+          if (createdAt != null) {
+            final diff = now.difference(createdAt);
+            if (diff.inMinutes < 60) {
+              relativeDate = '${diff.inMinutes} min ago';
+            } else if (diff.inHours < 24) {
+              relativeDate = '${diff.inHours}h ago';
+            } else if (diff.inDays < 7) {
+              relativeDate = '${diff.inDays} days ago';
+            } else {
+              relativeDate = '${(diff.inDays / 7).floor()} weeks ago';
+            }
+          }
+
+          return {
+            'customerName': profile?['full_name']?.toString() ?? 'Customer',
+            'avatar': profile?['profile_image_url']?.toString() ??
+                'https://i.pravatar.cc/150?img=${r['id']?.toString() ?? '0'}',
+            'rating': (r['rating'] as num?)?.toDouble() ?? 0.0,
+            'date': relativeDate,
+            'comment': r['review']?.toString() ?? '',
+            'reply': null,
+          };
+        }).toList();
+
+        setState(() {
+          _displayedReviews = reviews;
+          _isLoadingReviews = false;
+        });
+      } else {
+        setState(() {
+          _displayedReviews = [];
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching vendor reviews: $e');
+      // Fallback to hardcoded reviews on error
+      setState(() {
+        _displayedReviews = List.from(_fallbackReviews);
+        _isLoadingReviews = false;
+      });
+    }
+
+    _notifyParent();
+  }
+
+  void _notifyParent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onReviewCountChanged(_displayedReviews.length);
-      // Calculate and notify parent of average rating
       final averageRating = _calculateAverageRating(_displayedReviews);
       widget.onRatingChanged(averageRating);
     });
@@ -3839,7 +4224,18 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_displayedReviews.isEmpty)
+          if (_isLoadingReviews)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color(0xFF047A62),
+                  ),
+                ),
+              ),
+            )
+          else if (_displayedReviews.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),

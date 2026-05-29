@@ -15,12 +15,20 @@ class SubscriptionPurchaseScreen extends StatefulWidget {
     required this.planPrice,
     required this.planPeriod,
     this.purchaseType = 'pro', // Default to 'pro'
+    this.featuredAdUserId,
+    this.featuredAdUserType,
+    this.featuredAdTagline,
+    this.featuredAdPlanType,
   });
 
   final String planName;
   final int planPrice;
   final String planPeriod;
   final String purchaseType; // 'pro' or 'featured_ad'
+  final String? featuredAdUserId;
+  final String? featuredAdUserType;
+  final String? featuredAdTagline;
+  final String? featuredAdPlanType;
 
   @override
   State<SubscriptionPurchaseScreen> createState() =>
@@ -63,12 +71,12 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
 
     // Initialize featured ad data extraction - will be processed in didChangeDependencies
     if (widget.purchaseType == 'featured_ad') {
-      _featuredAdPlanType = null;
-      _featuredAdUserType = null;
-      _featuredAdUserId = null;
+      _featuredAdPlanType = widget.featuredAdPlanType;
+      _featuredAdUserType = widget.featuredAdUserType;
+      _featuredAdUserId = widget.featuredAdUserId;
+      _featuredAdTagline = widget.featuredAdTagline;
       _featuredAdUserName = null;
       _featuredAdUserCategory = null;
-      _featuredAdTagline = null;
       _featuredAdUserRating = null;
     }
 
@@ -111,13 +119,13 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
       final args =
           ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
       if (args != null) {
-        _featuredAdTagline = args['tagline'];
-        _featuredAdPlanType = args['planType'];
-        _featuredAdUserType = args['userType'];
-        _featuredAdUserId = args['userId'];
-        _featuredAdUserName = args['userName'];
-        _featuredAdUserCategory = args['userCategory'];
-        _featuredAdUserRating = args['userRating'];
+        _featuredAdTagline ??= args['tagline'];
+        _featuredAdPlanType ??= args['planType'];
+        _featuredAdUserType ??= args['userType'];
+        _featuredAdUserId ??= args['userId'];
+        _featuredAdUserName ??= args['userName'];
+        _featuredAdUserCategory ??= args['userCategory'];
+        _featuredAdUserRating ??= args['userRating'];
       }
     }
   }
@@ -1056,197 +1064,207 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   }
 
   Future<void> _handlePurchase() async {
-    if (!_isPaymentValid()) {
-      _showError('Please fill in all required payment details correctly.');
-      return;
-    }
-
-    // Block if already has active Pro subscription
-    if (widget.purchaseType == 'pro' && _hasActivePro) {
-      final expiryStr = _proExpiryDate != null
-          ? '${_proExpiryDate!.day}/${_proExpiryDate!.month}/${_proExpiryDate!.year}'
-          : 'unknown date';
-      _showError(
-          'You already have an active Muawin Pro subscription valid until $expiryStr. '
-          'You can renew after your current plan expires.');
-      return;
-    }
-
-    debugPrint('Selected payment method: $_selectedPaymentMethod');
-
-    // Use Safepay for card payments
-    if (_selectedPaymentMethod == 'card' ||
-        _selectedPaymentMethod == 'Card' ||
-        _selectedPaymentMethod == 'Credit/Debit Card') {
-      setState(() => _isLoading = true);
-      await _processWithSafepay();
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    // Simulate payment processing
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
     try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-
-      if (user != null) {
-        // Get profile
-        final profile = await supabase
-            .from('profiles')
-            .select('id, role')
-            .eq('user_id', user.id)
-            .single();
-
-        final profileId = profile['id'].toString();
-        final role = profile['role'].toString();
-
-        // Calculate plan duration in days
-        int durationDays = 30;
-        if (widget.planPeriod.toLowerCase().contains('3 month')) {
-          durationDays = 90;
-        } else if (widget.planPeriod.toLowerCase().contains('year') ||
-            widget.planPeriod.toLowerCase().contains('annual')) {
-          durationDays = 365;
-        }
-
-        final now = DateTime.now();
-        final expiryDate = now.add(Duration(days: durationDays));
-
-        if (widget.purchaseType == 'pro') {
-          // Save subscription to Supabase
-          await supabase.from('subscriptions').insert({
-            'plan_name': widget.planName,
-            'plan_price': widget.planPrice,
-            'plan_period': widget.planPeriod,
-            'is_active': true,
-            'auto_renew': false,
-            'start_date': now.toIso8601String().substring(0, 10),
-            'end_date': expiryDate.toIso8601String().substring(0, 10),
-            // Set the correct user type column
-            'customer_id': role == 'customer'
-                ? await _getEntityId(supabase, profileId, 'customer')
-                : null,
-            'provider_id': role == 'provider'
-                ? await _getEntityId(supabase, profileId, 'provider')
-                : null,
-            'vendor_id': role == 'vendor'
-                ? await _getEntityId(supabase, profileId, 'vendor')
-                : null,
-          });
-
-          // Update is_pro flag based on role
-          if (role == 'customer') {
-            await supabase.from('customers').update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            }).eq('profile_id', profileId);
-          } else if (role == 'provider') {
-            await supabase.from('providers').update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            }).eq('profile_id', profileId);
-          } else if (role == 'vendor') {
-            await supabase.from('vendors').update({
-              'is_pro': true,
-              'pro_expiry_date': expiryDate.toIso8601String(),
-            }).eq('profile_id', profileId);
-          }
-        } else if (widget.purchaseType == 'featured_ad') {
-          // Save featured ad to Supabase
-          if (_featuredAdUserId != null) {
-            final adDurationDays =
-                widget.planName.toLowerCase().contains('premium')
-                    ? 30
-                    : widget.planName.toLowerCase().contains('standard')
-                        ? 14
-                        : 7;
-
-            final adExpiry = now.add(Duration(days: adDurationDays));
-
-            await supabase.from('featured_ads').insert({
-              'provider_id': role == 'provider' ? _featuredAdUserId : null,
-              'vendor_id': role == 'vendor' ? _featuredAdUserId : null,
-              'plan_type': _featuredAdPlanType ?? 'basic',
-              'tagline': _featuredAdTagline ?? '',
-              'amount_paid': widget.planPrice,
-              'currency': 'PKR',
-              'payment_method': _selectedPaymentMethod,
-              'is_active': true,
-              'start_date': now.toIso8601String(),
-              'end_date': adExpiry.toIso8601String(),
-            });
-          }
-        }
+      if (!_isPaymentValid()) {
+        _showError('Please fill in all required payment details correctly.');
+        return;
       }
-    } catch (e) {
-      debugPrint('Error saving payment to Supabase: $e');
-      // Continue to show success even if DB save fails
-      // Payment simulation succeeded
-    }
 
-    if (!mounted) return;
+      // Block if already has active Pro subscription
+      if (widget.purchaseType == 'pro' && _hasActivePro) {
+        final expiryStr = _proExpiryDate != null
+            ? '${_proExpiryDate!.day}/${_proExpiryDate!.month}/${_proExpiryDate!.year}'
+            : 'unknown date';
+        _showError(
+            'You already have an active Muawin Pro subscription valid until $expiryStr. '
+            'You can renew after your current plan expires.');
+        return;
+      }
 
-    setState(() {
-      _isLoading = false;
-      _isSuccess = true;
-    });
+      debugPrint('Selected payment method: $_selectedPaymentMethod');
 
-    _successController.forward();
+      // Use Safepay for card payments
+      if (_selectedPaymentMethod == 'card' ||
+          _selectedPaymentMethod == 'Card' ||
+          _selectedPaymentMethod == 'Credit/Debit Card') {
+        setState(() => _isLoading = true);
+        await _processWithSafepay();
+        return;
+      }
 
-    // Send notifications (keep existing code)
-    try {
-      final notificationManager =
-          Provider.of<nm.NotificationManager>(context, listen: false);
+      setState(() => _isLoading = true);
 
-      if (widget.purchaseType == 'featured_ad') {
-        notificationManager.sendNotification(
-          receiverId: _featuredAdUserId ?? 'user_123',
-          receiverType: _featuredAdUserType ?? 'provider',
-          type: nm.NotificationType.proUpgradeSuccess,
-          title: '📢 Your Profile is Now Featured!',
-          body: 'Your profile is now visible to customers in featured ads!',
-          priority: nm.NotificationPriority.high,
-        );
+      // Simulate payment processing
+      await Future.delayed(const Duration(seconds: 2));
 
-        if (_featuredAdUserId != null &&
-            _featuredAdUserType != null &&
-            _featuredAdUserName != null &&
-            _featuredAdUserCategory != null &&
-            _featuredAdUserRating != null &&
-            _featuredAdPlanType != null &&
-            _featuredAdTagline != null) {
-          final userLocation = await LocationService.getCurrentLocation();
-          FeaturedAdManager().purchaseFeaturedAd(
-            userId: _featuredAdUserId!,
-            userType: _featuredAdUserType!,
-            userName: _featuredAdUserName!,
-            userCategory: _featuredAdUserCategory!,
-            userRating: _featuredAdUserRating!,
-            userDistance: 5.0,
-            tagline: _featuredAdTagline!,
-            planType: _featuredAdPlanType!,
-            planPrice: widget.planPrice,
-            userLatitude: userLocation?.latitude,
-            userLongitude: userLocation?.longitude,
+      if (!mounted) return;
+
+      try {
+        final supabase = Supabase.instance.client;
+        final user = supabase.auth.currentUser;
+
+        if (user != null) {
+          // Get profile
+          final profile = await supabase
+              .from('profiles')
+              .select('id, role')
+              .eq('user_id', user.id)
+              .single();
+
+          final profileId = profile['id'].toString();
+          final role = profile['role'].toString();
+
+          // Calculate plan duration in days
+          int durationDays = 30;
+          if (widget.planPeriod.toLowerCase().contains('3 month')) {
+            durationDays = 90;
+          } else if (widget.planPeriod.toLowerCase().contains('year') ||
+              widget.planPeriod.toLowerCase().contains('annual')) {
+            durationDays = 365;
+          }
+
+          final now = DateTime.now();
+          final expiryDate = now.add(Duration(days: durationDays));
+
+          if (widget.purchaseType == 'pro') {
+            // Save subscription to Supabase
+            await supabase.from('subscriptions').insert({
+              'plan_name': widget.planName,
+              'plan_price': widget.planPrice,
+              'plan_period': widget.planPeriod,
+              'is_active': true,
+              'auto_renew': false,
+              'start_date': now.toIso8601String().substring(0, 10),
+              'end_date': expiryDate.toIso8601String().substring(0, 10),
+              // Set the correct user type column
+              'customer_id': role == 'customer'
+                  ? await _getEntityId(supabase, profileId, 'customer')
+                  : null,
+              'provider_id': role == 'provider'
+                  ? await _getEntityId(supabase, profileId, 'provider')
+                  : null,
+              'vendor_id': role == 'vendor'
+                  ? await _getEntityId(supabase, profileId, 'vendor')
+                  : null,
+            });
+
+            // Update is_pro flag based on role
+            if (role == 'customer') {
+              await supabase.from('customers').update({
+                'is_pro': true,
+                'pro_expiry_date': expiryDate.toIso8601String(),
+              }).eq('profile_id', profileId);
+            } else if (role == 'provider') {
+              await supabase.from('providers').update({
+                'is_pro': true,
+                'pro_expiry_date': expiryDate.toIso8601String(),
+              }).eq('profile_id', profileId);
+            } else if (role == 'vendor') {
+              await supabase.from('vendors').update({
+                'is_pro': true,
+                'pro_expiry_date': expiryDate.toIso8601String(),
+              }).eq('profile_id', profileId);
+            }
+          } else if (widget.purchaseType == 'featured_ad') {
+            // Save featured ad to Supabase
+            if (_featuredAdUserId != null && _featuredAdUserId!.isNotEmpty) {
+              final adDurationDays =
+                  widget.planName.toLowerCase().contains('premium')
+                      ? 30
+                      : widget.planName.toLowerCase().contains('standard')
+                          ? 14
+                          : 7;
+
+              final adExpiry = now.add(Duration(days: adDurationDays));
+
+              await supabase.from('featured_ads').insert({
+                'provider_id': role == 'provider' ? _featuredAdUserId : null,
+                'vendor_id': role == 'vendor' ? _featuredAdUserId : null,
+                'ad_type': 'featured',
+                'tagline': _featuredAdTagline ?? '',
+                'plan_type': _featuredAdPlanType ?? 'basic',
+                'plan_price': widget.planPrice,
+                'payment_method': _selectedPaymentMethod,
+                'payment_status': 'pending',
+                'is_active': true,
+                'impressions': 0,
+                'clicks': 0,
+                'user_type': role,
+                'start_date': now.toIso8601String(),
+                'end_date': adExpiry.toIso8601String(),
+              });
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error saving payment to Supabase: $e');
+        // Continue to show success even if DB save fails
+        // Payment simulation succeeded
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _isSuccess = true;
+      });
+
+      _successController.forward();
+
+      // Send notifications (keep existing code)
+      try {
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(context, listen: false);
+
+        if (widget.purchaseType == 'featured_ad') {
+          notificationManager.sendNotification(
+            receiverId: _featuredAdUserId ?? 'user_123',
+            receiverType: _featuredAdUserType ?? 'provider',
+            type: nm.NotificationType.proUpgradeSuccess,
+            title: '📢 Your Profile is Now Featured!',
+            body: 'Your profile is now visible to customers in featured ads!',
+            priority: nm.NotificationPriority.high,
+          );
+
+          if (_featuredAdUserId != null &&
+              _featuredAdUserType != null &&
+              _featuredAdUserName != null &&
+              _featuredAdUserCategory != null &&
+              _featuredAdUserRating != null &&
+              _featuredAdPlanType != null &&
+              _featuredAdTagline != null) {
+            final userLocation = await LocationService.getCurrentLocation();
+            FeaturedAdManager().purchaseFeaturedAd(
+              userId: _featuredAdUserId!,
+              userType: _featuredAdUserType!,
+              userName: _featuredAdUserName!,
+              userCategory: _featuredAdUserCategory!,
+              userRating: _featuredAdUserRating!,
+              userDistance: 5.0,
+              tagline: _featuredAdTagline!,
+              planType: _featuredAdPlanType!,
+              planPrice: widget.planPrice,
+              userLatitude: userLocation?.latitude,
+              userLongitude: userLocation?.longitude,
+            );
+          }
+        } else {
+          notificationManager.sendNotification(
+            receiverId: 'customer_123',
+            receiverType: 'customer',
+            type: nm.NotificationType.proUpgradeSuccess,
+            title: '👑 Welcome to Muawin Pro!',
+            body: 'Your account has been upgraded to Muawin Pro!',
+            priority: nm.NotificationPriority.high,
           );
         }
-      } else {
-        notificationManager.sendNotification(
-          receiverId: 'customer_123',
-          receiverType: 'customer',
-          type: nm.NotificationType.proUpgradeSuccess,
-          title: '👑 Welcome to Muawin Pro!',
-          body: 'Your account has been upgraded to Muawin Pro!',
-          priority: nm.NotificationPriority.high,
-        );
+      } catch (e) {
+        debugPrint('Error sending notification: $e');
       }
-    } catch (e) {
-      debugPrint('Error sending notification: $e');
+    } catch (e, stackTrace) {
+      debugPrint('=== HANDLE PURCHASE ERROR ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
     }
   }
 

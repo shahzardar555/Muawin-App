@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_screen.dart';
 
 /// Muawin Primary Teal - saturated color for brand authority
@@ -46,16 +48,30 @@ class _LogoutSplashScreenState extends State<LogoutSplashScreen>
   }
 
   Future<void> _navigateAfterLogout() async {
+    // Sign out from Supabase
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (e) {
+      debugPrint('SignOut error: $e');
+    }
+
+    // Clear SharedPreferences
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+    } catch (e) {
+      debugPrint('SharedPreferences clear error: $e');
+    }
+
     await Future.delayed(const Duration(seconds: 4));
 
     await _fadeController.reverse();
 
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => const AuthScreen(),
-      ),
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
     );
   }
 

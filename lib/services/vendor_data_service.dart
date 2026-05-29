@@ -276,17 +276,54 @@ class MockVendorService implements VendorService {
   Future<bool> updateCoverPhoto(
       String? coverPhotoUrl, String? coverPhotoPath) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final currentData = await getVendorData();
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return false;
 
-      // Update cover photo fields
-      currentData['coverPhotoUrl'] = coverPhotoUrl;
-      currentData['coverPhotoPath'] = coverPhotoPath;
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-      // Save updated data
-      await prefs.setString(_vendorDataKey, jsonEncode(currentData));
+      final profileId = profile['id']?.toString() ?? '';
+      final vendorId = await _getCurrentVendorId();
+      if (vendorId.isEmpty) return false;
+
+      final fileName =
+          'cover_vendor_${profileId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      String publicUrl = '';
+
+      if (kIsWeb && coverPhotoUrl != null && coverPhotoUrl.isNotEmpty) {
+        final xfile = XFile(coverPhotoUrl);
+        final bytes = await xfile.readAsBytes();
+        await supabase.storage
+            .from('vendor-covers')
+            .uploadBinary(fileName, bytes,
+                fileOptions: const FileOptions(
+                  upsert: true,
+                  contentType: 'image/jpeg',
+                ));
+        publicUrl =
+            supabase.storage.from('vendor-covers').getPublicUrl(fileName);
+      } else if (coverPhotoPath != null && coverPhotoPath.isNotEmpty) {
+        final file = File(coverPhotoPath);
+        await supabase.storage.from('vendor-covers').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
+        publicUrl =
+            supabase.storage.from('vendor-covers').getPublicUrl(fileName);
+      }
+
+      if (publicUrl.isNotEmpty) {
+        await supabase
+            .from('vendors')
+            .update({'cover_photo_url': publicUrl}).eq('id', vendorId);
+        debugPrint('Vendor cover photo uploaded: $publicUrl');
+      }
+
       return true;
     } catch (e) {
+      debugPrint('Error uploading vendor cover photo: $e');
       return false;
     }
   }

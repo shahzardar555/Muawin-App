@@ -245,7 +245,7 @@ class DatabaseService {
         rating,
         review_count,
         is_verified,
-        is_pro,
+        is_pro, status,
         profiles!inner(
           full_name,
           profile_image_url,

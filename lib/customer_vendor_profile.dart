@@ -105,6 +105,89 @@ class _CustomerVendorProfileScreenState
     }
   }
 
+  Future<void> _openChatWithVendor() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null) return;
+
+      // Get current user's profile_id
+      final myProfile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', currentUser.id)
+          .single();
+      final myProfileId = myProfile['id'].toString();
+
+      // Get vendor's profile_id from _vendorData
+      final vendorProfileId = _vendorData?['profile_id']?.toString() ?? '';
+      if (vendorProfileId.isEmpty) return;
+
+      // Check if a thread already exists between these two users
+      String? threadId;
+
+      final existing1 = await supabase
+          .from('message_threads')
+          .select('id')
+          .eq('participant_1_id', myProfileId)
+          .eq('participant_2_id', vendorProfileId)
+          .maybeSingle();
+
+      if (existing1 != null) {
+        threadId = existing1['id'].toString();
+      } else {
+        final existing2 = await supabase
+            .from('message_threads')
+            .select('id')
+            .eq('participant_1_id', vendorProfileId)
+            .eq('participant_2_id', myProfileId)
+            .maybeSingle();
+
+        if (existing2 != null) {
+          threadId = existing2['id'].toString();
+        }
+      }
+
+      // If no thread exists, create one
+      if (threadId == null) {
+        final newThread = await supabase
+            .from('message_threads')
+            .insert({
+              'participant_1_id': myProfileId,
+              'participant_2_id': vendorProfileId,
+              'is_active': true,
+            })
+            .select('id')
+            .single();
+        threadId = newThread['id'].toString();
+      }
+
+      if (!mounted) return;
+
+      // Navigate to ChatScreen with the real thread ID
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            chatData: {
+              'id': threadId,
+              'name': _vendorData?['business_name']?.toString() ?? '',
+              'isOnline': true,
+              'avatar': _vendorData?['avatar']?.toString() ?? '',
+              'type': 'vendor',
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Could not open chat. Please try again.')),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _pulseController.dispose();
@@ -577,25 +660,7 @@ class _CustomerVendorProfileScreenState
           child: SizedBox(
             height: 56,
             child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                            chatData: {
-                              'name': _vendorData?['business_name']
-                                      ?.toString() ??
-                                  widget.vendor['business_name']?.toString() ??
-                                  widget.vendor['name']?.toString() ??
-                                  '',
-                              'isOnline': true,
-                              'avatar': _vendorData?['avatar']?.toString() ??
-                                  widget.vendor['avatar']?.toString() ??
-                                  '',
-                              'type': 'vendor',
-                            },
-                          )),
-                );
-              },
+              onPressed: _openChatWithVendor,
               icon: const Icon(Icons.chat_bubble, color: Colors.white),
               label: Text(
                 'Chat',
