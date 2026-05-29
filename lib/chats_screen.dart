@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
@@ -14,12 +14,14 @@ class ChatsScreen extends StatefulWidget {
 class _ChatsScreenState extends State<ChatsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
-  late List<Map<String, dynamic>> _threads;
+  List<Map<String, dynamic>> _threads = [];
+  bool _isLoadingChats = false;
+  String _currentProfileId = '';
 
   @override
   void initState() {
     super.initState();
-    _threads = List.from(_originalThreads);
+    _loadChats();
   }
 
   @override
@@ -40,63 +42,132 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .toList();
   }
 
-  List<Map<String, dynamic>> get _originalThreads => [
-        {
-          'id': 't1',
-          'name': 'Ahmed Khan',
+  Future<void> _loadChats() async {
+    if (mounted) setState(() => _isLoadingChats = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get current provider's profile id
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profileResp['id']?.toString() ?? '';
+      if (_currentProfileId.isEmpty) return;
+
+      debugPrint('Provider chat profile ID: $_currentProfileId');
+
+      // Get threads where provider is participant_1
+      final threads1 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_1_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Get threads where provider is participant_2
+      final threads2 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_2_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Combine and deduplicate
+      final Map<String, dynamic> threadMap = {};
+      for (final t in [...threads1, ...threads2]) {
+        threadMap[t['id']?.toString() ?? ''] = t;
+      }
+      final threads = threadMap.values.toList();
+
+      debugPrint('Provider threads found: ${threads.length}');
+
+      final List<Map<String, dynamic>> chats = [];
+
+      for (final thread in threads) {
+        final threadId = thread['id']?.toString() ?? '';
+
+        // Get the other participant (customer)
+        final otherParticipantId =
+            thread['participant_1_id']?.toString() == _currentProfileId
+                ? thread['participant_2_id']?.toString() ?? ''
+                : thread['participant_1_id']?.toString() ?? '';
+
+        if (otherParticipantId.isEmpty) continue;
+
+        // Get other participant's profile
+        final otherProfile = await supabase
+            .from('profiles')
+            .select('id, full_name, profile_image_url, role')
+            .eq('id', otherParticipantId)
+            .maybeSingle();
+
+        if (otherProfile == null) continue;
+
+        // Get last message
+        final lastMessages = await supabase
+            .from('messages')
+            .select('content, created_at, is_read, sender_id')
+            .eq('thread_id', threadId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        String snippet = 'No messages yet';
+        String time = '';
+        bool unread = false;
+
+        if (lastMessages.isNotEmpty) {
+          final last = lastMessages.first;
+          snippet = last['content']?.toString() ?? 'Message';
+          unread = last['is_read'] == false &&
+              last['sender_id']?.toString() != _currentProfileId;
+
+          final createdAt =
+              DateTime.tryParse(last['created_at']?.toString() ?? '');
+          if (createdAt != null) {
+            final now = DateTime.now();
+            final diff = now.difference(createdAt);
+            if (diff.inMinutes < 60) {
+              time = '${diff.inMinutes} min ago';
+            } else if (diff.inHours < 24) {
+              time = '${diff.inHours}h ago';
+            } else {
+              time = '${diff.inDays}d ago';
+            }
+          }
+        }
+
+        // Use provider-specific map keys
+        chats.add({
+          'id': threadId,
+          'name': otherProfile['full_name']?.toString() ?? 'Customer',
           'role': 'CUSTOMER',
-          'snippet': 'Thanks for the prompt service!',
-          'time': '2026-03-14 14:14',
-          'unread': true,
-          'profilePicture':
-              'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-          'isOnline': true,
-        },
-        {
-          'id': 't2',
-          'name': 'Nadia Ali',
-          'role': 'CUSTOMER',
-          'snippet': 'Can you come at 4 instead?',
-          'time': '2026-03-13 16:00',
-          'unread': false,
-          'profilePicture':
-              'https://images.unsplash.com/photo-1494760105753-6511b94c32af?w=150&h=150&fit=crop&crop=face',
+          'snippet': snippet,
+          'time': time,
+          'unread': unread,
+          'profilePicture': otherProfile['profile_image_url']?.toString() ?? '',
           'isOnline': false,
-        },
-        {
-          'id': 't3',
-          'name': 'Sarah Johnson',
-          'role': 'CUSTOMER',
-          'snippet': 'The service was excellent!',
-          'time': '2026-03-12 11:20',
-          'unread': false,
-          'profilePicture':
-              'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
-          'isOnline': true,
-        },
-        {
-          'id': 't4',
-          'name': 'Muhammad Hassan',
-          'role': 'CUSTOMER',
-          'snippet': 'When can you start?',
-          'time': '2026-03-11 09:15',
-          'unread': true,
-          'profilePicture':
-              'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
-          'isOnline': false,
-        },
-        {
-          'id': 't5',
-          'name': 'Fatima Sheikh',
-          'role': 'CUSTOMER',
-          'snippet': 'Your service was amazing!',
-          'time': '2026-03-07 18:30',
-          'unread': false,
-          'profilePicture':
-              'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-          'isOnline': true,
-        },
-      ];
+          'otherParticipantId': otherParticipantId,
+        });
+      }
+
+      debugPrint('Provider chats built: ${chats.length}');
+
+      if (mounted) {
+        setState(() {
+          _threads = chats;
+          _isLoadingChats = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading provider chats: $e');
+      if (mounted) setState(() => _isLoadingChats = false);
+    }
+  }
 
   void _openChat(Map<String, dynamic> chat) {
     Navigator.of(context)
@@ -104,16 +175,26 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   String _formatTimestamp(String timestamp) {
-    final dt = DateTime.parse(timestamp);
+    if (timestamp.isEmpty) return '';
+
+    // If already formatted (contains 'ago', ':', etc.) return as-is
+    if (timestamp.contains('ago') || timestamp.contains(':')) {
+      return timestamp;
+    }
+
+    // Try to parse as DateTime
+    final date = DateTime.tryParse(timestamp);
+    if (date == null) return timestamp;
+
     final now = DateTime.now();
-    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      return DateFormat.jm().format(dt); // Today: show time
-    } else if (dt.year == now.year &&
-        dt.month == now.month &&
-        dt.day == now.day - 1) {
-      return 'Yesterday';
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} min ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
     } else {
-      return DateFormat.MMMd().format(dt); // Older: show date
+      return '${diff.inDays}d ago';
     }
   }
 
@@ -169,7 +250,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  void _resetSort() => setState(() => _threads = List.from(_originalThreads));
+  void _resetSort() {
+    _loadChats();
+  }
 
   void _showSortOptions() {
     showModalBottomSheet(
@@ -348,27 +431,36 @@ class _ChatsScreenState extends State<ChatsScreen> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                child: _filtered.isEmpty
-                    ? const Center(child: Text('No conversations found'))
-                    : ListView.separated(
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) {
-                          final t = _filtered[i];
-                          return _ThreadCard(
-                            name: t['name'],
-                            role: t['role'],
-                            snippet: t['snippet'],
-                            time: _formatTimestamp(t['time']),
-                            unread: t['unread'],
-                            profilePicture: t['profilePicture'],
-                            primary: primary,
-                            isOnline: t['isOnline'],
-                            onTap: () => _openChat(t),
-                          );
-                        },
-                      ),
+                child: _isLoadingChats
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF088771),
+                        ),
+                      )
+                    : _filtered.isEmpty
+                        ? const Center(child: Text('No conversations found'))
+                        : ListView.separated(
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: _filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, i) {
+                              final t = _filtered[i];
+                              return _ThreadCard(
+                                name: t['name'],
+                                role: t['role'],
+                                snippet: t['snippet'],
+                                time: t['time'].toString().isNotEmpty
+                                    ? _formatTimestamp(t['time'])
+                                    : '',
+                                unread: t['unread'],
+                                profilePicture: t['profilePicture'],
+                                primary: primary,
+                                isOnline: t['isOnline'],
+                                onTap: () => _openChat(t),
+                              );
+                            },
+                          ),
               ),
             ),
           ],
@@ -422,6 +514,7 @@ class _ThreadCard extends StatelessWidget {
                     width: 64,
                     height: 64,
                     fit: BoxFit.cover,
+                    gaplessPlayback: true,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
                         width: 64,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/notification_manager.dart' as nm;
 
 /// Chat Screen for individual conversations
@@ -18,6 +19,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<Map<String, dynamic>> _messages = [];
+  String _currentProfileId = '';
+  bool _isLoadingMessages = true;
+  RealtimeChannel? _messagesChannel;
 
   @override
   void initState() {
@@ -27,101 +31,193 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _messagesChannel?.unsubscribe();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _initializeMessages() {
-    final chatData = widget.chatData;
-    final type = chatData['type'] as String? ?? 'vendor';
+  Future<void> _initializeMessages() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
 
-    if (type == 'customer') {
-      _messages = [
-        {
-          'id': '1',
-          'text': 'Hello! I need your services.',
-          'sender': 'other',
-          'timestamp': '10:30 AM',
-          'isRead': true,
-        },
-        {
-          'id': '2',
-          'text': 'Hi! I\'d be happy to help. What service do you need?',
-          'sender': 'me',
-          'timestamp': '10:32 AM',
-          'isRead': true,
-        },
-        {
-          'id': '3',
-          'text': 'I need a driver for airport transfer tomorrow.',
-          'sender': 'other',
-          'timestamp': '10:35 AM',
-          'isRead': true,
-        },
-        {
-          'id': '4',
-          'text': 'Perfect! What time is your flight?',
-          'sender': 'me',
-          'timestamp': '10:36 AM',
-          'isRead': true,
-        },
-      ];
-    } else {
-      _messages = [
-        {
-          'id': '1',
-          'text': 'Hello! I\'m available for the job you posted.',
-          'sender': 'other',
-          'timestamp': '10:30 AM',
-          'isRead': true,
-        },
-        {
-          'id': '2',
-          'text': 'Great! When can you start?',
-          'sender': 'me',
-          'timestamp': '10:32 AM',
-          'isRead': true,
-        },
-        {
-          'id': '3',
-          'text': 'I can start tomorrow morning. Is that okay?',
-          'sender': 'other',
-          'timestamp': '10:35 AM',
-          'isRead': true,
-        },
-        {
-          'id': '4',
-          'text': 'Perfect! See you tomorrow at 9 AM.',
-          'sender': 'me',
-          'timestamp': '10:36 AM',
-          'isRead': true,
-        },
-      ];
+      // Get current user profile id
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profileResp['id']?.toString() ?? '';
+
+      final threadId = widget.chatData['id']?.toString() ?? '';
+      if (threadId.isEmpty) return;
+
+      // Load existing messages
+      await _loadMessages(threadId);
+
+      // Subscribe to real-time new messages
+      _messagesChannel = supabase
+          .channel('messages:$threadId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'thread_id',
+              value: threadId,
+            ),
+            callback: (payload) {
+              final newMsg = payload.newRecord;
+              final newMsgId = newMsg['id']?.toString() ?? '';
+              // Prevent duplicate: skip if message already exists in list
+              if (_messages.any((m) => m['id'] == newMsgId)) return;
+              final isMe = newMsg['sender_id']?.toString() == _currentProfileId;
+
+              // Format timestamp as HH:mm
+              final createdAt =
+                  DateTime.tryParse(newMsg['created_at']?.toString() ?? '');
+              String formattedTime = '';
+              if (createdAt != null) {
+                final hour = createdAt.hour.toString().padLeft(2, '0');
+                final minute = createdAt.minute.toString().padLeft(2, '0');
+                formattedTime = '$hour:$minute';
+              }
+
+              final msgMap = {
+                'id': newMsgId,
+                'content': newMsg['content']?.toString() ?? '',
+                'sender_id': newMsg['sender_id']?.toString() ?? '',
+                'isMe': isMe,
+                'sender': isMe ? 'me' : 'other',
+                'text': newMsg['content']?.toString() ?? '',
+                'timestamp': formattedTime,
+                'isRead': newMsg['is_read'] ?? false,
+              };
+              if (mounted) {
+                setState(() => _messages.add(msgMap));
+                _scrollToBottom();
+              }
+            },
+          )
+          .subscribe();
+
+      debugPrint('Chat initialized for thread: $threadId');
+    } catch (e) {
+      debugPrint('Error initializing chat: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingMessages = false);
     }
   }
 
-  void _sendMessage() {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+  Future<void> _loadMessages(String threadId) async {
+    try {
+      final supabase = Supabase.instance.client;
 
-    setState(() {
-      _messages.add({
-        'id': (_messages.length + 1).toString(),
-        'text': text,
-        'sender': 'me',
-        'timestamp': _getCurrentTime(),
-        'isRead': true,
-      });
-    });
+      final response = await supabase
+          .from('messages')
+          .select('id, content, sender_id, is_read, created_at')
+          .eq('thread_id', threadId)
+          .order('created_at', ascending: true);
+
+      final List<Map<String, dynamic>> loaded = (response as List).map((m) {
+        final isMe = m['sender_id']?.toString() == _currentProfileId;
+
+        // Format timestamp as HH:mm
+        final createdAt = DateTime.tryParse(m['created_at']?.toString() ?? '');
+        String formattedTime = '';
+        if (createdAt != null) {
+          final hour = createdAt.hour.toString().padLeft(2, '0');
+          final minute = createdAt.minute.toString().padLeft(2, '0');
+          formattedTime = '$hour:$minute';
+        }
+
+        return {
+          'id': m['id']?.toString() ?? '',
+          'content': m['content']?.toString() ?? '',
+          'sender_id': m['sender_id']?.toString() ?? '',
+          'isMe': isMe,
+          'sender': isMe ? 'me' : 'other',
+          'text': m['content']?.toString() ?? '',
+          'timestamp': formattedTime,
+          'isRead': m['is_read'] ?? false,
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() => _messages = loaded);
+      }
+
+      debugPrint('Messages loaded: ${loaded.length}');
+    } catch (e) {
+      debugPrint('Error loading messages: $e');
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    debugPrint(
+        'Send tapped — content: ${_messageController.text}, threadId: ${widget.chatData['id']}, profileId: $_currentProfileId');
+    final content = _messageController.text.trim();
+    if (content.isEmpty) return;
+    if (_currentProfileId.isEmpty) return;
+
+    final threadId = widget.chatData['id']?.toString() ?? '';
+    if (threadId.isEmpty) return;
 
     _messageController.clear();
+
+    // Add to local list immediately for instant UI update
+    final tempMessage = {
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'content': content,
+      'sender_id': _currentProfileId,
+      'isMe': true,
+      'sender': 'me',
+      'timestamp': () {
+        final now = DateTime.now();
+        final hour = now.hour.toString().padLeft(2, '0');
+        final minute = now.minute.toString().padLeft(2, '0');
+        return '$hour:$minute';
+      }(),
+      'isRead': false,
+      'text': content,
+    };
+
+    if (mounted) {
+      setState(() {
+        _messages.add(tempMessage);
+      });
+    }
+
+    // Scroll to bottom after adding message
     _scrollToBottom();
 
-    // Send notification to the receiver
-    _sendNotificationToReceiver(text);
+    try {
+      final supabase = Supabase.instance.client;
 
-    _simulateOtherPersonResponse();
+      await supabase.from('messages').insert({
+        'thread_id': threadId,
+        'sender_id': _currentProfileId,
+        'content': content,
+        'is_read': false,
+      });
+
+      // Update thread last_message_at
+      await supabase
+          .from('message_threads')
+          .update({'last_message_at': DateTime.now().toIso8601String()}).eq(
+              'id', threadId);
+
+      // Send notification to the other party
+      _sendNotificationToReceiver(content);
+
+      debugPrint('Message sent: $content');
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+    }
   }
 
   void _sendNotificationToReceiver(String messageText) {
@@ -159,28 +255,6 @@ class _ChatScreenState extends State<ChatScreen> {
       title: 'New Message from $senderName',
       body: messageText,
     );
-  }
-
-  void _simulateOtherPersonResponse() {
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _messages.add({
-            'id': (_messages.length + 1).toString(),
-            'text': 'Thank you for your message! I\'ll respond soon.',
-            'sender': 'other',
-            'timestamp': _getCurrentTime(),
-            'isRead': false,
-          });
-        });
-        _scrollToBottom();
-      }
-    });
-  }
-
-  String _getCurrentTime() {
-    final now = DateTime.now();
-    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
   }
 
   void _scrollToBottom() {
@@ -281,16 +355,22 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                final isMe = message['sender'] == 'me';
-                return _messageBubble(message: message, isMe: isMe);
-              },
-            ),
+            child: _isLoadingMessages
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF088771),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      final isMe = message['sender'] == 'me';
+                      return _messageBubble(message: message, isMe: isMe);
+                    },
+                  ),
           ),
 
           // Updated message input container

@@ -335,12 +335,21 @@ class _CustomerVendorProfileScreenState
   }
 
   Widget _buildFallbackImage() {
+    final avatarUrl = widget.vendor['avatar']?.toString();
+    final isValidUrl = avatarUrl != null && avatarUrl.isNotEmpty;
+
+    if (!isValidUrl) {
+      return _buildDefaultVendorProfilePhoto();
+    }
+
     return Image.network(
-      widget.vendor['avatar']?.toString() ??
-          'https://picsum.photos/seed/ven-supermarket/800/600',
+      avatarUrl,
       width: double.infinity,
       height: double.infinity,
       fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return _buildDefaultVendorProfilePhoto();
+      },
     );
   }
 

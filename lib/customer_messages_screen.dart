@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'customer_home_screen.dart';
 import 'customer_jobs_screen.dart';
@@ -23,6 +24,8 @@ class _CustomerMessagesScreenState extends State<CustomerMessagesScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _allChats = [];
   List<Map<String, dynamic>> _filteredChats = [];
+  bool _isLoadingChats = false;
+  String _currentProfileId = '';
 
   @override
   void initState() {
@@ -38,186 +41,168 @@ class _CustomerMessagesScreenState extends State<CustomerMessagesScreen> {
     super.dispose();
   }
 
-  void _initializeChats() {
-    _allChats = [
-      {
-        'id': '1',
-        'name': 'Saira Khan',
-        'avatar': 'https://picsum.photos/seed/saira/200/200.jpg',
-        'lastMessage': 'I\'ll be there in 15 minutes',
-        'timestamp': '2 min ago',
-        'isUnread': true,
-        'isOnline': true,
-        'type': 'provider',
-        'category': 'Maid',
-      },
-      {
-        'id': '2',
-        'name': 'Ahmed Cleaning Services',
-        'avatar': 'https://picsum.photos/seed/ahmed/200/200.jpg',
-        'lastMessage': 'Your booking is confirmed',
-        'timestamp': '1 hour ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'provider',
-        'category': 'Domestic Helper',
-      },
-      {
-        'id': '3',
-        'name': 'Elite Drivers',
-        'avatar': 'https://picsum.photos/seed/elite/200/200.jpg',
-        'lastMessage': 'Car is on way',
-        'timestamp': '3 hours ago',
-        'isUnread': true,
-        'isOnline': false,
-        'type': 'provider',
-        'category': 'Driver',
-      },
-      {
-        'id': '4',
-        'name': 'QuickFix Repairs',
-        'avatar': 'https://picsum.photos/seed/quickfix/200/200.jpg',
-        'lastMessage': 'Available for emergency repairs',
-        'timestamp': '5 hours ago',
-        'isUnread': false,
-        'isOnline': true,
-        'type': 'vendor',
-        'category': 'Supermarket',
-      },
-      {
-        'id': '5',
-        'name': 'TutorPro Academy',
-        'avatar': 'https://picsum.photos/seed/tutorpro/200/200.jpg',
-        'lastMessage': 'Schedule confirmed for tomorrow',
-        'timestamp': '1 day ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'provider',
-        'category': 'Tutor',
-      },
-      {
-        'id': '6',
-        'name': 'SecureHome Protection',
-        'avatar': 'https://picsum.photos/seed/securehome/200/200.jpg',
-        'lastMessage': 'Security team is ready',
-        'timestamp': '2 days ago',
-        'isUnread': false,
-        'isOnline': true,
-        'type': 'provider',
-        'category': 'Security Guard',
-      },
-      {
-        'id': '7',
-        'name': 'Fresh Bakery',
-        'avatar': 'https://picsum.photos/seed/bakery/200/200.jpg',
-        'lastMessage': 'Your order is ready for pickup',
-        'timestamp': '30 min ago',
-        'isUnread': true,
-        'isOnline': true,
-        'type': 'vendor',
-        'category': 'Bakery',
-      },
-      {
-        'id': '8',
-        'name': 'Pure Water Plant',
-        'avatar': 'https://picsum.photos/seed/water/200/200.jpg',
-        'lastMessage': 'Water delivery scheduled for tomorrow',
-        'timestamp': '4 hours ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'vendor',
-        'category': 'Water Plant',
-      },
-      {
-        'id': '9',
-        'name': 'Green Grocers',
-        'avatar': 'https://picsum.photos/seed/grocers/200/200.jpg',
-        'lastMessage': 'Fresh vegetables arrived today',
-        'timestamp': '6 hours ago',
-        'isUnread': false,
-        'isOnline': true,
-        'type': 'vendor',
-        'category': 'Fruits and Vegetables Shop',
-      },
-      {
-        'id': '10',
-        'name': 'Master Chef Cooking',
-        'avatar': 'https://picsum.photos/seed/cook/200/200.jpg',
-        'lastMessage': 'Menu for next week ready',
-        'timestamp': '8 hours ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'provider',
-        'category': 'Cook',
-      },
-      {
-        'id': '11',
-        'name': 'Garden Paradise',
-        'avatar': 'https://picsum.photos/seed/garden/200/200.jpg',
-        'lastMessage': 'Garden maintenance completed',
-        'timestamp': '1 day ago',
-        'isUnread': true,
-        'isOnline': true,
-        'type': 'provider',
-        'category': 'Gardener',
-      },
-      {
-        'id': '12',
-        'name': 'Baby Care Services',
-        'avatar': 'https://picsum.photos/seed/babycare/200/200.jpg',
-        'lastMessage': 'Available for weekend babysitting',
-        'timestamp': '2 days ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'provider',
-        'category': 'Baby Sitter',
-      },
-      {
-        'id': '13',
-        'name': 'Clean Laundry',
-        'avatar': 'https://picsum.photos/seed/laundry/200/200.jpg',
-        'lastMessage': 'Clothes ready for delivery',
-        'timestamp': '3 days ago',
-        'isUnread': false,
-        'isOnline': true,
-        'type': 'provider',
-        'category': 'Washerman',
-      },
-      {
-        'id': '14',
-        'name': 'Fresh Meat Shop',
-        'avatar': 'https://picsum.photos/seed/meat/200/200.jpg',
-        'lastMessage': 'Premium quality meat available',
-        'timestamp': '4 days ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'vendor',
-        'category': 'Meatshop',
-      },
-      {
-        'id': '15',
-        'name': 'Daily Milk Supply',
-        'avatar': 'https://picsum.photos/seed/milk/200/200.jpg',
-        'lastMessage': 'Morning delivery confirmed',
-        'timestamp': '5 days ago',
-        'isUnread': false,
-        'isOnline': true,
-        'type': 'vendor',
-        'category': 'Milkshop',
-      },
-      {
-        'id': '16',
-        'name': 'Gas Station Plus',
-        'avatar': 'https://picsum.photos/seed/gas/200/200.jpg',
-        'lastMessage': 'Cylinder refilling completed',
-        'timestamp': '1 week ago',
-        'isUnread': false,
-        'isOnline': false,
-        'type': 'vendor',
-        'category': 'Gas Cylinder Shop',
-      },
-    ];
-    _filteredChats = List.from(_allChats);
+  Future<void> _initializeChats() async {
+    if (mounted) setState(() => _isLoadingChats = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get current user's profile id
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profileResp['id']?.toString() ?? '';
+      debugPrint('Current profile ID: $_currentProfileId');
+      if (_currentProfileId.isEmpty) return;
+
+      // Query threads where user is participant_1
+      final threads1 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_1_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Query threads where user is participant_2
+      final threads2 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_2_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Combine and deduplicate
+      final Map<String, dynamic> threadMap = {};
+      for (final t in [...threads1, ...threads2]) {
+        threadMap[t['id']?.toString() ?? ''] = t;
+      }
+      final threads = threadMap.values.toList();
+
+      debugPrint(
+          'Threads1: ${threads1.length}, Threads2: ${threads2.length}, Combined: ${threads.length}');
+
+      final List<Map<String, dynamic>> chats = [];
+
+      for (final thread in threads) {
+        final threadId = thread['id']?.toString() ?? '';
+
+        // Get the other participant's ID
+        final otherParticipantId =
+            thread['participant_1_id']?.toString() == _currentProfileId
+                ? thread['participant_2_id']?.toString() ?? ''
+                : thread['participant_1_id']?.toString() ?? '';
+
+        if (otherParticipantId.isEmpty) continue;
+
+        // Get other participant's profile
+        final otherProfile = await supabase
+            .from('profiles')
+            .select('id, full_name, profile_image_url, role')
+            .eq('id', otherParticipantId)
+            .maybeSingle();
+
+        if (otherProfile == null) continue;
+
+        // Get last message for this thread
+        final lastMessages = await supabase
+            .from('messages')
+            .select('content, created_at, is_read, sender_id')
+            .eq('thread_id', threadId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        String lastMessage = 'No messages yet';
+        String timestamp = '';
+        bool isUnread = false;
+
+        if (lastMessages.isNotEmpty) {
+          final last = lastMessages.first;
+          lastMessage = last['content']?.toString() ?? 'Message';
+          isUnread = last['is_read'] == false &&
+              last['sender_id']?.toString() != _currentProfileId;
+
+          final createdAt =
+              DateTime.tryParse(last['created_at']?.toString() ?? '');
+          if (createdAt != null) {
+            final now = DateTime.now();
+            final diff = now.difference(createdAt);
+            if (diff.inMinutes < 60) {
+              timestamp = '${diff.inMinutes} min ago';
+            } else if (diff.inHours < 24) {
+              timestamp = '${diff.inHours}h ago';
+            } else {
+              timestamp = '${diff.inDays}d ago';
+            }
+          }
+        }
+
+        // Determine type and category from role
+        final role = otherProfile['role']?.toString() ?? 'provider';
+        String type = 'provider';
+        String category = 'Service Provider';
+
+        if (role == 'vendor') {
+          type = 'vendor';
+          category = 'Vendor';
+        } else if (role == 'provider') {
+          type = 'provider';
+          category = 'Service Provider';
+        }
+
+        // Get more specific category if provider
+        if (role == 'provider') {
+          final providerData = await supabase
+              .from('providers')
+              .select('service_category')
+              .eq('profile_id', otherParticipantId)
+              .maybeSingle();
+          if (providerData != null) {
+            category = providerData['service_category']?.toString() ??
+                'Service Provider';
+          }
+        } else if (role == 'vendor') {
+          final vendorData = await supabase
+              .from('vendors')
+              .select('business_type')
+              .eq('profile_id', otherParticipantId)
+              .maybeSingle();
+          if (vendorData != null) {
+            category = vendorData['business_type']?.toString() ?? 'Vendor';
+          }
+        }
+
+        chats.add({
+          'id': threadId,
+          'name': otherProfile['full_name']?.toString() ?? 'Unknown',
+          'avatar': otherProfile['profile_image_url']?.toString() ?? '',
+          'lastMessage': lastMessage,
+          'timestamp': timestamp,
+          'isUnread': isUnread,
+          'isOnline': false,
+          'type': type,
+          'category': category,
+          'otherParticipantId': otherParticipantId,
+        });
+      }
+
+      debugPrint('Chats built: ${chats.length}');
+
+      if (mounted) {
+        setState(() {
+          _allChats = chats;
+          _filteredChats = List.from(chats);
+          _isLoadingChats = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading chats: $e');
+      debugPrint('Error stack: ${StackTrace.current}');
+      if (mounted) setState(() => _isLoadingChats = false);
+    }
   }
 
   void _showSortOptions() {
@@ -393,170 +378,203 @@ class _CustomerMessagesScreenState extends State<CustomerMessagesScreen> {
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      body: ListView.builder(
-        padding: EdgeInsets.zero,
-        itemCount: _filteredChats.length + 1, // +1 for header
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            // Header item
-            return Container(
-              width: double.infinity, // Full width
-              padding: const EdgeInsets.only(
-                top: 64, // pt-16 (4rem / 64px) for status bar clearance
-                left: 24,
-                right: 24,
-                bottom: 40, // pb-10 (2.5rem / 40px) to balance rounded curve
+      body: _isLoadingChats
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF088771),
               ),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF088771), // Muawin Primary Teal
-                    Color(0xFF064e3b), // Tailwind Emerald 900
-                  ],
-                ),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(40), // rounded-b-[40px]
-                  bottomRight: Radius.circular(40), // rounded-b-[40px]
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: 0.25), // Large shadow (shadow-lg)
-                    blurRadius: 20, // Increased blur for large shadow effect
-                    spreadRadius: 5, // Added spread for floating effect
-                    offset: const Offset(0, 8), // More pronounced offset
+            )
+          : _filteredChats.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No chats yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
                   ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Header content
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Column(
-                      children: [
-                        // Title row
-                        Row(
+                )
+              : ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: _filteredChats.length + 1, // +1 for header
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      // Header item
+                      return Container(
+                        width: double.infinity, // Full width
+                        padding: const EdgeInsets.only(
+                          top:
+                              64, // pt-16 (4rem / 64px) for status bar clearance
+                          left: 24,
+                          right: 24,
+                          bottom:
+                              40, // pb-10 (2.5rem / 40px) to balance rounded curve
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF088771), // Muawin Primary Teal
+                              Color(0xFF064e3b), // Tailwind Emerald 900
+                            ],
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(40), // rounded-b-[40px]
+                            bottomRight:
+                                Radius.circular(40), // rounded-b-[40px]
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                  alpha: 0.25), // Large shadow (shadow-lg)
+                              blurRadius:
+                                  20, // Increased blur for large shadow effect
+                              spreadRadius:
+                                  5, // Added spread for floating effect
+                              offset:
+                                  const Offset(0, 8), // More pronounced offset
+                            ),
+                          ],
+                        ),
+                        child: Column(
                           children: [
-                            Expanded(
+                            // Header content
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Chats',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 48,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
+                                  // Title row
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Chats',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 48,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Stay connected with your Helpers',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w400,
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.7),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Stay connected with your Helpers',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w400,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.7),
-                                    ),
+                                  const SizedBox(height: 16),
+
+                                  // Search bar and sort button row
+                                  Row(
+                                    children: [
+                                      // Search bar
+                                      Expanded(
+                                        child: Container(
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.2),
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                          ),
+                                          child: TextField(
+                                            controller: _searchController,
+                                            decoration: InputDecoration(
+                                              hintText:
+                                                  'Search names or messages...',
+                                              hintStyle: GoogleFonts.poppins(
+                                                fontSize: 14,
+                                                color: Colors.black54,
+                                              ),
+                                              prefixIcon: const Icon(
+                                                Icons.search,
+                                                color: Colors.black54,
+                                                size: 20,
+                                              ),
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(24),
+                                                borderSide: BorderSide.none,
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(24),
+                                                borderSide: BorderSide.none,
+                                              ),
+                                              focusedBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(24),
+                                                borderSide: BorderSide.none,
+                                              ),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: 12,
+                                              ),
+                                            ),
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+
+                                      // Sort button
+                                      GestureDetector(
+                                        onTap: _showSortOptions,
+                                        child: Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.2),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(
+                                            Icons.sort,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-
-                        // Search bar and sort button row
-                        Row(
-                          children: [
-                            // Search bar
-                            Expanded(
-                              child: Container(
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                                child: TextField(
-                                  controller: _searchController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Search names or messages...',
-                                    hintStyle: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.black54,
-                                    ),
-                                    prefixIcon: const Icon(
-                                      Icons.search,
-                                      color: Colors.black54,
-                                      size: 20,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(24),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(24),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(24),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-
-                            // Sort button
-                            GestureDetector(
-                              onTap: _showSortOptions,
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.sort,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ],
+                      );
+                    } else {
+                      // Chat items (index - 1 to account for header)
+                      final chat = _filteredChats[index - 1];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: GestureDetector(
+                          onTap: () => _openChat(chat),
+                          child: _chatCard(chat: chat, primary: primary),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          } else {
-            // Chat items (index - 1 to account for header)
-            final chat = _filteredChats[index - 1];
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: GestureDetector(
-                onTap: () => _openChat(chat),
-                child: _chatCard(chat: chat, primary: primary),
-              ),
-            );
-          }
-        },
-      ),
+                      );
+                    }
+                  },
+                ),
       bottomNavigationBar: MuawinBottomNavigationBar(
         currentIndex: 3, // Messages is index 3
         onItemTapped: (index) {
@@ -633,7 +651,9 @@ class _CustomerMessagesScreenState extends State<CustomerMessagesScreen> {
                             BorderRadius.circular(12), // Squircle shape
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: avatar != null
+                      child: (avatar != null &&
+                              avatar.isNotEmpty &&
+                              avatar.startsWith('http'))
                           ? Image.network(
                               avatar,
                               fit: BoxFit.cover,

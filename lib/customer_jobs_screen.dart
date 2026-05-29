@@ -209,6 +209,11 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       for (final job in allJobs) {
         final status = job['status'] as String? ?? '';
 
+        // Add providerCategory mapping from service_category
+        (job)['providerCategory'] = job['service_category']?.toString() ??
+            job['providers']?['service_category']?.toString() ??
+            '';
+
         if (status == 'active') {
           ongoing.add(job);
         } else if (status == 'scheduled' || status == 'pending') {
@@ -653,11 +658,14 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildJobDetailRow('Job ID', job['id']),
+                    _buildJobDetailRow('Job ID', job['id']?.toString() ?? ''),
                     _buildJobDetailRow('Category', _getValidCategory(job)),
-                    _buildJobDetailRow('Status', job['status']),
-                    _buildJobDetailRow('Posted', job['postedDate']),
-                    _buildJobDetailRow('Budget', 'PKR ${job['total_amount'] ?? 0}'),
+                    _buildJobDetailRow(
+                        'Status', job['status']?.toString() ?? ''),
+                    _buildJobDetailRow(
+                        'Posted', job['postedDate']?.toString() ?? ''),
+                    _buildJobDetailRow(
+                        'Budget', 'PKR ${job['total_amount'] ?? 'N/A'}'),
                   ],
                 ),
               ),
@@ -709,7 +717,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     ];
 
     // Check providerCategory first, then category
-    String categoryToCheck = job['providerCategory'] as String;
+    String categoryToCheck = job['providerCategory']?.toString() ?? '';
 
     // Return the category if it's valid, otherwise return a default
     if (validCategories.contains(categoryToCheck)) {
@@ -941,18 +949,18 @@ class _JobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = job['status'] as String;
+    final status = job['status']?.toString() ?? '';
 
-    // Show enhanced design for "In Progress", "Scheduled", "Pending", "Completed", and "Cancelled" jobs
-    if (status == 'In Progress') {
+    // Show enhanced design for active, scheduled, pending, completed, and cancelled jobs
+    if (status == 'active') {
       return _buildInProgressCard(context);
-    } else if (status == 'Scheduled') {
+    } else if (status == 'scheduled') {
       return _buildScheduledCard(context);
-    } else if (status == 'Pending') {
+    } else if (status == 'pending') {
       return _buildPendingCard(context);
-    } else if (status == 'Completed') {
+    } else if (status == 'completed') {
       return _buildCompletedCard(context);
-    } else if (status == 'Cancelled') {
+    } else if (status == 'cancelled') {
       return _buildCancelledCard(context);
     }
 
@@ -1028,7 +1036,7 @@ class _JobCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           // Job ID
                           Text(
-                            job['id'] as String,
+                            job['id']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 10, // 0.625rem = 10px
                               fontWeight: FontWeight.w900, // Black (900) weight
@@ -1189,7 +1197,7 @@ class _JobCard extends StatelessWidget {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider'] as String? ??
+                                providerName: job['provider']?.toString() ??
                                     'Service Provider',
                               ),
                             ),
@@ -1248,7 +1256,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['postedDate'] as String,
+                            job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 11, // 0.68rem = 11px
                               fontWeight: FontWeight.bold,
@@ -1284,7 +1292,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['location'] as String? ?? 'Location',
+                            job['location']?.toString() ?? 'Location',
                             style: GoogleFonts.poppins(
                               fontSize: 11, // 0.68rem = 11px
                               fontWeight: FontWeight.bold,
@@ -1319,7 +1327,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['total_amount']}',
+                        'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -1548,7 +1556,7 @@ class _JobCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           // Job ID
                           Text(
-                            job['id'] as String,
+                            job['id']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 10, // 0.625rem = 10px
                               fontWeight: FontWeight.w900, // Black (900) weight
@@ -1652,7 +1660,7 @@ class _JobCard extends StatelessWidget {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider'] as String? ??
+                                providerName: job['provider']?.toString() ??
                                     'Service Provider',
                               ),
                             ),
@@ -1710,7 +1718,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['postedDate'] as String,
+                            job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -1745,7 +1753,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['location'] as String? ?? 'Location',
+                            job['location']?.toString() ?? 'Location',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -1780,7 +1788,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['total_amount']}',
+                        'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -1946,7 +1954,7 @@ class _JobCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           // Job ID
                           Text(
-                            job['id'] as String,
+                            job['id']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 10, // 0.625rem = 10px
                               fontWeight: FontWeight.w900, // Black (900) weight
@@ -2050,7 +2058,7 @@ class _JobCard extends StatelessWidget {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider'] as String? ??
+                                providerName: job['provider']?.toString() ??
                                     'Service Provider',
                               ),
                             ),
@@ -2108,7 +2116,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['postedDate'] as String,
+                            job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2143,7 +2151,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['location'] as String? ?? 'Location',
+                            job['location']?.toString() ?? 'Location',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2178,7 +2186,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['total_amount']}',
+                        'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -2354,7 +2362,7 @@ class _JobCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           // Job ID
                           Text(
-                            job['id'] as String,
+                            job['id']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 10, // 0.625rem = 10px
                               fontWeight: FontWeight.w900, // Black (900) weight
@@ -2513,7 +2521,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['postedDate'] as String,
+                            job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2548,7 +2556,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['location'] as String? ?? 'Location',
+                            job['location']?.toString() ?? 'Location',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2583,7 +2591,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['total_amount']}',
+                        'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -2767,7 +2775,7 @@ class _JobCard extends StatelessWidget {
                           const SizedBox(height: 2),
                           // Job ID
                           Text(
-                            job['id'] as String,
+                            job['id']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 10, // 0.625rem = 10px
                               fontWeight: FontWeight.w900, // Black (900) weight
@@ -2893,7 +2901,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['postedDate'] as String,
+                            job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2928,7 +2936,7 @@ class _JobCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            job['location'] as String? ?? 'Location',
+                            job['location']?.toString() ?? 'Location',
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -2963,7 +2971,7 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'PKR ${job['total_amount']}',
+                        'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
                           fontSize: 16, // 1rem = 16px
                           fontWeight: FontWeight.w900, // Black (900) weight
@@ -3022,10 +3030,10 @@ class _JobCard extends StatelessWidget {
   }
 
   Widget _buildStandardCard(BuildContext context) {
-    final status = job['status'] as String;
-    final statusColor = status == 'Completed'
+    final status = job['status']?.toString() ?? '';
+    final statusColor = status == 'completed'
         ? Colors.green
-        : status == 'Cancelled'
+        : status == 'cancelled'
             ? Colors.red
             : Colors.blue;
 
@@ -3051,7 +3059,7 @@ class _JobCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                job['id'] as String,
+                job['id']?.toString() ?? '',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -3081,7 +3089,7 @@ class _JobCard extends StatelessWidget {
 
           // Category and Provider
           Text(
-            job['category'] as String,
+            job['category']?.toString() ?? '',
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -3108,7 +3116,7 @@ class _JobCard extends StatelessWidget {
               Icon(Icons.calendar_today, size: 16, color: Colors.grey[500]),
               const SizedBox(width: 4),
               Text(
-                job['postedDate'] as String,
+                job['postedDate']?.toString() ?? '',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -3117,8 +3125,8 @@ class _JobCard extends StatelessWidget {
               const SizedBox(width: 16),
               Icon(Icons.attach_money, size: 16, color: Colors.grey[500]),
               const SizedBox(width: 4),
-                      Text(
-                'PKR ${job['total_amount'] ?? 0}',
+              Text(
+                'PKR ${job['total_amount'] ?? 'N/A'}',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: Colors.grey[600],
@@ -3219,7 +3227,7 @@ class _JobCard extends StatelessWidget {
               Navigator.of(context).pop();
               // Actually cancel the job
               if (onCancelJob != null) {
-                onCancelJob!(job['id'] as String);
+                onCancelJob!(job['id']?.toString() ?? '');
               }
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -3563,7 +3571,7 @@ class _JobCard extends StatelessWidget {
     // In a real app, this would get the actual phone number from job data
     // For demonstration, we'll return a sample phone number
     // The phone number could be stored in job['providerPhone'] or similar
-    return job['providerPhone'] as String? ?? '+1234567890';
+    return job['providerPhone']?.toString() ?? '+1234567890';
   }
 
   void _initiatePhoneCall(String phoneNumber, BuildContext context) async {
@@ -3695,10 +3703,10 @@ class _JobCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => _ReviewDialog(
-        providerName: job['provider'] as String? ?? 'Service Provider',
-        jobId: job['id'] as String? ?? 'Unknown',
+        providerName: job['provider']?.toString() ?? 'Service Provider',
+        jobId: job['id']?.toString() ?? 'Unknown',
         onSubmit: (rating, review) => _submitReview(
-            context, job['id'] as String? ?? 'Unknown', rating, review),
+            context, job['id']?.toString() ?? 'Unknown', rating, review),
       ),
     );
   }

@@ -203,14 +203,14 @@ class ProfileHeaderWidget extends StatelessWidget {
                       const Icon(Icons.star_rounded,
                           size: 16, color: ProfileColors.starColor),
                       const SizedBox(width: 4),
-                      Text(
-                        '$rating ($reviewCount reviews)',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: ProfileTypography.semiBoldWeight,
-                          color: Colors.white,
-                        ),
-                      ),
+                       Text(
+                         '$rating ($reviewCount reviews)',
+                         style: GoogleFonts.poppins(
+                           fontSize: 13,
+                           fontWeight: ProfileTypography.semiBoldWeight,
+                           color: Colors.white,
+                         ),
+                       ),
                     ],
                   ),
                 ),

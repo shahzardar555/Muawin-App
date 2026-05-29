@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:cross_file/cross_file.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'vendor_service.dart';
 
 /// Vendor status enum for state management
@@ -14,8 +18,7 @@ enum VendorStatus {
 /// Provides persistent storage with backend-ready architecture
 class MockVendorService implements VendorService {
   static const String _vendorDataKey = 'vendor_data';
-  // TODO: Connect to Supabase
-  static const String _vendorId = '';
+  String _vendorId = '';
 
   /// Default vendor data structure
   // TODO: Connect to Supabase
@@ -36,6 +39,37 @@ class MockVendorService implements VendorService {
 
   @override
   String get vendorId => _vendorId;
+
+  /// Get current vendor ID from Supabase by looking up auth user → profile → vendor
+  Future<String> _getCurrentVendorId() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return '';
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final profileId = profile['id']?.toString() ?? '';
+      if (profileId.isEmpty) return '';
+
+      final vendor = await supabase
+          .from('vendors')
+          .select('id')
+          .eq('profile_id', profileId)
+          .single();
+
+      final id = vendor['id']?.toString() ?? '';
+      _vendorId = id;
+      return id;
+    } catch (e) {
+      debugPrint('Error getting vendor ID: $e');
+      return '';
+    }
+  }
 
   @override
   Future<Map<String, dynamic>> getVendorData() async {
@@ -68,16 +102,42 @@ class MockVendorService implements VendorService {
   @override
   Future<bool> updateVendorField(String field, String value) async {
     try {
+      // Keep SharedPreferences update for local cache
       final prefs = await SharedPreferences.getInstance();
-      final currentData = await getVendorData();
+      final dataStr = prefs.getString(_vendorDataKey);
+      if (dataStr != null) {
+        final data = Map<String, dynamic>.from(jsonDecode(dataStr));
+        data[field] = value;
+        await prefs.setString(_vendorDataKey, jsonEncode(data));
+      }
 
-      // Update the field
-      currentData[field] = value;
+      // Also update Supabase
+      final vendorId = await _getCurrentVendorId();
+      if (vendorId.isEmpty) return true;
 
-      // Save updated data
-      await prefs.setString(_vendorDataKey, jsonEncode(currentData));
+      final supabase = Supabase.instance.client;
+
+      // Map field names to vendors table columns
+      final columnMap = {
+        'name': 'business_name',
+        'category': 'business_type',
+        'address': 'address',
+        'city': 'city',
+        'about': 'about',
+        'phone': null, // phone is in profiles table, skip
+        'mapsLink': 'location',
+      };
+
+      final column = columnMap[field];
+      if (column != null) {
+        await supabase
+            .from('vendors')
+            .update({column: value}).eq('id', vendorId);
+        debugPrint('Vendor field updated: $field = $value');
+      }
       return true;
     } catch (e) {
+      debugPrint('Error updating vendor field: $e');
       return false;
     }
   }
@@ -104,16 +164,111 @@ class MockVendorService implements VendorService {
   @override
   Future<bool> updateProfilePicture(String? imageUrl) async {
     try {
+      if (imageUrl == null || imageUrl.isEmpty) return true;
+      if (imageUrl.startsWith('http')) {
+        // Already a URL, just save to profiles table
+        final supabase = Supabase.instance.client;
+        final user = supabase.auth.currentUser;
+        if (user == null) return true;
+
+        final profile = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('user_id', user.id)
+            .single();
+
+        await supabase
+            .from('profiles')
+            .update({'profile_image_url': imageUrl}).eq('id', profile['id']);
+
+        // Also update local cache
+        final prefs = await SharedPreferences.getInstance();
+        final dataStr = prefs.getString(_vendorDataKey);
+        if (dataStr != null) {
+          final data = Map<String, dynamic>.from(jsonDecode(dataStr));
+          data['profileImageUrl'] = imageUrl;
+          await prefs.setString(_vendorDataKey, jsonEncode(data));
+        }
+        return true;
+      }
+
+      // Upload to Supabase Storage
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return true;
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final profileId = profile['id']?.toString() ?? '';
+      final fileName =
+          'vendor_${profileId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (kIsWeb) {
+        // On web, imageUrl is a blob URL — use XFile to read bytes
+        try {
+          final xfile = XFile(imageUrl);
+          final bytes = await xfile.readAsBytes();
+
+          await supabase.storage
+              .from('vendor-avatars')
+              .uploadBinary(fileName, bytes,
+                  fileOptions: const FileOptions(
+                    upsert: true,
+                    contentType: 'image/jpeg',
+                  ));
+
+          final publicUrl =
+              supabase.storage.from('vendor-avatars').getPublicUrl(fileName);
+
+          await supabase
+              .from('profiles')
+              .update({'profile_image_url': publicUrl}).eq('id', profileId);
+
+          // Also update local cache
+          final prefs = await SharedPreferences.getInstance();
+          final dataStr = prefs.getString(_vendorDataKey);
+          if (dataStr != null) {
+            final data = Map<String, dynamic>.from(jsonDecode(dataStr));
+            data['profileImageUrl'] = publicUrl;
+            await prefs.setString(_vendorDataKey, jsonEncode(data));
+          }
+
+          debugPrint('Vendor web avatar uploaded: $publicUrl');
+        } catch (e) {
+          debugPrint('Web upload error: $e');
+        }
+        return true;
+      }
+
+      final file = File(imageUrl);
+      await supabase.storage
+          .from('vendor-avatars')
+          .upload(fileName, file, fileOptions: const FileOptions(upsert: true));
+
+      final publicUrl =
+          supabase.storage.from('vendor-avatars').getPublicUrl(fileName);
+
+      await supabase
+          .from('profiles')
+          .update({'profile_image_url': publicUrl}).eq('id', profileId);
+
+      // Also update local cache
       final prefs = await SharedPreferences.getInstance();
-      final currentData = await getVendorData();
+      final dataStr = prefs.getString(_vendorDataKey);
+      if (dataStr != null) {
+        final data = Map<String, dynamic>.from(jsonDecode(dataStr));
+        data['profileImageUrl'] = publicUrl;
+        await prefs.setString(_vendorDataKey, jsonEncode(data));
+      }
 
-      // Update profile picture URL
-      currentData['profileImageUrl'] = imageUrl;
-
-      // Save updated data
-      await prefs.setString(_vendorDataKey, jsonEncode(currentData));
+      debugPrint('Vendor profile picture uploaded: $publicUrl');
       return true;
     } catch (e) {
+      debugPrint('Error updating vendor profile picture: $e');
       return false;
     }
   }
@@ -138,12 +293,39 @@ class MockVendorService implements VendorService {
 
   @override
   Future<bool> updateRating(String rating) async {
-    return await updateVendorField('rating', rating);
+    try {
+      final vendorId = await _getCurrentVendorId();
+      if (vendorId.isEmpty) return true;
+
+      final supabase = Supabase.instance.client;
+      await supabase.from('vendors').update(
+          {'rating': double.tryParse(rating) ?? 0.0}).eq('id', vendorId);
+
+      debugPrint('Vendor rating updated: $rating');
+      return true;
+    } catch (e) {
+      debugPrint('Error updating rating: $e');
+      return false;
+    }
   }
 
   @override
   Future<bool> updateReviewCount(int count) async {
-    return await updateVendorField('reviewCount', count.toString());
+    try {
+      final vendorId = await _getCurrentVendorId();
+      if (vendorId.isEmpty) return true;
+
+      final supabase = Supabase.instance.client;
+      await supabase
+          .from('vendors')
+          .update({'review_count': count}).eq('id', vendorId);
+
+      debugPrint('Vendor review count updated: $count');
+      return true;
+    } catch (e) {
+      debugPrint('Error updating review count: $e');
+      return false;
+    }
   }
 
   @override

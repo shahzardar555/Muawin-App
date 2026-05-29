@@ -74,37 +74,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
     }
   }
 
-  // Change password via Supabase Auth
-  Future<void> _changePassword(
-      String currentPassword, String newPassword) async {
-    try {
-      // Update password via Supabase Auth
-      final response = await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: newPassword),
-      );
-      if (response.user != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Password updated successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error changing password: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update password: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   // Load user profile from Supabase
   Future<void> _loadUserProfile() async {
     try {
@@ -277,13 +246,46 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
   }
 
   Future<void> _saveProfileImagePath(String imagePath) async {
+    if (imagePath.isEmpty) return;
+    if (imagePath.startsWith('http')) return;
+    if (_currentProfileId.isEmpty) return;
+
     try {
-      if (_currentProfileId.isNotEmpty) {
-        await Supabase.instance.client.from('profiles').update(
-            {'profile_image_url': imagePath}).eq('id', _currentProfileId);
+      final supabase = Supabase.instance.client;
+      final fileName =
+          'customer_${_currentProfileId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (kIsWeb) {
+        if (_profileImageBytes == null) return;
+        await supabase.storage
+            .from('customer-avatars')
+            .uploadBinary(fileName, _profileImageBytes!,
+                fileOptions: const FileOptions(
+                  upsert: true,
+                  contentType: 'image/jpeg',
+                ));
+      } else {
+        final file = File(imagePath);
+        await supabase.storage.from('customer-avatars').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
       }
+
+      final publicUrl =
+          supabase.storage.from('customer-avatars').getPublicUrl(fileName);
+
+      await supabase
+          .from('profiles')
+          .update({'profile_image_url': publicUrl}).eq('id', _currentProfileId);
+
+      if (mounted) {
+        setState(() {
+          _profileImagePath = publicUrl;
+        });
+      }
+
+      debugPrint('Customer avatar uploaded: $publicUrl');
     } catch (e) {
-      debugPrint('Error saving profile image: $e');
+      debugPrint('Error uploading customer avatar: $e');
     }
   }
 
@@ -590,78 +592,21 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                      ),
-                      child: ClipOval(
-                        child: _profileImagePath.isNotEmpty
-                            ? kIsWeb && _profileImageBytes != null
-                                ? Image.memory(
-                                    _profileImageBytes!,
-                                    width: 80,
-                                    height: 80,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: 80,
-                                        height: 80,
-                                        decoration: const BoxDecoration(
-                                          image: DecorationImage(
-                                            image: AssetImage(
-                                                'assets/muawin_logo.png'),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  )
-                                : kIsWeb
-                                    ? Container(
-                                        width: 80,
-                                        height: 80,
-                                        decoration: const BoxDecoration(
-                                          image: DecorationImage(
-                                            image: AssetImage(
-                                                'assets/muawin_logo.png'),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      )
-                                    : Image.file(
-                                        File(_profileImagePath),
-                                        width: 80,
-                                        height: 80,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return Container(
-                                            width: 80,
-                                            height: 80,
-                                            decoration: const BoxDecoration(
-                                              image: DecorationImage(
-                                                image: AssetImage(
-                                                    'assets/muawin_logo.png'),
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      )
-                            : Container(
-                                width: 80,
-                                height: 80,
-                                decoration: const BoxDecoration(
-                                  image: DecorationImage(
-                                    image: AssetImage('assets/muawin_logo.png'),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                      ),
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.grey[400],
+                      backgroundImage: _profileImageBytes != null
+                          ? MemoryImage(_profileImageBytes!) as ImageProvider
+                          : (_profileImagePath.isNotEmpty &&
+                                  _profileImagePath.startsWith('http'))
+                              ? NetworkImage(_profileImagePath) as ImageProvider
+                              : null,
+                      child: _profileImageBytes == null &&
+                              (_profileImagePath.isEmpty ||
+                                  !_profileImagePath.startsWith('http'))
+                          ? const Icon(Icons.person,
+                              color: Colors.white, size: 40)
+                          : null,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -680,24 +625,16 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // Show PRO badge for PRO users, otherwise show "Verified Customer"
-                          _isProUser
-                              ? const MuawinProBadge(
-                                  size: MuawinProBadgeSize.medium)
-                              : Text(
-                                  Provider.of<LanguageProvider>(context)
-                                      .translate('verified_customer'),
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    color: Colors.white.withValues(alpha: 0.8),
-                                  ),
-                                ),
+                          // Show PRO badge for PRO users
+                          if (_isProUser)
+                            const MuawinProBadge(
+                                size: MuawinProBadgeSize.medium),
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.email_outlined,
-                                color: Colors.white.withValues(alpha: 0.8),
+                                color: Color(0xFF80DEEA),
                                 size: 16,
                               ),
                               const SizedBox(width: 4),
@@ -713,9 +650,9 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.phone_outlined,
-                                color: Colors.white.withValues(alpha: 0.8),
+                                color: Color(0xFFA5D6A7),
                                 size: 16,
                               ),
                               const SizedBox(width: 4),
@@ -1315,7 +1252,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     prefixIcon: const Icon(Icons.email_outlined),
+                    filled: true,
+                    fillColor:
+                        Provider.of<ThemeProvider>(context, listen: false)
+                                .isDarkMode
+                            ? const Color(0xFF2A2A2A)
+                            : Colors.grey[100],
                   ),
+                  readOnly: true,
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
@@ -1327,7 +1271,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     prefixIcon: const Icon(Icons.phone),
+                    filled: true,
+                    fillColor:
+                        Provider.of<ThemeProvider>(context, listen: false)
+                                .isDarkMode
+                            ? const Color(0xFF2A2A2A)
+                            : Colors.grey[100],
                   ),
+                  readOnly: true,
                   keyboardType: TextInputType.phone,
                 ),
               ],
@@ -1378,6 +1329,13 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                       'email': _userEmail,
                       'updated_at': DateTime.now().toIso8601String(),
                     }).eq('id', _currentProfileId);
+                  }
+
+                  // If email changed, update Supabase Auth email too
+                  if (_userEmail != emailController.text.trim()) {
+                    await Supabase.instance.client.auth.updateUser(
+                      UserAttributes(email: emailController.text.trim()),
+                    );
                   }
                 } catch (e) {
                   debugPrint('Error saving profile: $e');
@@ -1902,68 +1860,69 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
             ),
             ElevatedButton(
               onPressed: () async {
-                // Capture the dialog context
-                final dialogContext = context;
+                final currentPassword = currentPasswordController.text.trim();
+                final newPassword = newPasswordController.text.trim();
+                final confirmPassword = confirmPasswordController.text.trim();
 
                 // Validate inputs
-                if (currentPasswordController.text.isEmpty) {
-                  _showErrorSnackBar('Please enter your current password');
+                if (currentPassword.isEmpty ||
+                    newPassword.isEmpty ||
+                    confirmPassword.isEmpty) {
+                  _showErrorSnackBar('Please fill all fields');
+                  return;
+                }
+                if (newPassword != confirmPassword) {
+                  _showErrorSnackBar('Passwords do not match');
+                  return;
+                }
+                if (newPassword.length < 8) {
+                  _showErrorSnackBar('Password must be at least 8 characters');
                   return;
                 }
 
-                if (newPasswordController.text.isEmpty) {
-                  _showErrorSnackBar('Please enter a new password');
-                  return;
-                }
+                try {
+                  final supabase = Supabase.instance.client;
+                  final user = supabase.auth.currentUser;
+                  if (user == null) return;
 
-                if (newPasswordController.text.length < 8) {
-                  _showErrorSnackBar(
-                      'Password must be at least 8 characters long');
-                  return;
-                }
+                  // Verify current password first
+                  await supabase.auth.signInWithPassword(
+                    email: user.email!,
+                    password: currentPassword,
+                  );
 
-                if (newPasswordController.text !=
-                    confirmPasswordController.text) {
-                  _showErrorSnackBar('Passwords do not match!');
-                  return;
-                }
+                  // Current password verified — update to new password
+                  await supabase.auth.updateUser(
+                    UserAttributes(password: newPassword),
+                  );
 
-                if (currentPasswordController.text ==
-                    newPasswordController.text) {
-                  _showErrorSnackBar(
-                      'New password must be different from current password');
-                  return;
-                }
-
-                // Show loading indicator
-                showDialog(
-                  context: dialogContext,
-                  barrierDismissible: false,
-                  builder: (context) => const AlertDialog(
-                    content: Row(
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(width: 20),
-                        Text('Updating password...'),
-                      ],
-                    ),
-                  ),
-                );
-
-                // Close loading dialog
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-
-                // Call Supabase Auth to change password
-                await _changePassword(
-                  currentPasswordController.text,
-                  newPasswordController.text,
-                );
-
-                // Close change password dialog
-                if (context.mounted) {
-                  Navigator.of(context).pop();
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Password changed successfully!',
+                          style: GoogleFonts.poppins(color: Colors.white),
+                        ),
+                        backgroundColor: Colors.green,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } on AuthException catch (e) {
+                  if (e.message.contains('Invalid login credentials')) {
+                    _showErrorSnackBar('Current password is incorrect');
+                  } else {
+                    _showErrorSnackBar(
+                        'Failed to change password: ${e.message}');
+                  }
+                } catch (e) {
+                  debugPrint('Change password error: $e');
+                  _showErrorSnackBar('Something went wrong. Please try again.');
                 }
               },
               style: ElevatedButton.styleFrom(

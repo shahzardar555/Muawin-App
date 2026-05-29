@@ -389,10 +389,9 @@ class _ServiceProviderProfileScreenState
 
   // Emergency contacts
 
-  final List<Map<String, String>> _emergencyContacts = <Map<String, String>>[];
+  List<Map<String, String>> _emergencyContacts = <Map<String, String>>[];
 
   // Service details state
-  // TODO: Load from Supabase
   String _experience = '';
 
   String _availability = '';
@@ -404,7 +403,6 @@ class _ServiceProviderProfileScreenState
   String _description = '';
 
   // Contact information from registration
-  // TODO: Load from Supabase
   String _email = '';
 
   String _phoneNumber = '';
@@ -412,8 +410,11 @@ class _ServiceProviderProfileScreenState
   // Additional service details fields
 
   // Provider name management
-  // TODO: Load from Supabase
   String _providerName = '';
+
+  // Rating and review count
+  double _providerRating = 0.0;
+  int _providerReviewCount = 0;
 
   // Profile image management
   File? _profileImage;
@@ -431,7 +432,7 @@ class _ServiceProviderProfileScreenState
 
   // Enhanced CNIC state with interactive elements
   bool _isCNICExpanded = false;
-  final bool _isCNICVerified = true;
+  bool get _isCNICVerified => _cnicStatus == 'Verified';
 
   // Document search and filter state
   final TextEditingController _documentSearchController =
@@ -456,33 +457,19 @@ class _ServiceProviderProfileScreenState
       _isMobile ? _screenHeight * 0.9 : _screenHeight * 0.75;
 
   // CNIC Information
-  final String _cnicNumber = '35202-1234567-1';
-  final String _cnicStatus = 'Verified';
-  final String _cnicExpiry = '2028-12-31';
+  String _cnicNumber = '';
+  String _cnicStatus = 'Pending';
+  String _cnicExpiry = '';
 
-  final List<String> _documentNames = [
-    'Driver License',
-    'Vehicle Registration',
-    'Insurance Certificate'
-  ];
-
-  final List<String> _documentStatuses = ['Verified', 'Verified', 'Pending'];
-
-  final List<String> _documentExpiryDates = [
-    '2025-06-30',
-    '2024-12-31',
-    '2024-09-30'
-  ];
+  List<String> _documentNames = [];
+  List<String> _documentStatuses = [];
+  List<String> _documentExpiryDates = [];
 
   // Document loading states for enhanced UX
-  final List<bool> _isUploadingDocument = [false, false, false];
+  List<bool> _isUploadingDocument = [];
 
   // Enhanced upload status tracking
-  final List<UploadStatus> _uploadStatus = [
-    UploadStatus.idle,
-    UploadStatus.idle,
-    UploadStatus.idle
-  ];
+  List<UploadStatus> _uploadStatus = [];
 
   // Document Categories System
   final List<String> _documentCategories = [
@@ -830,66 +817,45 @@ class _ServiceProviderProfileScreenState
       _uploadErrors[index] = '';
     });
 
-    // Simulate upload phase with progress
-    for (int i = 0; i <= 100; i += 10) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (mounted) {
-        setState(() {
-          _uploadProgress[index] = i / 100.0;
-          _documentInfo[index]['status'] = attempt > 0
-              ? 'Retrying... $i% ($attempt/$_maxRetryAttempts)'
-              : 'Uploading... $i%';
+    // Upload to Supabase Storage
+    if (_currentProviderId.isNotEmpty) {
+      try {
+        final supabase = Supabase.instance.client;
+        final storageFileName =
+            '${_currentProviderId}_${DateTime.now().millisecondsSinceEpoch}_$fileName';
+
+        if (kIsWeb) {
+          final xfile = XFile(_documentInfo[index]['path']!);
+          final bytes = await xfile.readAsBytes();
+          await supabase.storage.from('provider-documents').uploadBinary(
+              storageFileName, bytes,
+              fileOptions: const FileOptions(upsert: true));
+        } else {
+          final file = File(_documentInfo[index]['path']!);
+          await supabase.storage.from('provider-documents').upload(
+              storageFileName, file,
+              fileOptions: const FileOptions(upsert: true));
+        }
+
+        final publicUrl = supabase.storage
+            .from('provider-documents')
+            .getPublicUrl(storageFileName);
+
+        // Save record to provider_documents table
+        await supabase.from('provider_documents').insert({
+          'provider_id': _currentProviderId,
+          'file_url': publicUrl,
+          'file_name': fileName,
+          'document_type':
+              _documentInfo[index]['category']?.toString() ?? 'document',
+          'status': 'pending',
         });
+
+        debugPrint('Document uploaded: $publicUrl');
+      } catch (e) {
+        debugPrint('Error uploading document: $e');
+        rethrow;
       }
-    }
-
-    // Transition to processing state
-    if (mounted) {
-      setState(() {
-        _uploadStatus[index] = UploadStatus.processing;
-        _documentInfo[index]['status'] = attempt > 0
-            ? 'Processing... ($attempt/$_maxRetryAttempts)'
-            : 'Processing document...';
-      });
-    }
-
-    // Simulate processing steps with real feedback
-    final List<String> processingSteps = [
-      'Validating file format...',
-      'Checking file size...',
-      'Extracting metadata...',
-      'Optimizing image quality...',
-      'Preparing for upload...',
-      'Finalizing document...',
-    ];
-
-    for (int i = 0; i < processingSteps.length; i++) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      if (mounted) {
-        setState(() {
-          _documentInfo[index]['status'] = attempt > 0
-              ? '${processingSteps[i]} ($attempt/$_maxRetryAttempts)'
-              : processingSteps[i];
-        });
-      }
-    }
-
-    // Transition to verifying state
-    if (mounted) {
-      setState(() {
-        _uploadStatus[index] = UploadStatus.verifying;
-        _documentInfo[index]['status'] = attempt > 0
-            ? 'Verifying... ($attempt/$_maxRetryAttempts)'
-            : 'Verifying document...';
-      });
-    }
-
-    // Simulate verification process
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    // Simulate random failure for demo (90% success rate)
-    if (DateTime.now().millisecondsSinceEpoch % 10 == 0) {
-      throw Exception('Network timeout during upload');
     }
 
     // Final success state
@@ -3251,11 +3217,14 @@ class _ServiceProviderProfileScreenState
   String _currentMonthEarnings = '0'; // Will be loaded from actual data
   String _totalEarnings = '0'; // Will be loaded from actual data
   String _pendingPayouts = '0'; // Will be loaded from actual data
-  final String _lastPayoutDate = ''; // Will be loaded from actual data
+  String _lastPayoutDate = ''; // Will be loaded from actual data
   final String _nextPayoutDate = ''; // Will be loaded from actual data
+  List<Map<String, dynamic>> _recentEarnings = [];
 
   // Withdrawal method state
   String _selectedWithdrawalMethod = 'Bank Account';
+  final TextEditingController _withdrawalAmountController =
+      TextEditingController();
 
   @override
   void initState() {
@@ -3292,7 +3261,11 @@ class _ServiceProviderProfileScreenState
             review_count,
             is_pro,
             is_available,
-            language
+            language,
+            cover_photo_url,
+            cnic_number,
+            cnic_expiry_date,
+            verification_status
           ''').eq('profile_id', _currentProfileId).single();
 
       _currentProviderId = provider['id'].toString();
@@ -3306,14 +3279,97 @@ class _ServiceProviderProfileScreenState
         _description = provider['tagline']?.toString() ?? '';
         _serviceLocation = provider['city']?.toString() ?? '';
         _serviceArea = provider['area']?.toString() ?? '';
+        _availability =
+            (provider['is_available'] == true) ? 'Available' : 'Unavailable';
+        _coverPhotoPath = provider['cover_photo_url']?.toString() ?? '';
+
+        // Profile image from Supabase
+        _profileImagePath = profile['profile_image_url']?.toString() ?? '';
+        if (_profileImagePath != null && _profileImagePath!.isNotEmpty) {
+          debugPrint('Profile image loaded: $_profileImagePath');
+        }
+
+        // CNIC fields from Supabase
+        _cnicNumber = provider['cnic_number']?.toString() ?? '';
+        _cnicExpiry = provider['cnic_expiry_date']?.toString() ?? '';
+
+        // Rating and review count from Supabase
+        _providerRating = (provider['rating'] as num?)?.toDouble() ?? 0.0;
+        _providerReviewCount = (provider['review_count'] as num?)?.toInt() ?? 0;
+
+        // Map verification_status to _cnicStatus display value
+        final vStatus =
+            provider['verification_status']?.toString() ?? 'pending';
+        if (vStatus == 'verified') {
+          _cnicStatus = 'Verified';
+        } else if (vStatus == 'rejected') {
+          _cnicStatus = 'Rejected';
+        } else if (vStatus == 'under_review' || vStatus == 'resubmitted') {
+          _cnicStatus = 'Under Review';
+        } else {
+          _cnicStatus = 'Pending';
+        }
+
         _isLoading = false;
       });
 
       // Load earnings separately
       await _loadEarningsData();
+
+      // Load existing pricing packages from Supabase
+      await _loadExistingPackages();
+
+      // Load provider documents from Supabase
+      await _loadProviderDocuments();
+
+      // Load emergency contacts from Supabase
+      await _loadEmergencyContacts();
     } catch (e) {
       debugPrint('Error initializing profile: $e');
       setState(() => _isLoading = false);
+    }
+  }
+
+  // Load existing pricing packages from Supabase
+  Future<void> _loadExistingPackages() async {
+    try {
+      if (_currentProviderId.isEmpty) return;
+
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('service_pricing_packages')
+          .select('package_type, price, description, duration')
+          .eq('provider_id', _currentProviderId)
+          .eq('is_active', true);
+
+      for (final package in response) {
+        final type = package['package_type']?.toString() ?? '';
+        final price = package['price']?.toString() ?? '';
+        final description = package['description']?.toString() ?? '';
+        final duration = package['duration']?.toString() ?? '';
+
+        if (mounted) {
+          setState(() {
+            if (type == 'basic') {
+              _basicPriceController.text = price;
+              _basicDescriptionController.text = description;
+              _basicDurationController.text = duration;
+            } else if (type == 'standard') {
+              _standardPriceController.text = price;
+              _standardDescriptionController.text = description;
+              _standardDurationController.text = duration;
+            } else if (type == 'premium') {
+              _premiumPriceController.text = price;
+              _premiumDescriptionController.text = description;
+              _premiumDurationController.text = duration;
+            }
+          });
+        }
+      }
+
+      debugPrint('Packages loaded: ${response.length}');
+    } catch (e) {
+      debugPrint('Error loading packages: $e');
     }
   }
 
@@ -3337,20 +3393,88 @@ class _ServiceProviderProfileScreenState
 
       final supabase = Supabase.instance.client;
 
-      // Get wallet data
-      final wallet = await supabase
+      // Load wallet data
+      final walletResponse = await supabase
           .from('wallets')
-          .select('balance, total_earnings, currency')
+          .select('id, balance, total_earnings, currency')
           .eq('provider_id', _currentProviderId)
           .maybeSingle();
 
-      if (wallet != null) {
+      if (walletResponse == null) {
+        debugPrint('No wallet found for provider');
+        return;
+      }
+
+      final walletId = walletResponse['id']?.toString() ?? '';
+      final balance = (walletResponse['balance'] as num?)?.toDouble() ?? 0.0;
+      final totalEarnings =
+          (walletResponse['total_earnings'] as num?)?.toDouble() ?? 0.0;
+
+      // Load pending withdrawals total
+      double pendingTotal = 0.0;
+      if (walletId.isNotEmpty) {
+        final pendingWithdrawals = await supabase
+            .from('withdrawals')
+            .select('amount')
+            .eq('provider_id', _currentProviderId)
+            .eq('status', 'pending');
+
+        for (final w in pendingWithdrawals) {
+          pendingTotal += (w['amount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+
+      // Load last payout date
+      String lastPayout = 'No payouts yet';
+      final completedWithdrawals = await supabase
+          .from('withdrawals')
+          .select('created_at, amount')
+          .eq('provider_id', _currentProviderId)
+          .eq('status', 'completed')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (completedWithdrawals.isNotEmpty) {
+        final date = DateTime.tryParse(
+            completedWithdrawals.first['created_at']?.toString() ?? '');
+        if (date != null) {
+          lastPayout = '${date.day}/${date.month}/${date.year}';
+        }
+      }
+
+      // Load recent transactions
+      List<Map<String, dynamic>> recentList = [];
+      if (walletId.isNotEmpty) {
+        final transactions = await supabase
+            .from('transactions')
+            .select('amount, description, created_at, type')
+            .eq('wallet_id', walletId)
+            .order('created_at', ascending: false)
+            .limit(5);
+
+        recentList = (transactions as List).map((t) {
+          final date = DateTime.tryParse(t['created_at']?.toString() ?? '');
+          final dateStr = date != null
+              ? '${date.day}/${date.month}/${date.year}'
+              : 'Unknown date';
+          return {
+            'label': t['description']?.toString() ?? 'Transaction',
+            'amount': (t['amount'] as num?)?.toStringAsFixed(0) ?? '0',
+            'date': dateStr,
+            'status': t['type']?.toString() ?? 'credit',
+          };
+        }).toList();
+      }
+
+      debugPrint('Earnings loaded — balance: $balance, pending: $pendingTotal');
+
+      if (mounted) {
         setState(() {
-          _currentMonthEarnings =
-              (wallet['balance'] as num?)?.toStringAsFixed(0) ?? '0';
-          _totalEarnings =
-              (wallet['total_earnings'] as num?)?.toStringAsFixed(0) ?? '0';
-          _pendingPayouts = '0';
+          _currentMonthEarnings = balance.toStringAsFixed(0);
+          _totalEarnings = totalEarnings.toStringAsFixed(0);
+          _pendingPayouts = pendingTotal.toStringAsFixed(0);
+          _lastPayoutDate = lastPayout;
+          _recentEarnings = recentList;
         });
       }
     } catch (e) {
@@ -3363,6 +3487,59 @@ class _ServiceProviderProfileScreenState
   // Load provider's category from registration data
 
   // Set default descriptions based on provider category
+
+  String _capitalizeStatus(String status) {
+    if (status.isEmpty) return 'Pending';
+    return status[0].toUpperCase() + status.substring(1);
+  }
+
+  Future<void> _loadProviderDocuments() async {
+    try {
+      if (_currentProviderId.isEmpty) return;
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('provider_documents')
+          .select('file_name, document_type, status, expiry_date, file_url')
+          .eq('provider_id', _currentProviderId)
+          .order('uploaded_at', ascending: false);
+
+      // Pad to at least 3 so hardcoded indices in upload dialog (0, 1) never fail
+      final count = response.length;
+      final paddedCount = count < 3 ? 3 : count;
+
+      if (mounted) {
+        setState(() {
+          _documentNames = List<String>.generate(paddedCount, (i) {
+            if (i < count) {
+              return response[i]['file_name']?.toString() ?? 'Document';
+            }
+            return '';
+          });
+          _documentStatuses = List<String>.generate(paddedCount, (i) {
+            if (i < count) {
+              return _capitalizeStatus(
+                  response[i]['status']?.toString() ?? 'pending');
+            }
+            return 'Pending';
+          });
+          _documentExpiryDates = List<String>.generate(paddedCount, (i) {
+            if (i < count) {
+              return response[i]['expiry_date']?.toString() ?? '';
+            }
+            return '';
+          });
+          _isUploadingDocument = List.filled(paddedCount, false);
+          _uploadStatus = List.filled(paddedCount, UploadStatus.idle);
+        });
+      }
+
+      debugPrint(
+          'Documents loaded: ${response.length} (padded to $paddedCount)');
+    } catch (e) {
+      debugPrint('Error loading documents: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -3385,6 +3562,8 @@ class _ServiceProviderProfileScreenState
     _premiumDescriptionController.dispose();
 
     _premiumDurationController.dispose();
+
+    _withdrawalAmountController.dispose();
 
     super.dispose();
   }
@@ -3472,18 +3651,50 @@ class _ServiceProviderProfileScreenState
     }
   }
 
-  // Save profile image path to SharedPreferences
+  // Save profile image to Supabase Storage (platform-aware)
   Future<void> _saveProfileImagePath() async {
+    if (_profileImagePath == null || _profileImagePath!.isEmpty) return;
+    if (_profileImagePath!.startsWith('http')) return;
+    if (_currentProfileId.isEmpty) return;
+
     try {
-      // Save profile image URL to Supabase profiles table
-      if (_currentProfileId.isNotEmpty && _profileImagePath != null) {
-        await Supabase.instance.client
-            .from('profiles')
-            .update({'profile_image_url': _profileImagePath}).eq(
-                'id', _currentProfileId);
+      final supabase = Supabase.instance.client;
+      final fileName =
+          'avatar_${_currentProfileId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (kIsWeb) {
+        // On web, _profileImagePath is a blob URL — read as bytes using XFile
+        final xfile = XFile(_profileImagePath!);
+        final bytes = await xfile.readAsBytes();
+
+        await supabase.storage.from('provider-avatars').uploadBinary(
+            fileName, bytes,
+            fileOptions:
+                const FileOptions(upsert: true, contentType: 'image/jpeg'));
+      } else {
+        // On mobile/desktop, use dart:io File
+        final file = File(_profileImagePath!);
+        await supabase.storage.from('provider-avatars').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
       }
+
+      final publicUrl =
+          supabase.storage.from('provider-avatars').getPublicUrl(fileName);
+
+      // Save public URL to profiles table
+      await supabase
+          .from('profiles')
+          .update({'profile_image_url': publicUrl}).eq('id', _currentProfileId);
+
+      if (mounted) {
+        setState(() {
+          _profileImagePath = publicUrl;
+        });
+      }
+
+      debugPrint('Profile image uploaded: $publicUrl');
     } catch (e) {
-      debugPrint('Error saving profile image path: $e');
+      debugPrint('Error uploading profile image: $e');
     }
   }
 
@@ -3542,13 +3753,49 @@ class _ServiceProviderProfileScreenState
     }
   }
 
-  // Save cover photo path to SharedPreferences
+  // Save cover photo to Supabase Storage (platform-aware)
   Future<void> _saveCoverPhotoPath() async {
+    if (_coverPhotoPath == null || _coverPhotoPath!.isEmpty) return;
+    if (_coverPhotoPath!.startsWith('http')) return;
+    if (_currentProviderId.isEmpty) return;
+
     try {
-      // Cover photo - skip Supabase for now as no column exists
-      debugPrint('Cover photo updated locally');
+      final supabase = Supabase.instance.client;
+      final fileName =
+          'cover_${_currentProviderId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (kIsWeb) {
+        // On web, _coverPhotoPath is a blob URL — read as bytes using XFile
+        final xfile = XFile(_coverPhotoPath!);
+        final bytes = await xfile.readAsBytes();
+
+        await supabase.storage.from('provider-covers').uploadBinary(
+            fileName, bytes,
+            fileOptions:
+                const FileOptions(upsert: true, contentType: 'image/jpeg'));
+      } else {
+        // On mobile/desktop, use dart:io File
+        final file = File(_coverPhotoPath!);
+        await supabase.storage.from('provider-covers').upload(fileName, file,
+            fileOptions: const FileOptions(upsert: true));
+      }
+
+      final publicUrl =
+          supabase.storage.from('provider-covers').getPublicUrl(fileName);
+
+      await supabase
+          .from('providers')
+          .update({'cover_photo_url': publicUrl}).eq('id', _currentProviderId);
+
+      if (mounted) {
+        setState(() {
+          _coverPhotoPath = publicUrl;
+        });
+      }
+
+      debugPrint('Cover photo uploaded: $publicUrl');
     } catch (e) {
-      debugPrint('Error saving cover photo path: $e');
+      debugPrint('Error uploading cover photo: $e');
     }
   }
 
@@ -3646,6 +3893,16 @@ class _ServiceProviderProfileScreenState
 
   // Build profile image widget with web/mobile compatibility
   Widget _buildProfileImageWidget() {
+    // Check for network URL first (from Supabase Storage)
+    if (_profileImagePath != null &&
+        _profileImagePath!.startsWith('http') &&
+        _profileImagePath!.isNotEmpty) {
+      return CircleAvatar(
+        backgroundImage: NetworkImage(_profileImagePath!),
+        radius: 45,
+      );
+    }
+
     if (kIsWeb) {
       // For web, use Image.memory if bytes are available
       if (_profileImageBytes != null) {
@@ -3805,8 +4062,8 @@ class _ServiceProviderProfileScreenState
                     profileImageBytes: _profileImageBytes,
                     coverPhotoPath: _coverPhotoPath,
                     isCNICVerified: _isCNICVerified,
-                    rating: 4.9,
-                    reviewCount: 124,
+                    rating: _providerRating,
+                    reviewCount: _providerReviewCount,
                     showProfileSuccessAnimation: _showProfileSuccessAnimation,
                     isMobile: _isMobile,
                     onPickProfileImage: _pickProfileImage,
@@ -3849,7 +4106,7 @@ class _ServiceProviderProfileScreenState
                   _buildMenuItem(
                       Icons.account_balance_wallet_outlined,
                       'Earnings & Payouts',
-                      'Rs. 12,450 this month',
+                      'Rs. $_currentMonthEarnings this month',
                       onSurface,
                       primary,
                       onTap: () => _showEarningsDialog()),
@@ -3924,7 +4181,7 @@ class _ServiceProviderProfileScreenState
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              'Rs. 12,450',
+                              'Rs. $_currentMonthEarnings',
                               style: GoogleFonts.poppins(
                                 fontSize: _isMobile ? 24 : 28,
                                 fontWeight: FontWeight.w700,
@@ -4863,6 +5120,7 @@ class _ServiceProviderProfileScreenState
       await supabase.from('providers').update({
         'experience_years': int.tryParse(_experience) ?? 0,
         'tagline': _description,
+        'is_available': _availability.toLowerCase() == 'available',
         'city': _serviceLocation.trim().isNotEmpty
             ? _serviceLocation.trim()
             : _serviceArea.trim(),
@@ -6332,11 +6590,20 @@ class _ServiceProviderProfileScreenState
 
               const SizedBox(height: 12),
 
-              _buildSafeEarningsCard('March 2024', '12,450', 'Completed'),
-
-              _buildSafeEarningsCard('February 2024', '11,800', 'Completed'),
-
-              _buildSafeEarningsCard('January 2024', '13,200', 'Completed'),
+              if (_recentEarnings.isEmpty)
+                Text(
+                  'No transactions yet',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                )
+              else
+                ..._recentEarnings.map((item) => _buildSafeEarningsCard(
+                      item['label'] ?? 'Transaction',
+                      item['amount'] ?? '0',
+                      item['status'] ?? 'credit',
+                    )),
             ],
           ),
         ),
@@ -6567,6 +6834,7 @@ class _ServiceProviderProfileScreenState
                   ),
                   const SizedBox(height: 16),
                   TextField(
+                    controller: _withdrawalAmountController,
                     decoration: InputDecoration(
                       labelText: 'Withdrawal Amount (Rs)',
                       border: OutlineInputBorder(
@@ -6715,13 +6983,59 @@ class _ServiceProviderProfileScreenState
               ),
             ),
             ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                // Enhanced feedback with toast, haptic, and animation
-                HapticFeedbackUtils.success();
-                FeedbackUtils.showSuccessToast(
+              onPressed: () async {
+                if (_currentProviderId.isEmpty) return;
+
+                try {
+                  final supabase = Supabase.instance.client;
+
+                  // Get wallet id
+                  final wallet = await supabase
+                      .from('wallets')
+                      .select('id')
+                      .eq('provider_id', _currentProviderId)
+                      .maybeSingle();
+
+                  if (wallet == null) {
+                    if (!context.mounted) return;
+                    FeedbackUtils.showErrorToast(
+                      'No wallet found',
+                      context: context,
+                    );
+                    return;
+                  }
+
+                  // Insert withdrawal request
+                  await supabase.from('withdrawals').insert({
+                    'provider_id': _currentProviderId,
+                    'wallet_id': wallet['id'],
+                    'amount':
+                        double.tryParse(_withdrawalAmountController.text) ?? 0,
+                    'withdrawal_method': _selectedWithdrawalMethod,
+                    'status': 'pending',
+                    'account_details': {
+                      'method': _selectedWithdrawalMethod,
+                    },
+                  });
+
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                  HapticFeedbackUtils.success();
+                  FeedbackUtils.showSuccessToast(
                     'Withdrawal request submitted successfully!',
-                    context: context);
+                    context: context,
+                  );
+
+                  // Reload earnings
+                  await _loadEarningsData();
+                } catch (e) {
+                  debugPrint('Withdrawal error: $e');
+                  if (!context.mounted) return;
+                  FeedbackUtils.showErrorToast(
+                    'Failed to submit withdrawal request',
+                    context: context,
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
@@ -7019,7 +7333,7 @@ class _ServiceProviderProfileScreenState
               ),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (currentPasswordController.text.isEmpty ||
                     newPasswordController.text.isEmpty ||
                     confirmPasswordController.text.isEmpty) {
@@ -7048,12 +7362,52 @@ class _ServiceProviderProfileScreenState
                   return;
                 }
 
-                Navigator.of(context).pop();
+                // NEW: Actually change the password via Supabase Auth
+                try {
+                  // First verify current password by re-signing in
+                  final supabase = Supabase.instance.client;
+                  final user = supabase.auth.currentUser;
+                  if (user == null) return;
 
-                // Enhanced feedback with toast, haptic, and animation
-                HapticFeedbackUtils.success();
-                FeedbackUtils.showSuccessToast('Password changed successfully!',
-                    context: context);
+                  // Re-authenticate with current password to verify it
+                  await supabase.auth.signInWithPassword(
+                    email: user.email!,
+                    password: currentPasswordController.text.trim(),
+                  );
+
+                  // Current password verified — now update to new password
+                  await supabase.auth.updateUser(
+                    UserAttributes(password: newPasswordController.text.trim()),
+                  );
+
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                  HapticFeedbackUtils.success();
+                  FeedbackUtils.showSuccessToast(
+                    'Password changed successfully!',
+                    context: context,
+                  );
+                } on AuthException catch (e) {
+                  if (!context.mounted) return;
+                  if (e.message.contains('Invalid login credentials')) {
+                    FeedbackUtils.showErrorToast(
+                      'Current password is incorrect',
+                      context: context,
+                    );
+                  } else {
+                    FeedbackUtils.showErrorToast(
+                      'Failed to change password: ${e.message}',
+                      context: context,
+                    );
+                  }
+                } catch (e) {
+                  debugPrint('Change password error: $e');
+                  if (!context.mounted) return;
+                  FeedbackUtils.showErrorToast(
+                    'Something went wrong. Please try again.',
+                    context: context,
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
@@ -7559,31 +7913,68 @@ class _ServiceProviderProfileScreenState
     );
   }
 
-  void _addEmergencyContact(String name, String phone) {
-    setState(() {
-      _emergencyContacts.add({'name': name, 'phone': phone});
-    });
-
-    _saveEmergencyContacts();
-  }
-
-  void _removeEmergencyContact(int index) {
-    setState(() {
-      _emergencyContacts.removeAt(index);
-    });
-
-    _saveEmergencyContacts();
-  }
-
-  Future<void> _saveEmergencyContacts() async {
+  Future<void> _addEmergencyContact(String name, String phone) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final supabase = Supabase.instance.client;
 
-      final contactsJson = jsonEncode(_emergencyContacts);
+      await supabase.from('emergency_contacts').insert({
+        'provider_id': _currentProviderId,
+        'name': name,
+        'phone_number': phone,
+        'relationship': 'Emergency Contact',
+        'is_primary': _emergencyContacts.isEmpty,
+      });
 
-      await prefs.setString('emergency_contacts', contactsJson);
+      await _loadEmergencyContacts();
+      debugPrint('Emergency contact added: $name');
     } catch (e) {
-      debugPrint('Error saving emergency contacts: $e');
+      debugPrint('Error adding emergency contact: $e');
+    }
+  }
+
+  Future<void> _removeEmergencyContact(int index) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final contactId = _emergencyContacts[index]['id'] ?? '';
+
+      if (contactId.isNotEmpty) {
+        await supabase.from('emergency_contacts').delete().eq('id', contactId);
+      }
+
+      await _loadEmergencyContacts();
+      debugPrint('Emergency contact removed');
+    } catch (e) {
+      debugPrint('Error removing emergency contact: $e');
+    }
+  }
+
+  Future<void> _loadEmergencyContacts() async {
+    try {
+      if (_currentProviderId.isEmpty) return;
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('emergency_contacts')
+          .select('id, name, phone_number, relationship, is_primary')
+          .eq('provider_id', _currentProviderId)
+          .order('created_at', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _emergencyContacts = (response as List)
+              .map((c) => {
+                    'id': c['id']?.toString() ?? '',
+                    'name': c['name']?.toString() ?? '',
+                    'phone': c['phone_number']?.toString() ?? '',
+                    'relationship': c['relationship']?.toString() ?? '',
+                  })
+              .toList();
+        });
+      }
+
+      debugPrint('Emergency contacts loaded: ${response.length}');
+    } catch (e) {
+      debugPrint('Error loading emergency contacts: $e');
     }
   }
 
@@ -8495,6 +8886,7 @@ class _ServiceProviderProfileScreenState
         {
           'provider_id': providerId,
           'package_type': 'basic',
+          'package_name': 'Basic Package',
           'price': double.tryParse(_basicPriceController.text) ?? 0,
           'description': _basicDescriptionController.text.trim(),
           'duration': _basicDurationController.text.trim(),
@@ -8505,6 +8897,7 @@ class _ServiceProviderProfileScreenState
         {
           'provider_id': providerId,
           'package_type': 'standard',
+          'package_name': 'Standard Package',
           'price': double.tryParse(_standardPriceController.text) ?? 0,
           'description': _standardDescriptionController.text.trim(),
           'duration': _standardDurationController.text.trim(),
@@ -8515,6 +8908,7 @@ class _ServiceProviderProfileScreenState
         {
           'provider_id': providerId,
           'package_type': 'premium',
+          'package_name': 'Premium Package',
           'price': double.tryParse(_premiumPriceController.text) ?? 0,
           'description': _premiumDescriptionController.text.trim(),
           'duration': _premiumDurationController.text.trim(),

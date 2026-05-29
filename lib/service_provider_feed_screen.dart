@@ -82,7 +82,6 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   int _currentNavIndex = 0;
 
   // Current provider ID (this would come from authentication/user profile)
-  // TODO: Load from Supabase
   String _currentProviderId = '';
   String _currentProfileId = '';
 
@@ -90,7 +89,6 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   Map<String, dynamic>? _providerData;
 
   // Service provider profile data
-  // TODO: Load from Supabase
   Map<String, dynamic> get _providerProfile {
     if (_providerData != null) {
       return {
@@ -109,7 +107,6 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
     };
   }
 
-  // TODO: Load from Supabase
   List<Map<String, dynamic>> _jobAlerts = [];
   void _showStatusSheet() {
     showModalBottomSheet(

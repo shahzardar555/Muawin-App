@@ -10,7 +10,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io';
 import 'services/featured_ad_manager.dart';
 import 'services/pro_status_checker.dart';
 import 'services/database_service.dart';
@@ -87,19 +86,25 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         final fullName = profile['full_name']?.toString() ?? 'Customer';
         // Extract first name
         final firstName = fullName.split(' ').first;
-        setState(() {
-          _customerName = firstName;
-        });
+        if (mounted) {
+          setState(() {
+            _customerName = firstName;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _customerName = 'Customer';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+      if (mounted) {
         setState(() {
           _customerName = 'Customer';
         });
       }
-    } catch (e) {
-      debugPrint('Error loading user profile: $e');
-      setState(() {
-        _customerName = 'Customer';
-      });
     }
   }
 
@@ -1279,6 +1284,9 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
   // Urdu category mapping for voice search
   Map<String, String> _urduCategoryMap = {};
 
+  // Search results loading state
+  bool _isLoadingResults = false;
+
   @override
   void initState() {
     super.initState();
@@ -1286,15 +1294,129 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeSpeech();
       _loadUrduCategoryMap();
+      _loadAllResults();
     });
   }
 
-  // Sample data for search results - ONLY allowed categories
-  // TODO: Load from Supabase
-  final List<Map<String, dynamic>> _allResults = [
-    // Vendors - Only: Milkshop, Supermarket, Gas Cylinder Shop, Bakery, Fruits and Vegetables Shop, Drinking Water Plant, Meatshop
-    // TODO: Connect to Supabase
-  ];
+  final List<Map<String, dynamic>> _allResults = [];
+
+  Future<void> _loadAllResults() async {
+    if (mounted) setState(() => _isLoadingResults = true);
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Load verified providers
+      final providersResponse = await supabase.from('providers').select('''
+            id,
+            service_category,
+            city,
+            area,
+            rating,
+            is_available,
+            experience_years,
+            is_pro,
+            profiles!inner(full_name, profile_image_url)
+          ''').eq('is_verified', true).eq('verification_status', 'verified');
+
+      // Load verified vendors
+      final vendorsResponse = await supabase.from('vendors').select('''
+            id,
+            business_name,
+            business_type,
+            city,
+            area,
+            rating,
+            status,
+            is_verified,
+            profiles!inner(full_name, profile_image_url)
+          ''').eq('is_verified', true);
+
+      // Load ratings for providers
+      final providerRatings = await supabase
+          .from('reviews')
+          .select('provider_id, rating')
+          .not('provider_id', 'is', null);
+
+      // Load ratings for vendors
+      final vendorRatings = await supabase
+          .from('reviews')
+          .select('vendor_id, rating')
+          .not('vendor_id', 'is', null);
+
+      // Build provider rating averages
+      final Map<String, List<double>> providerRatingMap = {};
+      for (final r in providerRatings) {
+        final pid = r['provider_id']?.toString() ?? '';
+        final rat = (r['rating'] as num?)?.toDouble() ?? 0.0;
+        providerRatingMap.putIfAbsent(pid, () => []).add(rat);
+      }
+
+      // Build vendor rating averages
+      final Map<String, List<double>> vendorRatingMap = {};
+      for (final r in vendorRatings) {
+        final vid = r['vendor_id']?.toString() ?? '';
+        final rat = (r['rating'] as num?)?.toDouble() ?? 0.0;
+        vendorRatingMap.putIfAbsent(vid, () => []).add(rat);
+      }
+
+      final List<Map<String, dynamic>> combined = [];
+
+      // Map providers
+      for (final p in providersResponse) {
+        final expYears = (p['experience_years'] as num?)?.toInt() ?? 0;
+        final rating = (p['rating'] as num?)?.toDouble() ?? 0.0;
+
+        combined.add({
+          'type': 'provider',
+          'id': p['id']?.toString() ?? '',
+          'name': p['profiles']?['full_name'] ?? 'Provider',
+          'category': p['service_category'] ?? 'Service Provider',
+          'avatar': p['profiles']?['profile_image_url'] ?? '',
+          'rating': rating,
+          'distance': '3.0 km',
+          'status': (p['is_available'] == true) ? 'available' : 'unavailable',
+          'experience': '$expYears years',
+        });
+      }
+
+      // Map vendors
+      for (final v in vendorsResponse) {
+        final rating = (v['rating'] as num?)?.toDouble() ?? 0.0;
+
+        combined.add({
+          'type': 'vendor',
+          'id': v['id']?.toString() ?? '',
+          'name': v['business_name'] ?? v['profiles']?['full_name'] ?? 'Vendor',
+          'category': v['business_type'] ?? 'Vendor',
+          'avatar': v['profiles']?['profile_image_url'] ?? '',
+          'rating': rating,
+          'distance': '2.0 km',
+          'status': (v['status'] == 'active' || v['status'] == 'open')
+              ? 'open'
+              : 'closed',
+          'experience': '0 years',
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _allResults.clear();
+          _allResults.addAll(combined);
+          _isLoadingResults = false;
+        });
+        debugPrint('=== SEARCH LOADED ===');
+        debugPrint('Total results: ${_allResults.length}');
+        if (_allResults.isNotEmpty) {
+          debugPrint('First item: ${_allResults.first}');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading search results: $e');
+      if (mounted) {
+        setState(() => _isLoadingResults = false);
+      }
+    }
+  }
 
   // Filter options
   final List<String> _filters = [
@@ -1623,6 +1745,9 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                     ),
                     child: TextField(
                       controller: _searchController,
+                      onChanged: (value) {
+                        setState(() => _searchQuery = value);
+                      },
                       decoration: InputDecoration(
                         prefixIcon: Icon(Icons.search, color: primary),
                         hintText: Provider.of<LanguageProvider>(context)
@@ -1770,35 +1895,37 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
           // Results List
           Expanded(
-            child: _filteredResults.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.search_off,
-                            size: 64, color: Colors.grey[300]),
-                        const SizedBox(height: 16),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'Start typing to search'
-                              : 'No results found',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            color: Colors.grey[500],
-                          ),
+            child: _isLoadingResults
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredResults.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.search_off,
+                                size: 64, color: Colors.grey[300]),
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchQuery.isEmpty
+                                  ? 'Start typing to search'
+                                  : 'No results found',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredResults.length,
-                    itemBuilder: (context, index) {
-                      final result = _filteredResults[index];
-                      final isVendor = result['type'] == 'vendor';
-                      return _buildResultCard(result, isVendor, primary);
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _filteredResults.length,
+                        itemBuilder: (context, index) {
+                          final result = _filteredResults[index];
+                          final isVendor = result['type'] == 'vendor';
+                          return _buildResultCard(result, isVendor, primary);
+                        },
+                      ),
           ),
         ],
       ),
@@ -1845,7 +1972,15 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
             // Avatar
             CircleAvatar(
               radius: 32,
-              backgroundImage: NetworkImage(result['avatar'].toString()),
+              backgroundImage: (result['avatar'] != null &&
+                      result['avatar'].toString().isNotEmpty)
+                  ? NetworkImage(result['avatar'].toString())
+                  : null,
+              backgroundColor: Colors.grey[400],
+              child: (result['avatar'] == null ||
+                      result['avatar'].toString().isEmpty)
+                  ? const Icon(Icons.person, color: Colors.white)
+                  : null,
             ),
             const SizedBox(width: 16),
             // Info
@@ -2687,17 +2822,78 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
 }
 
 // Top Rated Pros Section
-class _TopRatedProsSection extends StatelessWidget {
+class _TopRatedProsSection extends StatefulWidget {
   const _TopRatedProsSection({required this.primary});
 
   final Color primary;
 
-  // Sample provider IDs for demonstration - in real app these would come from a backend
-  // TODO: Load from Supabase
-  static const List<String> _providerIds = [];
+  @override
+  State<_TopRatedProsSection> createState() => _TopRatedProsSectionState();
+}
+
+class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
+  List<String> _providerIds = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTopProviders();
+  }
+
+  Future<void> _loadTopProviders() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('providers')
+          .select('id')
+          .eq('is_verified', true)
+          .eq('verification_status', 'verified')
+          .gte('rating', 4.8)
+          .lte('rating', 5.0)
+          .order('rating', ascending: false)
+          .limit(10);
+
+      final ids = (response as List)
+          .map((p) => p['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      debugPrint('Top rated providers loaded: ${ids.length}');
+
+      if (mounted) {
+        setState(() {
+          _providerIds = ids;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading top providers: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_providerIds.isEmpty) {
+      return const SizedBox(
+        height: 120,
+        child: Center(
+          child: Text(
+            'No top providers found',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2742,12 +2938,15 @@ class _TopRatedProsSection extends StatelessWidget {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _providerIds.isEmpty ? 0 : 3,
+          itemCount: _providerIds.length,
           itemBuilder: (context, index) {
             return Padding(
               padding:
                   const EdgeInsets.only(bottom: 16), // 1rem gap (space-y-4)
-              child: _TopRatedProCard(primary: primary, index: index),
+              child: _TopRatedProCard(
+                  primary: widget.primary,
+                  index: index,
+                  providerId: _providerIds[index]),
             );
           },
         ),
@@ -2757,17 +2956,23 @@ class _TopRatedProsSection extends StatelessWidget {
 }
 
 class _TopRatedProCard extends StatefulWidget {
-  const _TopRatedProCard({required this.primary, required this.index});
+  const _TopRatedProCard(
+      {required this.primary, required this.index, required this.providerId});
 
   final Color primary;
   final int index;
+  final String providerId;
 
   @override
   State<_TopRatedProCard> createState() => _TopRatedProCardState();
 }
 
 class _TopRatedProCardState extends State<_TopRatedProCard> {
-  Map<String, dynamic>? _providerData;
+  String _providerName = '';
+  String _serviceType = '';
+  double _rating = 0.0;
+  String _location = '';
+  String _imageUrl = '';
   bool _isLoading = true;
 
   @override
@@ -2778,84 +2983,56 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
 
   Future<void> _loadProviderData() async {
     try {
-      // Since providerIds is now empty, this won't be called
-      // TODO: Load from Supabase when data is available
-      setState(() {
-        _isLoading = false;
-      });
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase.from('providers').select('''
+          id,
+          service_category,
+          city,
+          area,
+          rating,
+          experience_years,
+          is_available,
+          profiles!inner(
+            full_name,
+            profile_image_url
+          )
+        ''').eq('id', widget.providerId).single();
+
+      debugPrint(
+          'TopRatedProCard loaded: ${response['profiles']?['full_name']}');
+
+      if (mounted) {
+        setState(() {
+          _providerName = response['profiles']?['full_name'] ?? 'Provider';
+          _serviceType = response['service_category'] ?? 'Service';
+          _rating = (response['rating'] as num?)?.toDouble() ?? 0.0;
+          _location = response['area'] ?? response['city'] ?? 'Location';
+          _imageUrl = response['profiles']?['profile_image_url'] ?? '';
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      debugPrint('Error loading provider data: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('Error loading pro card data: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   // Helper method to build profile image with cross-platform support
   Widget _buildProfileImage() {
-    if (_providerData != null && _providerData!['profile_image_path'] != null) {
-      final profileImagePath = _providerData!['profile_image_path'] as String;
-
-      // Check if it's a local file or web URL
-      if (profileImagePath.startsWith('blob:')) {
-        // Web: Use Image.network with blob URL
-        return Image.network(
-          profileImagePath,
-          width: 60,
-          height: 60,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildDefaultAvatar();
-          },
-        );
-      } else {
-        // Mobile: Use Image.file
-        return Image.file(
-          File(profileImagePath),
-          width: 60,
-          height: 60,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildDefaultAvatar();
-          },
-        );
-      }
-    } else {
-      return _buildDefaultAvatar();
-    }
-  }
-
-  Widget _buildDefaultAvatar() {
-    // Use real profile_image_url from provider data
-    final profileImageUrl =
-        _providerData?['profiles']?['profile_image_url'] ?? '';
-
-    if (profileImageUrl.isNotEmpty) {
-      return ClipOval(
-        child: Image.network(
-          profileImageUrl,
-          width: 60,
-          height: 60,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
+    return ClipOval(
+      child: _imageUrl.isNotEmpty
+          ? Image.network(
+              _imageUrl,
               width: 60,
               height: 60,
-              color: Colors.grey[300],
-              child: const Icon(Icons.person_rounded, color: Colors.grey),
-            );
-          },
-        ),
-      );
-    } else {
-      // Show placeholder icon if profile_image_url is empty
-      return Container(
-        width: 60,
-        height: 60,
-        color: Colors.grey[300],
-        child: const Icon(Icons.person_rounded, color: Colors.grey),
-      );
-    }
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(Icons.person, color: Colors.white);
+              },
+            )
+          : const Icon(Icons.person, color: Colors.white),
+    );
   }
 
   @override
@@ -2908,18 +3085,18 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
     }
 
     // Use real provider data if available, otherwise fallback to mock data
-    // TODO: Load from Supabase
-    final providerName = _providerData?['provider_name'] ?? '';
-    final serviceType = _providerData?['service_type'] ?? '';
-    final rating = _providerData?['rating'] ?? 0.0;
-    final location = _providerData?['location'] ?? '';
+    final providerName = _providerName;
+    final serviceType = _serviceType;
+    final rating = _rating;
+    final location = _location;
 
     return GestureDetector(
       onTap: () {
+        if (widget.providerId.isEmpty) return;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CustomerProviderProfileScreen(
-              providerId: _providerData?['id']?.toString() ?? '',
+              providerId: widget.providerId,
             ),
           ),
         );
@@ -3046,13 +3223,214 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
 }
 
 // Vendors Nearby Section
-class _VendorsNearbySection extends StatelessWidget {
+class _VendorsNearbySection extends StatefulWidget {
   const _VendorsNearbySection({required this.primary});
 
   final Color primary;
 
   @override
+  State<_VendorsNearbySection> createState() => _VendorsNearbySectionState();
+}
+
+class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
+  List<Map<String, dynamic>> _vendors = [];
+  bool _isLoadingVendors = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVendors();
+  }
+
+  Future<void> _loadVendors() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('vendors')
+          .select('''
+            id,
+            business_name,
+            business_type,
+            city,
+            area,
+            rating,
+            status,
+            is_verified,
+            profiles!inner(
+              full_name,
+              profile_image_url
+            )
+          ''')
+          .eq('is_verified', true)
+          .order('rating', ascending: false)
+          .limit(10);
+
+      final List<Map<String, dynamic>> loaded = [];
+
+      for (final v in response) {
+        final rating = (v['rating'] as num?)?.toDouble() ?? 0.0;
+        final status = v['status']?.toString() ?? '';
+        final isOpen = status == 'active' || status == 'open';
+
+        loaded.add({
+          'id': v['id']?.toString() ?? '',
+          'name': v['business_name'] ?? v['profiles']?['full_name'] ?? 'Vendor',
+          'category': v['business_type'] ?? 'Vendor',
+          'avatar': v['profiles']?['profile_image_url'] ?? '',
+          'rating': rating,
+          'distance': '2.0 km',
+          'status': isOpen ? 'Open' : 'Closed',
+          'statusColor':
+              isOpen ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
+        });
+      }
+
+      debugPrint('Nearby vendors loaded: ${loaded.length}');
+
+      if (mounted) {
+        setState(() {
+          _vendors = loaded;
+          _isLoadingVendors = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading nearby vendors: $e');
+      if (mounted) setState(() => _isLoadingVendors = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoadingVendors) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // SECTION HEADER & BRANDING
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 4), // 0.25rem left/right gutter (px-1)
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.storefront, // Storefront icon for vendors
+                      color: Colors.amber
+                          .shade500, // High-Saturation Amber (text-yellow-500)
+                      size: 20, // 1.25rem x 1.25rem / w-5 h-5
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      Provider.of<LanguageProvider>(context)
+                          .translate('vendors_nearby'),
+                      style: GoogleFonts.poppins(
+                        fontSize: 20, // 1.25rem / text-xl
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                // Threshold Badge: Enhanced premium pill design for consistency
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.3),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    'Within 5km',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.amber.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16), // 1rem gap (space-y-4)
+
+          // LOADING STATE
+          const SizedBox(
+            height: 120,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    }
+
+    if (_vendors.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // SECTION HEADER & BRANDING
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 4), // 0.25rem left/right gutter (px-1)
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.storefront, // Storefront icon for vendors
+                      color: Colors.amber
+                          .shade500, // High-Saturation Amber (text-yellow-500)
+                      size: 20, // 1.25rem x 1.25rem / w-5 h-5
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      Provider.of<LanguageProvider>(context)
+                          .translate('vendors_nearby'),
+                      style: GoogleFonts.poppins(
+                        fontSize: 20, // 1.25rem / text-xl
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                // Threshold Badge: Enhanced premium pill design for consistency
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.3),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    'Within 5km',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.amber.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16), // 1rem gap (space-y-4)
+
+          // EMPTY STATE
+          const SizedBox.shrink(),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3113,12 +3491,15 @@ class _VendorsNearbySection extends StatelessWidget {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 4,
+          itemCount: _vendors.length,
           itemBuilder: (context, index) {
             return Padding(
               padding:
                   const EdgeInsets.only(bottom: 16), // 1rem gap (space-y-4)
-              child: _VendorNearbyCard(primary: primary, index: index),
+              child: _VendorNearbyCard(
+                primary: widget.primary,
+                vendor: _vendors[index],
+              ),
             );
           },
         ),
@@ -3679,23 +4060,16 @@ class _FeaturedAdsSection extends StatelessWidget {
 }
 
 class _VendorNearbyCard extends StatelessWidget {
-  const _VendorNearbyCard({required this.primary, required this.index});
+  const _VendorNearbyCard({
+    required this.primary,
+    required this.vendor,
+  });
 
   final Color primary;
-  final int index;
+  final Map<String, dynamic> vendor;
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Connect to Supabase
-    final List<Map<String, dynamic>> vendors = [];
-
-    // Handle empty vendors list to prevent RangeError
-    if (vendors.isEmpty) {
-      return Container(); // Return empty container if no vendors
-    }
-
-    final vendor = vendors[index % vendors.length];
-
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -3722,7 +4096,14 @@ class _VendorNearbyCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundImage: NetworkImage(vendor['avatar'] as String),
+              backgroundImage: (vendor['avatar'] != null &&
+                      vendor['avatar'].toString().isNotEmpty)
+                  ? NetworkImage(vendor['avatar'].toString())
+                  : null,
+              child: (vendor['avatar'] == null ||
+                      vendor['avatar'].toString().isEmpty)
+                  ? const Icon(Icons.store, color: Colors.white)
+                  : null,
             ),
             const SizedBox(width: 16),
             Expanded(

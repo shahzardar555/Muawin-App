@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:muawin_app/chats_screen.dart';
 import 'package:muawin_app/widgets/bottom_navigation_bar.dart';
 import 'package:muawin_app/service_provider_feed_screen.dart';
@@ -1195,25 +1196,46 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
 
   Future<List<Map<String, String>>> _getEmergencyContacts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final contactsJson = prefs.getString('emergency_contacts');
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return [];
 
-      if (contactsJson != null) {
-        // Parse the JSON string back to list of maps
-        final contactsList = jsonDecode(contactsJson) as List<dynamic>;
-        return contactsList
-            .map((contact) => {
-                  'name': contact['name'] as String? ?? '',
-                  'phone': contact['phone'] as String? ?? '',
-                })
-            .toList();
+      // Get profile_id for this user
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final profileId = profileResp['id']?.toString() ?? '';
+
+      if (profileId.isNotEmpty) {
+        final providerResp = await supabase
+            .from('providers')
+            .select('id')
+            .eq('profile_id', profileId)
+            .maybeSingle();
+
+        final providerId = providerResp?['id']?.toString() ?? '';
+
+        if (providerId.isNotEmpty) {
+          final contactsResp = await supabase
+              .from('emergency_contacts')
+              .select('name, phone_number')
+              .eq('provider_id', providerId);
+
+          return (contactsResp as List)
+              .map((c) => {
+                    'name': c['name']?.toString() ?? '',
+                    'phone': c['phone_number']?.toString() ?? '',
+                  })
+              .toList();
+        }
       }
     } catch (e) {
-      // Handle error silently in production
       debugPrint('Error loading emergency contacts: $e');
     }
 
-    // Return empty list if no contacts found or error occurred
     return [];
   }
 

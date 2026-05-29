@@ -85,15 +85,131 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   }
 
   @override
-  void dispose() {
-    _chatController.dispose();
-    super.dispose();
-  }
-
-  @override
   void initState() {
     super.initState();
     _initializeVendor();
+    _loadChats();
+  }
+
+  Future<void> _loadChats() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get vendor's profile id
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      _currentProfileId = profileResp['id']?.toString() ?? '';
+      if (_currentProfileId.isEmpty) return;
+
+      debugPrint('Vendor chat profile ID: $_currentProfileId');
+
+      // Get threads where vendor is participant_1
+      final threads1 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_1_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Get threads where vendor is participant_2
+      final threads2 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_2_id', _currentProfileId)
+          .order('last_message_at', ascending: false);
+
+      // Combine and deduplicate
+      final Map<String, dynamic> threadMap = {};
+      for (final t in [...threads1, ...threads2]) {
+        threadMap[t['id']?.toString() ?? ''] = t;
+      }
+      final threads = threadMap.values.toList();
+
+      debugPrint('Vendor threads found: ${threads.length}');
+
+      final List<Map<String, dynamic>> chats = [];
+
+      for (final thread in threads) {
+        final threadId = thread['id']?.toString() ?? '';
+
+        // Get the other participant (customer)
+        final otherParticipantId =
+            thread['participant_1_id']?.toString() == _currentProfileId
+                ? thread['participant_2_id']?.toString() ?? ''
+                : thread['participant_1_id']?.toString() ?? '';
+
+        if (otherParticipantId.isEmpty) continue;
+
+        // Get other participant's profile
+        final otherProfile = await supabase
+            .from('profiles')
+            .select('id, full_name, profile_image_url, phone_number, email')
+            .eq('id', otherParticipantId)
+            .maybeSingle();
+
+        if (otherProfile == null) continue;
+
+        // Get last message
+        final lastMessages = await supabase
+            .from('messages')
+            .select('content, created_at, is_read, sender_id')
+            .eq('thread_id', threadId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        String snippet = 'No messages yet';
+        String time = '';
+        bool unread = false;
+
+        if (lastMessages.isNotEmpty) {
+          final last = lastMessages.first;
+          snippet = last['content']?.toString() ?? 'Message';
+          unread = last['is_read'] == false &&
+              last['sender_id']?.toString() != _currentProfileId;
+
+          final createdAt =
+              DateTime.tryParse(last['created_at']?.toString() ?? '');
+          if (createdAt != null) {
+            final now = DateTime.now();
+            final diff = now.difference(createdAt);
+            if (diff.inMinutes < 60) {
+              time = '${diff.inMinutes} min ago';
+            } else if (diff.inHours < 24) {
+              time = '${diff.inHours}h ago';
+            } else {
+              time = '${diff.inDays}d ago';
+            }
+          }
+        }
+
+        chats.add({
+          'id': threadId,
+          'name': otherProfile['full_name']?.toString() ?? 'Customer',
+          'avatar': otherProfile['profile_image_url']?.toString() ?? '',
+          'phone': otherProfile['phone_number']?.toString() ?? '',
+          'email': otherProfile['email']?.toString() ?? '',
+          'snippet': snippet,
+          'time': time,
+          'unread': unread,
+          'isOnline': false,
+          'isNewCustomer': false,
+          'otherParticipantId': otherParticipantId,
+        });
+      }
+
+      debugPrint('Vendor chats built: ${chats.length}');
+
+      // chats list is ready but not yet wired to a UI widget
+    } catch (e) {
+      debugPrint('Error loading vendor chats: $e');
+    }
   }
 
   // Service-based state management
@@ -106,7 +222,11 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
     try {
       final supabase = Supabase.instance.client;
       final user = supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        if (mounted) setState(() => _isLoadingVendorData = false);
+        return;
+      }
+      debugPrint('Vendor init — user: ${user.id}');
 
       // Get profile
       final profile = await supabase
@@ -116,6 +236,8 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
           .single();
 
       _currentProfileId = profile['id'].toString();
+      debugPrint('Vendor init — profile id: $_currentProfileId');
+      debugPrint('Profile image from DB: ${profile['profile_image_url']}');
 
       // Get vendor record
       final vendor = await supabase.from('vendors').select('''
@@ -130,9 +252,17 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
             review_count,
             is_pro,
             years_in_business
-          ''').eq('profile_id', _currentProfileId).single();
+          ''').eq('profile_id', _currentProfileId).maybeSingle();
+      debugPrint('Vendor init — vendor: $vendor');
+
+      if (vendor == null) {
+        debugPrint('No vendor record found for profile: $_currentProfileId');
+        if (mounted) setState(() => _isLoadingVendorData = false);
+        return;
+      }
 
       _currentVendorId = vendor['id'].toString();
+      debugPrint('Vendor init — setting state');
 
       setState(() {
         _vendorData = {
@@ -153,8 +283,10 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
         };
         _isLoadingVendorData = false;
       });
+      debugPrint('Vendor profileImageUrl: ${_vendorData?['profileImageUrl']}');
     } catch (e) {
       debugPrint('Error initializing vendor: $e');
+      debugPrint('Vendor init — caught error: $e');
       setState(() => _isLoadingVendorData = false);
     }
   }
@@ -167,8 +299,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
     await _loadVendorData();
   }
 
-  // Getters for UI - maintain compatibility with existing code
-  // TODO: Connect to Supabase
+  // Getters for UI
   String get _vendorName => _vendorData?['name'] ?? '';
   String get _vendorCategory => _vendorData?['category'] ?? '';
   String get _vendorPhone => _vendorData?['phone'] ?? '';
@@ -248,6 +379,12 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
     setState(() {
       _selectedNavIndex = 0; // Navigate back to dashboard tab
     });
+  }
+
+  @override
+  void dispose() {
+    _chatController.dispose();
+    super.dispose();
   }
 
   @override
@@ -354,6 +491,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
                   currentVendorAddress: _vendorAddress,
                   currentVendorMapsLink: _vendorMapsLink,
                   currentVendorAbout: _vendorAbout,
+                  currentVendorProfileImageUrl: _vendorProfileImageUrl,
                   onStoreNameUpdated: (newName) async {
                     await vendorService.updateVendorField('name', newName);
                     await _refreshVendorData();
@@ -793,74 +931,10 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
   final TextEditingController _searchController = TextEditingController();
   Map<String, dynamic>? _selectedThread;
 
-  final List<Map<String, dynamic>> _threads = [
-    {
-      'name': 'Ahmed Hassan',
-      'avatar': 'https://i.pravatar.cc/150?img=11', // Real male profile
-      'phone': '+92 300 123 4567',
-      'snippet': 'Hi, is same day delivery available?',
-      'time': '2 min ago',
-      'unread': true,
-      'isNewCustomer': false,
-      'isOnline': true,
-      'email': 'ahmed.hassan@email.com',
-    },
-    {
-      'name': 'Sarah Johnson',
-      'avatar': 'https://i.pravatar.cc/150?img=47', // Real female profile
-      'phone': '+92 301 234 5678',
-      'snippet': 'Thanks for the quick response!',
-      'time': '1 hr ago',
-      'unread': false,
-      'isNewCustomer': true,
-      'isOnline': false,
-      'email': 'sarah.j@email.com',
-    },
-    {
-      'name': 'Fatima Ali',
-      'avatar': 'https://i.pravatar.cc/150?img=5', // Real female profile
-      'phone': '+92 302 345 6789',
-      'snippet': 'Can you confirm item availability?',
-      'time': 'Yesterday',
-      'unread': true,
-      'isNewCustomer': false,
-      'isOnline': true,
-      'email': 'fatima.ali@email.com',
-    },
-    {
-      'name': 'Muhammad Khan',
-      'avatar': 'https://i.pravatar.cc/150?img=3', // Real male profile
-      'phone': '+92 303 456 7890',
-      'snippet': 'What are your store hours today?',
-      'time': '2 days ago',
-      'unread': false,
-      'isNewCustomer': true,
-      'isOnline': false,
-      'email': 'm.khan@email.com',
-    },
-    {
-      'name': 'Ayesha Rahman',
-      'avatar': 'https://i.pravatar.cc/150?img=26', // Real female profile
-      'phone': '+92 304 567 8901',
-      'snippet': 'Do you have organic vegetables available?',
-      'time': '3 days ago',
-      'unread': false,
-      'isNewCustomer': false,
-      'isOnline': true,
-      'email': 'ayesha.rahman@email.com',
-    },
-    {
-      'name': 'Omar Farooq',
-      'avatar': 'https://i.pravatar.cc/150?img=13', // Real male profile
-      'phone': '+92 305 678 9012',
-      'snippet': 'The quality was excellent last time!',
-      'time': '1 week ago',
-      'unread': false,
-      'isNewCustomer': false,
-      'isOnline': false,
-      'email': 'omar.f@email.com',
-    },
-  ];
+  // STEP 1: Add these state variables
+  final bool _isLoadingChats = false;
+
+  final List<Map<String, dynamic>> _threads = [];
 
   @override
   void dispose() {
@@ -1284,38 +1358,41 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
                         primary: primary,
                         muted: muted,
                       )
-                    : hasResults
-                        ? ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(24, 16, 24, 96),
-                            itemBuilder: (context, index) {
-                              final t = filtered[index];
-                              final bool unread = t['unread'] as bool;
-                              final bool isNew = t['isNewCustomer'] as bool;
-                              final String name = t['name'] as String;
-                              final String? avatar = t['avatar'] as String?;
-                              final String snippet = t['snippet'] as String;
-                              final String time = t['time'] as String;
+                    : _isLoadingChats
+                        ? const Center(child: CircularProgressIndicator())
+                        : hasResults
+                            ? ListView.separated(
+                                padding:
+                                    const EdgeInsets.fromLTRB(24, 16, 24, 96),
+                                itemBuilder: (context, index) {
+                                  final t = filtered[index];
+                                  final bool unread = t['unread'] as bool;
+                                  final bool isNew = t['isNewCustomer'] as bool;
+                                  final String name = t['name'] as String;
+                                  final String? avatar = t['avatar'] as String?;
+                                  final String snippet = t['snippet'] as String;
+                                  final String time = t['time'] as String;
 
-                              return GestureDetector(
-                                onTap: () =>
-                                    setState(() => _selectedThread = t),
-                                child: _ChatThreadCard(
-                                  name: name,
-                                  avatar: avatar,
-                                  snippet: snippet,
-                                  time: time,
-                                  unread: unread,
-                                  isNewCustomer: isNew,
-                                ),
-                              );
-                            },
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 12),
-                            itemCount: filtered.length,
-                          )
-                        : _ChatsEmptyState(
-                            isSearch: isSearching,
-                          ),
+                                  return GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _selectedThread = t),
+                                    child: _ChatThreadCard(
+                                      name: name,
+                                      avatar: avatar,
+                                      snippet: snippet,
+                                      time: time,
+                                      unread: unread,
+                                      isNewCustomer: isNew,
+                                    ),
+                                  );
+                                },
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 12),
+                                itemCount: filtered.length,
+                              )
+                            : _ChatsEmptyState(
+                                isSearch: isSearching,
+                              ),
               ),
             ],
           ),
@@ -1343,6 +1420,7 @@ class _VendorProfileTab extends StatefulWidget {
     required this.onRatingUpdated,
     required this.onReviewCountUpdated,
     required this.onProfilePictureUpdated,
+    this.currentVendorProfileImageUrl,
   });
 
   final String currentVendorName;
@@ -1351,6 +1429,7 @@ class _VendorProfileTab extends StatefulWidget {
   final String currentVendorAddress;
   final String currentVendorMapsLink;
   final String currentVendorAbout;
+  final String? currentVendorProfileImageUrl;
   final Function(String) onStoreNameUpdated;
   final Function(String) onCategoryUpdated;
   final Function(String) onPhoneUpdated;
@@ -1545,64 +1624,108 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                                 ),
                               ],
                             ),
-                            child: _imageFile != null || _imageUrl != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(24),
-                                    child: kIsWeb && _imageUrl != null
-                                        ? Image.network(
-                                            _imageUrl!,
-                                            width: 96,
-                                            height: 96,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                              return Container(
-                                                width: 96,
-                                                height: 96,
-                                                decoration: BoxDecoration(
-                                                  color: primary.withValues(
-                                                      alpha: 0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(24),
-                                                ),
-                                                child: Icon(
-                                                  Icons.store_rounded,
-                                                  size: 44,
-                                                  color: primary,
-                                                ),
-                                              );
-                                            },
-                                          )
-                                        : Image.file(
-                                            _imageFile!,
-                                            width: 96,
-                                            height: 96,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                              return Container(
-                                                width: 96,
-                                                height: 96,
-                                                decoration: BoxDecoration(
-                                                  color: primary.withValues(
-                                                      alpha: 0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(24),
-                                                ),
-                                                child: Icon(
-                                                  Icons.store_rounded,
-                                                  size: 44,
-                                                  color: primary,
-                                                ),
-                                              );
-                                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: _imageFile != null
+                                  ? Image.file(
+                                      _imageFile!,
+                                      width: 96,
+                                      height: 96,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Container(
+                                          width: 96,
+                                          height: 96,
+                                          decoration: BoxDecoration(
+                                            color:
+                                                primary.withValues(alpha: 0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(24),
                                           ),
-                                  )
-                                : Icon(
-                                    Icons.store_rounded,
-                                    size: 44,
-                                    color: primary,
-                                  ),
+                                          child: Icon(
+                                            Icons.store_rounded,
+                                            size: 44,
+                                            color: primary,
+                                          ),
+                                        );
+                                      },
+                                    )
+                                  : _imageUrl != null && _imageUrl!.isNotEmpty
+                                      ? Image.network(
+                                          _imageUrl!,
+                                          width: 96,
+                                          height: 96,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return Container(
+                                              width: 96,
+                                              height: 96,
+                                              decoration: BoxDecoration(
+                                                color: primary.withValues(
+                                                    alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(24),
+                                              ),
+                                              child: Icon(
+                                                Icons.store_rounded,
+                                                size: 44,
+                                                color: primary,
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : widget.currentVendorProfileImageUrl !=
+                                                  null &&
+                                              widget
+                                                  .currentVendorProfileImageUrl!
+                                                  .isNotEmpty &&
+                                              widget
+                                                  .currentVendorProfileImageUrl!
+                                                  .startsWith('http')
+                                          ? Image.network(
+                                              widget
+                                                  .currentVendorProfileImageUrl!,
+                                              width: 96,
+                                              height: 96,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                return Container(
+                                                  width: 96,
+                                                  height: 96,
+                                                  decoration: BoxDecoration(
+                                                    color: primary.withValues(
+                                                        alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            24),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.store_rounded,
+                                                    size: 44,
+                                                    color: primary,
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : Container(
+                                              width: 96,
+                                              height: 96,
+                                              decoration: BoxDecoration(
+                                                color: primary.withValues(
+                                                    alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(24),
+                                              ),
+                                              child: Icon(
+                                                Icons.store_rounded,
+                                                size: 44,
+                                                color: primary,
+                                              ),
+                                            ),
+                            ),
                           ),
                           Positioned(
                             right: 0,
@@ -1712,7 +1835,12 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                       onMapsLinkUpdated: widget.onMapsLinkUpdated,
                       onAboutUpdated: widget.onAboutUpdated,
                       onRatingUpdated: widget.onRatingUpdated,
-                      onReviewCountUpdated: widget.onReviewCountUpdated),
+                      onReviewCountUpdated: widget.onReviewCountUpdated,
+                      initialName: widget.currentVendorName,
+                      initialPhone: widget.currentVendorPhone,
+                      initialAddress: widget.currentVendorAddress,
+                      initialMapsLink: widget.currentVendorMapsLink,
+                      initialAbout: widget.currentVendorAbout),
                 ),
                 const SizedBox(height: 8),
                 _ProfileMenuItem(
@@ -1747,26 +1875,20 @@ class _VendorProfileTabState extends State<_VendorProfileTab> {
                 const SizedBox(height: 32),
                 // Logout button
                 OutlinedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Signed out successfully!',
-                          style: GoogleFonts.poppins(color: Colors.white),
+                  onPressed: () async {
+                    try {
+                      await Supabase.instance.client.auth.signOut();
+                    } catch (e) {
+                      debugPrint('Logout error: $e');
+                    }
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const LogoutSplashScreen(),
                         ),
-                        backgroundColor: Colors.red,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    );
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const LogoutSplashScreen(),
-                      ),
-                      (route) => false,
-                    );
+                        (route) => false,
+                      );
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFDC2626),
@@ -1965,7 +2087,12 @@ void _showStoreInformationSheet(BuildContext context,
     Function(String)? onMapsLinkUpdated,
     Function(String)? onAboutUpdated,
     Function(String)? onRatingUpdated,
-    Function(int)? onReviewCountUpdated}) {
+    Function(int)? onReviewCountUpdated,
+    String? initialName,
+    String? initialPhone,
+    String? initialAddress,
+    String? initialMapsLink,
+    String? initialAbout}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1979,6 +2106,11 @@ void _showStoreInformationSheet(BuildContext context,
       onAboutUpdated: onAboutUpdated,
       onRatingUpdated: onRatingUpdated,
       onReviewCountUpdated: onReviewCountUpdated,
+      initialName: initialName,
+      initialPhone: initialPhone,
+      initialAddress: initialAddress,
+      initialMapsLink: initialMapsLink,
+      initialAbout: initialAbout,
     ),
   );
 }
@@ -1992,7 +2124,12 @@ class _StoreInformationSheet extends StatefulWidget {
       this.onMapsLinkUpdated,
       this.onAboutUpdated,
       this.onRatingUpdated,
-      this.onReviewCountUpdated});
+      this.onReviewCountUpdated,
+      this.initialName,
+      this.initialPhone,
+      this.initialAddress,
+      this.initialMapsLink,
+      this.initialAbout});
 
   final Function(String)? onStoreNameUpdated;
   final Function(String)? onCategoryUpdated;
@@ -2002,19 +2139,34 @@ class _StoreInformationSheet extends StatefulWidget {
   final Function(String)? onAboutUpdated;
   final Function(String)? onRatingUpdated;
   final Function(int)? onReviewCountUpdated;
+  final String? initialName;
+  final String? initialPhone;
+  final String? initialAddress;
+  final String? initialMapsLink;
+  final String? initialAbout;
 
   @override
   State<_StoreInformationSheet> createState() => _StoreInformationSheetState();
 }
 
 class _StoreInformationSheetState extends State<_StoreInformationSheet> {
-  final _businessNameController = TextEditingController(text: 'Muawin Store');
-  final _phoneController = TextEditingController(text: '+923001234567');
-  final _addressController = TextEditingController(text: 'Gulberg III, Lahore');
-  final _mapsController = TextEditingController(
-      text: 'https://maps.google.com/?q=Gulberg+III+Lahore');
-  final _aboutController = TextEditingController(
-      text: 'Fresh groceries and daily essentials delivered to your doorstep.');
+  late final TextEditingController _businessNameController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _addressController;
+  late final TextEditingController _mapsController;
+  late final TextEditingController _aboutController;
+
+  @override
+  void initState() {
+    super.initState();
+    _businessNameController =
+        TextEditingController(text: widget.initialName ?? '');
+    _phoneController = TextEditingController(text: widget.initialPhone ?? '');
+    _addressController =
+        TextEditingController(text: widget.initialAddress ?? '');
+    _mapsController = TextEditingController(text: widget.initialMapsLink ?? '');
+    _aboutController = TextEditingController(text: widget.initialAbout ?? '');
+  }
 
   bool _isLoading = false;
 
@@ -2032,19 +2184,6 @@ class _StoreInformationSheetState extends State<_StoreInformationSheet> {
     setState(() => _isLoading = true);
 
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
-
-      // In a real app, you would call your API here
-      // await vendorService.updateStoreInformation({
-      //   'businessName': _businessNameController.text,
-      //   'category': _categoryController.text,
-      //   'phone': _phoneController.text,
-      //   'address': _addressController.text,
-      //   'mapsLink': _mapsController.text,
-      //   'about': _aboutController.text,
-      // });
-
       if (mounted) {
         _showSuccess('Store information updated successfully!');
 
@@ -3023,43 +3162,38 @@ class _ChatThreadCard extends StatelessWidget {
               child: Stack(
                 children: [
                   // Profile picture or fallback
-                  avatar != null
-                      ? ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(_kProfileSize / 2),
-                          child: Image.network(
-                            avatar!,
-                            width: _kProfileSize,
-                            height: _kProfileSize,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: _kProfileSize,
-                                height: _kProfileSize,
-                                decoration: BoxDecoration(
-                                  color: primary.withValues(alpha: 0.1),
-                                  borderRadius:
-                                      BorderRadius.circular(_kProfileSize / 2),
-                                ),
-                                child: Icon(
-                                  Icons.person_rounded,
-                                  size: _kProfileSize * 0.5,
-                                  color: primary,
-                                ),
-                              );
-                            },
+                  Container(
+                    width: _kProfileSize,
+                    height: _kProfileSize,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        width: 1,
+                      ),
+                      image: (avatar != null &&
+                              avatar.toString().isNotEmpty &&
+                              avatar.toString().startsWith('http'))
+                          ? DecorationImage(
+                              image: NetworkImage(avatar.toString()),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                  ),
+                  (avatar == null ||
+                          avatar.toString().isEmpty ||
+                          !avatar.toString().startsWith('http'))
+                      ? Center(
+                          child: Icon(
+                            Icons.person_rounded,
+                            size: _kProfileSize * 0.5,
+                            color: primary,
                           ),
                         )
-                      : Center(
-                          child: Text(
-                            _initialsFromName(name),
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: primary,
-                            ),
-                          ),
-                        ),
+                      : const SizedBox
+                          .shrink(), // Empty box when avatar is valid
                   // Unread indicator
                   if (unread)
                     Positioned(
@@ -3145,12 +3279,6 @@ class _ChatThreadCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _initialsFromName(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
   }
 }
 
