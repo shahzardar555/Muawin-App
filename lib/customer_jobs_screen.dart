@@ -30,6 +30,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   bool _hasError = false;
   String? _customerId;
   Timer? _jobStatusTimer;
+  RealtimeChannel? _jobsChannel;
 
   @override
   void initState() {
@@ -69,26 +70,86 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     }
   }
 
-  Future<void> _checkAndActivateJobs() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final now = DateTime.now();
-      final today =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  void _subscribeToJobUpdates() {
+    if (_customerId == null) return;
+    _jobsChannel = Supabase.instance.client
+        .channel('customer_jobs:$_customerId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'jobs',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'customer_id',
+            value: _customerId!,
+          ),
+          callback: (payload) {
+            debugPrint('Job updated — refreshing customer jobs');
+            _loadJobs();
+          },
+        )
+        .subscribe();
+  }
 
-      // Activate jobs whose scheduled time has arrived
-      await supabase
+  Future<void> _checkAndActivateJobs() async {
+    if (_customerId == null) return;
+    try {
+      final now = DateTime.now();
+      final supabase = Supabase.instance.client;
+
+      // Get all scheduled jobs for this customer
+      final scheduledJobs = await supabase
           .from('jobs')
-          .update({
+          .select('id, scheduled_date, scheduled_time')
+          .eq('customer_id', _customerId!)
+          .eq('status', 'scheduled')
+          .not('provider_id', 'is', null);
+
+      for (final job in scheduledJobs) {
+        final dateStr = job['scheduled_date']?.toString() ?? '';
+        final timeStr = job['scheduled_time']?.toString() ?? '';
+
+        if (dateStr.isEmpty) continue;
+
+        DateTime? scheduledDateTime;
+        try {
+          if (timeStr.isNotEmpty) {
+            // Parse date + time together
+            final timeParts = timeStr.split(':');
+            final hour = int.tryParse(timeParts[0]) ?? 0;
+            final minute =
+                timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+            final dateParts = dateStr.split('-');
+            scheduledDateTime = DateTime(
+              int.parse(dateParts[0]),
+              int.parse(dateParts[1]),
+              int.parse(dateParts[2]),
+              hour,
+              minute,
+            );
+          } else {
+            // No time — activate at start of scheduled date
+            final dateParts = dateStr.split('-');
+            scheduledDateTime = DateTime(
+              int.parse(dateParts[0]),
+              int.parse(dateParts[1]),
+              int.parse(dateParts[2]),
+            );
+          }
+        } catch (e) {
+          continue;
+        }
+
+        // Only activate if scheduled datetime has passed
+        if (now.isAfter(scheduledDateTime)) {
+          await supabase.from('jobs').update({
             'status': 'active',
             'updated_at': now.toIso8601String(),
-          })
-          .eq('customer_id', _customerId ?? '')
-          .eq('status', 'scheduled')
-          .not('provider_id', 'is', null)
-          .lte('scheduled_date', today);
+          }).eq('id', job['id']);
+        }
+      }
 
-      // Reload jobs to reflect changes
+      // Refresh UI after any updates
       await _loadJobs();
     } catch (e) {
       debugPrint('Error checking job activation: $e');
@@ -174,18 +235,17 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         return;
       }
 
+      // Subscribe to real-time job updates (safe to call multiple times)
+      _subscribeToJobUpdates();
+
       // Load all jobs for this customer
       final allJobs = await Supabase.instance.client
           .from('jobs')
           .select("""
-          id,
-          status,
-          scheduled_date,
-          scheduled_time,
-          created_at,
-          service_category,
-          location,
-          description,
+          id, title, status, scheduled_date, scheduled_time, 
+          created_at, updated_at, service_category, location, 
+          description, total_amount, cancel_reason, 
+          cancel_description, cancel_date, completion_date,
           providers(
             id,
             service_category,
@@ -367,6 +427,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
 
   @override
   void dispose() {
+    _jobsChannel?.unsubscribe();
     _jobStatusTimer?.cancel();
     _tabController.dispose();
     super.dispose();

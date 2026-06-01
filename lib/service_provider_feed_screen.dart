@@ -587,6 +587,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
             status,
             scheduled_date,
             scheduled_time,
+            total_amount,
             created_at,
             customer_id,
             customers!inner(
@@ -638,6 +639,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
         }
         if (locationDisplay.isEmpty) locationDisplay = 'Location TBD';
 
+        final totalAmount = job['total_amount']?.toString() ?? '0';
         return {
           'id': shortId,
           'supabase_id': jobId,
@@ -646,8 +648,9 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
           'details': job['description']?.toString() ??
               job['title']?.toString() ??
               'Service requested',
-          'budget': '0',
-          'price': 'Negotiable',
+          'budget': totalAmount,
+          'price': totalAmount != '0' ? 'Rs. $totalAmount' : 'Negotiable',
+          'proposed_price': totalAmount,
           'location': locationDisplay,
           'distance': locationDisplay,
           'date': scheduledDate,
@@ -1138,6 +1141,11 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                               'scheduled_time':
                                                   job['time'] ?? '',
                                               'status': 'scheduled',
+                                              'total_amount': double.tryParse(
+                                                      job['proposed_price']
+                                                              ?.toString() ??
+                                                          '0') ??
+                                                  0.0,
                                             });
                                           }
                                         } catch (e) {

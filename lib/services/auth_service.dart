@@ -95,7 +95,10 @@ class AuthService {
   /// Reset password for email
   Future<void> resetPassword(String email) async {
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      await _supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'muawin://reset-password',
+      );
     } catch (e) {
       throw Exception('Password reset failed: ${e.toString()}');
     }

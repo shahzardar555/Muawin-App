@@ -464,6 +464,10 @@ class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
                                                     null
                                                 ? '${widget.selectedTime!.hour.toString().padLeft(2, '0')}:${widget.selectedTime!.minute.toString().padLeft(2, '0')}:00'
                                                 : null,
+                                            'total_amount': double.tryParse(
+                                                    widget.price?.toString() ??
+                                                        '0') ??
+                                                0.0,
                                           });
 
                                           debugPrint(

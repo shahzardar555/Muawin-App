@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:app_links/app_links.dart';
 import 'splash_screen.dart';
 import 'customer_home_screen.dart';
 import 'theme_provider.dart';
@@ -9,8 +10,8 @@ import 'language_provider.dart';
 import 'services/notification_manager.dart';
 import 'services/featured_ad_manager.dart';
 import 'screens/notification_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'config/supabase_config.dart';
+import 'update_password_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,28 +21,6 @@ void main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
-
-  // Handle async errors not caught by Flutter
-  List<String> errorLog = [];
-
-  void logError(String error) async {
-    final prefs = await SharedPreferences.getInstance();
-    errorLog.add(error);
-    await prefs.setStringList('error_log', errorLog);
-  }
-
-  // Load previous error log
-  final prefs = await SharedPreferences.getInstance();
-  errorLog = prefs.getStringList('error_log') ?? [];
-
-  // Add global error handling to prevent crashes
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.dumpErrorToConsole(details);
-    // Log error but don't crash the app
-    final errorStr = 'Flutter Error: ${details.exception}\n${details.stack}';
-    debugPrint(errorStr);
-    logError(errorStr);
-  };
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -65,14 +44,43 @@ void main() async {
   );
 }
 
-class MuawinApp extends StatelessWidget {
+class MuawinApp extends StatefulWidget {
   const MuawinApp({super.key});
+
+  @override
+  State<MuawinApp> createState() => _MuawinAppState();
+}
+
+class _MuawinAppState extends State<MuawinApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  late final AppLinks _appLinks;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  Future<void> _initDeepLinks() async {
+    _appLinks = AppLinks();
+    _appLinks.uriLinkStream.listen((uri) {
+      if (uri.scheme == 'muawin' && uri.host == 'reset-password') {
+        _navigatorKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => const UpdatePasswordScreen(),
+          ),
+          (route) => false,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           title: 'Muawin',
           debugShowCheckedModeBanner: false,
           theme: themeProvider.currentTheme,

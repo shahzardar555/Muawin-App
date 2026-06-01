@@ -1039,6 +1039,7 @@ class _ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<_ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final AuthService _authService = AuthService();
   bool _isLoading = false;
   bool _emailSent = false;
 
@@ -1225,22 +1226,38 @@ class _ForgotPasswordScreenState extends State<_ForgotPasswordScreen> {
   void _sendResetEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Haptic feedback
     HapticFeedback.lightImpact();
 
     setState(() => _isLoading = true);
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      await _authService.resetPassword(_emailController.text.trim());
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _isLoading = false;
-      _emailSent = true;
-    });
+      setState(() {
+        _isLoading = false;
+        _emailSent = true;
+      });
 
-    // Show success feedback
-    HapticFeedback.mediumImpact();
+      HapticFeedback.mediumImpact();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().contains('user not found') ||
+                    e.toString().contains('invalid')
+                ? 'No account found with this email address.'
+                : 'Failed to send reset email. Please try again.',
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 }

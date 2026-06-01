@@ -31,6 +31,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
   bool _isLoading = true;
   String _currentProviderId = '';
   Timer? _statusCheckTimer;
+  RealtimeChannel? _jobsChannel;
 
   // State management for jobs loaded from Supabase
   List<Map<String, dynamic>> activeJobs = [];
@@ -46,6 +47,27 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       const Duration(seconds: 60),
       (_) => _checkAndPromoteJobs(),
     );
+  }
+
+  void _subscribeToJobUpdates() {
+    if (_currentProviderId.isEmpty) return;
+    _jobsChannel = Supabase.instance.client
+        .channel('provider_jobs:$_currentProviderId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'jobs',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'provider_id',
+            value: _currentProviderId,
+          ),
+          callback: (payload) {
+            debugPrint('Job updated — refreshing provider jobs');
+            _loadJobs();
+          },
+        )
+        .subscribe();
   }
 
   Future<void> _initializeAndLoad() async {
@@ -78,6 +100,9 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       // Load jobs from Supabase
       await _loadJobs();
 
+      // Subscribe to real-time job updates
+      _subscribeToJobUpdates();
+
       // Check for jobs that need promotion immediately on screen open
       await _checkAndPromoteJobs();
     } catch (e) {
@@ -100,7 +125,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
             id, title, service_category, status, scheduled_date,
             scheduled_time, location, city, area, description, created_at,
             customer_id, cancel_reason, cancel_description, cancel_date,
-            completion_date,
+            completion_date, total_amount,
             customers!inner(
               profile_id,
               profiles!inner(full_name, profile_image_url, phone_number)
@@ -154,8 +179,10 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
           'scheduledDate': scheduledDate,
           'scheduledTime': scheduledTime,
           'status': job['status']?.toString() ?? 'scheduled',
-          'price': 'Negotiable',
-          'budget': '0',
+          'price': job['total_amount'] != null
+              ? 'PKR ${job['total_amount']}'
+              : 'Negotiable',
+          'budget': job['total_amount']?.toString() ?? '0',
           'customer': customerName,
           'name': customerName,
           'customer_id': job['customer_id']?.toString() ?? '',
@@ -203,6 +230,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
 
   @override
   void dispose() {
+    _jobsChannel?.unsubscribe();
     _statusCheckTimer?.cancel();
     super.dispose();
   }

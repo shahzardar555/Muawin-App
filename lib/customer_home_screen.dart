@@ -861,14 +861,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
+        // Local state for the Lahore area search (persists across setSheetState calls)
+        final List<String> searchResults = <String>[];
+        bool isSearching = false;
+        final TextEditingController searchController = TextEditingController();
+
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            // Local state for the Lahore area search
-            final List<String> searchResults = <String>[];
-            bool isSearching = false;
-            final TextEditingController searchController =
-                TextEditingController();
-
             // Search function
             Future<void> searchLocation(String query) async {
               if (!context.mounted) return;

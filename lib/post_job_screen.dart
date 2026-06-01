@@ -1040,6 +1040,8 @@ class _PostJobScreenState extends State<PostJobScreen> {
             'scheduled_time': _selectedTime != null
                 ? '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00'
                 : null,
+            'total_amount':
+                double.tryParse(_budgetController.text.trim()) ?? 0.0,
           })
           .select('id')
           .single();
