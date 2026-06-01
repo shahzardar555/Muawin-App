@@ -388,6 +388,7 @@ class _CustomerVendorProfileScreenState
                         'Very responsive seller',
                         'Exactly as described great value',
                       ],
+                      profileId: _vendorData?['id']?.toString() ?? '',
                       isVendor: true,
                     ),
                   const SizedBox(height: 24),

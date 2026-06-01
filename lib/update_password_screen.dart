@@ -93,8 +93,8 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
           const SizedBox(height: 8),
           Text(
             'Enter your new password below.',
-            style:
-                TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7), fontSize: 16),
           ),
           const SizedBox(height: 40),
           TextFormField(
@@ -103,10 +103,11 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               labelText: 'New Password',
-              labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+              labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                borderSide:
+                    BorderSide(color: Colors.white.withValues(alpha: 0.3)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -123,7 +124,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha: 0.7),
                 ),
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),
@@ -144,10 +145,11 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               labelText: 'Confirm New Password',
-              labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+              labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                borderSide:
+                    BorderSide(color: Colors.white.withValues(alpha: 0.3)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -164,7 +166,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha: 0.7),
                 ),
                 onPressed: () =>
                     setState(() => _obscureConfirm = !_obscureConfirm),
@@ -216,7 +218,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.2),
+              color: Colors.green.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
             child:
@@ -235,8 +237,8 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
           Text(
             'Your password has been successfully updated. Please login with your new password.',
             textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7), fontSize: 16),
           ),
           const SizedBox(height: 40),
           SizedBox(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class SemanticAnalysisCard extends StatefulWidget {
   final String providerName;
@@ -9,6 +11,7 @@ class SemanticAnalysisCard extends StatefulWidget {
   final String category;
   final List<String> recentReviews;
   final bool isVendor;
+  final String profileId;
 
   const SemanticAnalysisCard({
     super.key,
@@ -18,6 +21,7 @@ class SemanticAnalysisCard extends StatefulWidget {
     required this.totalJobs,
     required this.category,
     required this.recentReviews,
+    required this.profileId,
     this.isVendor = false,
   });
 
@@ -65,18 +69,10 @@ class _SemanticAnalysisCardState extends State<SemanticAnalysisCard>
 
     _entranceController.forward();
 
-    // Start shimmer and show analysis after delay
+    // Start shimmer and fetch analysis from API
     if (widget.totalReviews > 0) {
       _shimmerController.repeat();
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) {
-          setState(() {
-            _showShimmer = false;
-            _analysisText = _generateMockAnalysis();
-          });
-          _confidenceController.forward();
-        }
-      });
+      _fetchAIAnalysis();
     }
   }
 
@@ -88,23 +84,49 @@ class _SemanticAnalysisCardState extends State<SemanticAnalysisCard>
     super.dispose();
   }
 
-  String _generateMockAnalysis() {
-    final name = widget.providerName;
-    final rating = widget.overallRating;
-    final reviews = widget.totalReviews;
-    final jobs = widget.totalJobs;
-    final category = widget.category;
-    final professional = widget.isVendor ? 'vendor' : 'professional';
-    final jobText = widget.isVendor ? 'orders' : 'jobs';
+  Future<void> _fetchAIAnalysis() async {
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:3001/api/ai/analyze-profile'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'profileId': widget.profileId,
+          'profileType': widget.isVendor ? 'vendor' : 'provider',
+        }),
+      );
 
-    if (rating >= 4.5 && reviews >= 20) {
-      return '$name stands out as one of the most trusted $category $professional on Muawin, maintaining an exceptional $rating-star rating across $jobs completed $jobText. Customer reviews consistently highlight their reliability, professional conduct, and high quality of work. Their strong track record suggests a low-risk booking with high satisfaction likelihood. Muawin AI confidently recommends this $professional.';
-    } else if (rating >= 4.5 && reviews < 20) {
-      return '$name is a promising $category $professional with an impressive $rating-star rating in their early Muawin journey. While their review count is still growing, existing customers speak highly of their work quality and punctuality. Their strong start suggests a reliable choice for customers willing to support emerging talent. Early indicators are very positive.';
-    } else if (rating >= 3.5) {
-      return '$name is a capable $category $professional with a solid $rating-star rating from $reviews customer reviews. Analysis of their feedback reveals consistent performance with occasional areas for improvement. Most customers report satisfactory experiences with their service. A reasonable choice with generally positive customer sentiment.';
-    } else {
-      return '$name\'s current $rating-star rating from $reviews reviews suggests mixed customer experiences. While some customers report satisfactory service, others have noted areas needing improvement. Muawin AI recommends reviewing individual feedback carefully before booking. Consider reaching out to the $professional directly to discuss your specific requirements.';
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && mounted) {
+          setState(() {
+            _analysisText = data['analysis'] ?? 'Analysis not available.';
+            _showShimmer = false;
+          });
+          _confidenceController.forward();
+        } else {
+          if (mounted) {
+            setState(() {
+              _analysisText = 'Unable to generate analysis at this time.';
+              _showShimmer = false;
+            });
+          }
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _analysisText = 'Analysis service temporarily unavailable.';
+            _showShimmer = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('AI analysis error: $e');
+      if (mounted) {
+        setState(() {
+          _analysisText = 'Could not connect to analysis service.';
+          _showShimmer = false;
+        });
+      }
     }
   }
 

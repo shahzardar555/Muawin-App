@@ -1028,6 +1028,7 @@ class _CustomerProviderProfileScreenState
                         'Excellent service highly recommend',
                         'Clean and well maintained vehicle',
                       ],
+                      profileId: _provider?['id']?.toString() ?? '',
                       isVendor: false,
                     ),
                   const SizedBox(height: 16),
