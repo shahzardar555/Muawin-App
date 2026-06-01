@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -37,7 +38,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   String selectedPackage = 'basic';
   DateTime? selectedDate;
   String selectedTime = '';
-  double proposedPrice = 800.0;
+  double proposedPrice = 800;
   String specialInstructions = '';
   String negotiationNote = '';
   final TextEditingController _cityController = TextEditingController();
@@ -46,10 +47,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
 
   // PRO-only options
   String? _selectedDurationType; // 'days', 'weeks', 'months'
-  bool _isPriorityResponse = false;
-  bool _isNDARequired = false;
-  double? _customBudgetMin;
-  double? _customBudgetMax;
+  String? _selectedJobType; // 'one_time' or 'hiring'
 
   // Payment method data
   String selectedPaymentMethod = '';
@@ -63,6 +61,11 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   // Loading states
   bool isLoading = false;
   bool isSuccess = false;
+
+  // Real package prices loaded from Supabase
+  double _basicPrice = 800;
+  double _standardPrice = 1200;
+  double _premiumPrice = 1800;
 
   // Package data
   final Map<String, Map<String, dynamic>> packageData = {
@@ -131,6 +134,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     _pulseController.repeat(reverse: true);
     proposedPrice = packageData['basic']!['price'];
     _checkProStatus();
+    _loadPackagePrices();
   }
 
   // Check if user is a PRO user
@@ -140,6 +144,45 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       setState(() {
         _isProUser = isPro;
       });
+    }
+  }
+
+  // Load real package prices from Supabase service_pricing_packages table
+  Future<void> _loadPackagePrices() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final providerId = widget.providerData['id']?.toString() ?? '';
+      if (providerId.isEmpty) return;
+
+      final packages = await supabase
+          .from('service_pricing_packages')
+          .select('package_type, price')
+          .eq('provider_id', providerId)
+          .eq('is_active', true);
+
+      if (mounted) {
+        setState(() {
+          for (final pkg in packages) {
+            final type = pkg['package_type']?.toString() ?? '';
+            final price = double.tryParse(pkg['price']?.toString() ?? '0') ?? 0;
+            if (type == 'basic' && price > 0) _basicPrice = price;
+            if (type == 'standard' && price > 0) _standardPrice = price;
+            if (type == 'premium' && price > 0) _premiumPrice = price;
+          }
+          // Update packageData map with real prices
+          packageData['basic']!['price'] = _basicPrice;
+          packageData['standard']!['price'] = _standardPrice;
+          packageData['premium']!['price'] = _premiumPrice;
+          // Update proposed price if it was using default fallback
+          if (proposedPrice == 800 ||
+              proposedPrice == 1200 ||
+              proposedPrice == 1800) {
+            proposedPrice = _basicPrice;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading package prices: $e');
     }
   }
 
@@ -205,6 +248,23 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       'Dec'
     ];
     return months[month - 1];
+  }
+
+  /// Converts 12-hour time format (e.g. "2:00 PM") to 24-hour PostgreSQL TIME format (e.g. "14:00:00")
+  String _convertTo24Hour(String time12h) {
+    try {
+      final parts = time12h.trim().split(' ');
+      if (parts.length != 2) return time12h;
+      final timeParts = parts[0].split(':');
+      int hour = int.parse(timeParts[0]);
+      final minute = timeParts.length > 1 ? timeParts[1] : '00';
+      final period = parts[1].toUpperCase();
+      if (period == 'PM' && hour != 12) hour += 12;
+      if (period == 'AM' && hour == 12) hour = 0;
+      return '${hour.toString().padLeft(2, '0')}:$minute:00';
+    } catch (e) {
+      return time12h;
+    }
   }
 
   void _nextStep() {
@@ -295,16 +355,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
         'scheduled_date': selectedDate != null
             ? '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'
             : null,
-        'scheduled_time': selectedTime.isNotEmpty ? selectedTime : null,
+        'scheduled_time':
+            selectedTime.isNotEmpty ? _convertTo24Hour(selectedTime) : null,
         'special_instructions':
             specialInstructions.isNotEmpty ? specialInstructions : null,
         'negotiation_notes':
             negotiationNote.isNotEmpty ? negotiationNote : null,
         'duration_type': _selectedDurationType,
-        'is_priority_response': _isPriorityResponse,
-        'is_nda_required': _isNDARequired,
-        'custom_budget_min': _customBudgetMin,
-        'custom_budget_max': _customBudgetMax,
         'city': _cityController.text.trim().isNotEmpty
             ? _cityController.text.trim()
             : null,
@@ -333,6 +390,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           title: '🎯 New Job Request!',
           body: 'A customer has sent you a direct job request',
           priority: nm.NotificationPriority.high,
+          receiverProfileId: widget.providerData['profile_id']?.toString(),
         );
 
         notificationManager.sendNotification(
@@ -342,6 +400,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           title: '✅ Request Sent Successfully!',
           body: 'Your job request has been sent to the provider',
           priority: nm.NotificationPriority.medium,
+          receiverProfileId: profile['id']?.toString(),
         );
       } catch (e) {
         debugPrint('Error sending notifications: $e');
@@ -732,221 +791,83 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
           const SizedBox(height: 16),
 
-          // Custom Budget Range
-          Text(
-            'Custom Budget Range',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: Colors.grey.shade600,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Min',
-                    hintStyle: GoogleFonts.poppins(fontSize: 12),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  onChanged: (value) {
-                    _customBudgetMin = double.tryParse(value);
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'to',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Max',
-                    hintStyle: GoogleFonts.poppins(fontSize: 12),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  onChanged: (value) {
-                    _customBudgetMax = double.tryParse(value);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Duration Type Selection
-          Text(
-            'Duration Type',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: Colors.grey.shade600,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Job Type Selection (One-time Job / Hiring)
           Row(
             children: [
               _buildDurationOption(
-                label: 'Days',
-                value: 'days',
-                selected: _selectedDurationType == 'days',
+                label: 'One-time Job',
+                value: 'one_time',
+                selected: _selectedJobType == 'one_time',
                 onTap: () {
                   setState(() {
-                    _selectedDurationType = 'days';
+                    _selectedJobType = 'one_time';
                   });
                 },
               ),
               const SizedBox(width: 8),
               _buildDurationOption(
-                label: 'Weeks',
-                value: 'weeks',
-                selected: _selectedDurationType == 'weeks',
+                label: 'Hiring',
+                value: 'hiring',
+                selected: _selectedJobType == 'hiring',
                 onTap: () {
                   setState(() {
-                    _selectedDurationType = 'weeks';
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              _buildDurationOption(
-                label: 'Months',
-                value: 'months',
-                selected: _selectedDurationType == 'months',
-                onTap: () {
-                  setState(() {
-                    _selectedDurationType = 'months';
+                    _selectedJobType = 'hiring';
                   });
                 },
               ),
             ],
           ),
-          const SizedBox(height: 16),
 
-          // Priority Response Toggle
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Row(
+          // Show Duration Type only when Hiring is selected
+          if (_selectedJobType == 'hiring') ...[
+            const SizedBox(height: 16),
+            Text(
+              'Duration Type',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: Colors.grey.shade600,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                Text(
-                  'Priority Response',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
+                _buildDurationOption(
+                  label: 'Days',
+                  value: 'days',
+                  selected: _selectedDurationType == 'days',
+                  onTap: () {
+                    setState(() {
+                      _selectedDurationType = 'days';
+                    });
+                  },
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'PRO',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFFFD700),
-                    ),
-                  ),
+                _buildDurationOption(
+                  label: 'Weeks',
+                  value: 'weeks',
+                  selected: _selectedDurationType == 'weeks',
+                  onTap: () {
+                    setState(() {
+                      _selectedDurationType = 'weeks';
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                _buildDurationOption(
+                  label: 'Months',
+                  value: 'months',
+                  selected: _selectedDurationType == 'months',
+                  onTap: () {
+                    setState(() {
+                      _selectedDurationType = 'months';
+                    });
+                  },
                 ),
               ],
             ),
-            subtitle: Text(
-              'Get faster response from provider',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            value: _isPriorityResponse,
-            onChanged: (value) {
-              setState(() {
-                _isPriorityResponse = value;
-              });
-            },
-            activeTrackColor: const Color(0xFF047A62),
-          ),
-          const SizedBox(height: 8),
-
-          // NDA Toggle
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Row(
-              children: [
-                Text(
-                  'Confidentiality Agreement',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'PRO',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFFFD700),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            subtitle: Text(
-              'Request NDA for sensitive work',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            value: _isNDARequired,
-            onChanged: (value) {
-              setState(() {
-                _isNDARequired = value;
-              });
-            },
-            activeTrackColor: const Color(0xFF047A62),
-          ),
+          ],
         ],
       ),
     );
@@ -1521,9 +1442,12 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               // Animated fill bar
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                width: (proposedPrice / maxPrice) *
-                        MediaQuery.of(context).size.width -
-                    64,
+                width: max(
+                  0.0,
+                  (proposedPrice / maxPrice) *
+                          MediaQuery.of(context).size.width -
+                      64,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF047A62),
                   borderRadius: BorderRadius.circular(20),
@@ -2566,16 +2490,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (_customBudgetMin != null || _customBudgetMax != null) ...[
-                    Text(
-                      'Custom Budget: ${_customBudgetMin != null ? 'Rs. ${_customBudgetMin!.toStringAsFixed(0)}' : 'Not set'} - ${_customBudgetMax != null ? 'Rs. ${_customBudgetMax!.toStringAsFixed(0)}' : 'Not set'}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
                   if (_selectedDurationType != null) ...[
                     Text(
                       'Duration Type: ${_selectedDurationType!.toUpperCase()}',
@@ -2585,39 +2499,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       ),
                     ),
                     const SizedBox(height: 8),
-                  ],
-                  if (_isPriorityResponse) ...[
-                    Row(
-                      children: [
-                        const Icon(Icons.flash_on_rounded,
-                            color: Color(0xFFFFD700), size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Priority Response Enabled',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_isNDARequired) ...[
-                    Row(
-                      children: [
-                        const Icon(Icons.lock_rounded,
-                            color: Color(0xFF047A62), size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Confidentiality Agreement Required',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ],
 
@@ -2715,9 +2596,9 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   String _getPaymentMethodDisplayText() {
     switch (selectedPaymentMethod) {
       case 'jazzcash':
-        return '💳 JazzCash - ${jazzCashNumber.isNotEmpty ? jazzCashNumber.replaceRange(3, 8, 'XXXXX') : 'Not entered'}';
+        return '💳 JazzCash - ${jazzCashNumber.length >= 8 ? jazzCashNumber.replaceRange(3, 8, 'XXXXX') : '*****'}';
       case 'easypaisa':
-        return '💳 Easypaisa - ${easypaisaNumber.isNotEmpty ? easypaisaNumber.replaceRange(3, 8, 'XXXXX') : 'Not entered'}';
+        return '💳 Easypaisa - ${easypaisaNumber.length >= 8 ? easypaisaNumber.replaceRange(3, 8, 'XXXXX') : '*****'}';
       case 'card':
         return '💳 Card - ${cardNumber.isNotEmpty ? '**** **** **** ${cardNumber.substring(cardNumber.length - 4)}' : 'Not entered'}';
       case 'cash':

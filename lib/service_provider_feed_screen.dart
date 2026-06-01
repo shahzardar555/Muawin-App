@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -84,6 +83,11 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
   // Current provider ID (this would come from authentication/user profile)
   String _currentProviderId = '';
   String _currentProfileId = '';
+  bool _isProcessingAccept = false;
+  bool _hasActiveFeaturedAd = false;
+
+  // Real-time subscription channel for direct job requests
+  RealtimeChannel? _directRequestsChannel;
 
   // Real provider data from ProviderDataService
   Map<String, dynamic>? _providerData;
@@ -95,6 +99,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
         'name': _providerData!['profiles']?['full_name'] ?? '',
         'category': _providerData!['service_category'] ?? '',
         'rating': _providerData!['rating']?.toString() ?? '0.0',
+        'review_count': _providerData!['review_count']?.toString() ?? '0',
         'profilePicture':
             _providerData!['profiles']?['profile_image_url'] ?? '',
       };
@@ -103,6 +108,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
       'name': '',
       'category': '',
       'rating': '0.0',
+      'review_count': '0',
       'profilePicture': '',
     };
   }
@@ -165,6 +171,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                   ),
                   onTap: () {
                     setState(() => _status = s);
+                    _saveAvailabilityStatus(s);
                     Navigator.pop(ctx);
                   },
                 )),
@@ -462,6 +469,26 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
     }
   }
 
+  void _subscribeToDirectRequests() {
+    _directRequestsChannel = Supabase.instance.client
+        .channel('direct_requests:$_currentProviderId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'direct_job_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'provider_id',
+            value: _currentProviderId,
+          ),
+          callback: (payload) {
+            debugPrint('New direct request received!');
+            _loadDirectRequests();
+          },
+        )
+        .subscribe();
+  }
+
   Future<void> _loadOpenJobs() async {
     try {
       if (_currentProviderId.isEmpty) return;
@@ -578,48 +605,6 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
     }
   }
 
-  void _moveJobToMyJobs(Map<String, dynamic> job) async {
-    try {
-      // Debug: Print job data structure
-      debugPrint('Job data keys: ${job.keys.toList()}');
-      debugPrint('Job category field: ${job['category']}');
-      debugPrint('Job service field: ${job['service']}');
-
-      // Save to SharedPreferences to sync with My Jobs screen
-      final prefs = await SharedPreferences.getInstance();
-      final existingJobsJson = prefs.getString('scheduled_jobs') ?? '[]';
-      final existingJobs = jsonDecode(existingJobsJson) as List<dynamic>;
-
-      // Check if job already exists to prevent duplicates
-      final jobExists =
-          existingJobs.any((storedJob) => storedJob['id'] == job['id']);
-      if (jobExists) {
-        debugPrint(
-            'Job ${job['id']} already exists in storage, skipping duplicate');
-        return;
-      }
-
-      // Create a scheduled job entry with proper status and timestamps
-      final scheduledJob = {
-        ...job,
-        'status': 'Scheduled',
-        'scheduledDate': DateTime.now().toString().split(' ')[0],
-        'scheduledTime':
-            '${DateTime.now().hour + 1}:00 PM', // Schedule for 1 hour from now
-        'acceptedAt': DateTime.now().toIso8601String(),
-        'providerCategory': job['category'] ?? job['service'] ?? 'Driver',
-      };
-
-      // Add the new job
-      existingJobs.add(scheduledJob);
-      await prefs.setString('scheduled_jobs', jsonEncode(existingJobs));
-
-      debugPrint('Job ${job['id']} moved to My Jobs as scheduled job');
-    } catch (e) {
-      debugPrint('Error moving job to My Jobs: $e');
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -654,8 +639,10 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
 
       // Now load data with real provider ID
       await _loadProviderData();
+      await _checkActiveFeaturedAd();
       await _loadDirectRequests();
       await _loadOpenJobs();
+      _subscribeToDirectRequests();
     } catch (e) {
       debugPrint('Error initializing provider: $e');
     }
@@ -682,9 +669,72 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
       setState(() {
         _providerData = data;
       });
+
+      // Load availability status from Supabase
+      final dbStatus = data['availability_status']?.toString() ?? 'offline';
+      ProviderAvailability loadedStatus;
+      if (dbStatus == 'available') {
+        loadedStatus = ProviderAvailability.available;
+      } else if (dbStatus == 'busy') {
+        loadedStatus = ProviderAvailability.busy;
+      } else {
+        loadedStatus = ProviderAvailability.offline;
+      }
+      setState(() => _status = loadedStatus);
     } catch (e) {
       debugPrint('Error loading provider data: $e');
     }
+  }
+
+  Future<void> _checkActiveFeaturedAd() async {
+    if (_currentProviderId.isEmpty) return;
+    try {
+      final response = await Supabase.instance.client
+          .from('featured_ads')
+          .select('id')
+          .eq('provider_id', _currentProviderId)
+          .eq('is_active', true)
+          .gt('end_date', DateTime.now().toIso8601String().split('T')[0])
+          .limit(1);
+
+      if (mounted) {
+        setState(() {
+          _hasActiveFeaturedAd = response.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking featured ad: $e');
+    }
+  }
+
+  Future<void> _saveAvailabilityStatus(ProviderAvailability status) async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      String statusString;
+      if (status == ProviderAvailability.available) {
+        statusString = 'available';
+      } else if (status == ProviderAvailability.busy) {
+        statusString = 'busy';
+      } else {
+        statusString = 'offline';
+      }
+
+      await supabase.from('providers').update({
+        'availability_status': statusString,
+        'is_available': status == ProviderAvailability.available,
+      }).eq('id', _currentProviderId);
+
+      debugPrint('Availability status saved: $statusString');
+    } catch (e) {
+      debugPrint('Error saving availability status: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _directRequestsChannel?.unsubscribe();
+    super.dispose();
   }
 
   // Build provider profile image with real data support
@@ -930,75 +980,136 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                   },
                                   onNegotiate: () => _showNegotiationModal(job),
                                   onAccept: () async {
-                                    // Capture ScaffoldMessenger before async gap
-                                    final messenger =
-                                        ScaffoldMessenger.of(context);
+                                    // Prevent double execution
+                                    if (_isProcessingAccept) return;
+                                    setState(() => _isProcessingAccept = true);
+                                    try {
+                                      // Capture ScaffoldMessenger before async gap
+                                      final messenger =
+                                          ScaffoldMessenger.of(context);
 
-                                    final supabaseId =
-                                        job['supabase_id']?.toString() ?? '';
-                                    final isOpenJob =
-                                        job['is_open_job'] == true;
+                                      final supabaseId =
+                                          job['supabase_id']?.toString() ?? '';
+                                      final isOpenJob =
+                                          job['is_open_job'] == true;
 
-                                    if (supabaseId.isNotEmpty) {
-                                      try {
-                                        if (isOpenJob) {
-                                          // Assign open job to this provider
-                                          await Supabase.instance.client
-                                              .from('jobs')
-                                              .update({
-                                            'provider_id': _currentProviderId,
-                                            'status': 'active',
-                                            'updated_at': DateTime.now()
-                                                .toIso8601String(),
-                                          }).eq('id', supabaseId);
-                                        } else {
-                                          // Confirm direct request
-                                          await Supabase.instance.client
-                                              .from('direct_job_requests')
-                                              .update({
-                                            'status': 'confirmed'
-                                          }).eq('id', supabaseId);
-                                        }
-                                      } catch (e) {
+                                      // Safety: re-fetch provider ID if empty
+                                      if (_currentProviderId.isEmpty) {
                                         debugPrint(
-                                            'Error updating job status: $e');
+                                            '=== Re-fetching provider ID (was empty) ===');
+                                        try {
+                                          final user = Supabase
+                                              .instance.client.auth.currentUser;
+                                          final profile = await Supabase
+                                              .instance.client
+                                              .from('profiles')
+                                              .select('id')
+                                              .eq('user_id', user!.id)
+                                              .single();
+                                          final provider = await Supabase
+                                              .instance.client
+                                              .from('providers')
+                                              .select('id')
+                                              .eq('profile_id', profile['id'])
+                                              .single();
+                                          _currentProviderId =
+                                              provider['id'].toString();
+                                          debugPrint(
+                                              '=== Re-fetched provider ID: $_currentProviderId ===');
+                                        } catch (e) {
+                                          debugPrint(
+                                              '=== Error re-fetching provider ID: $e ===');
+                                        }
+                                      }
+                                      debugPrint(
+                                          '=== INSERTING JOB with provider_id: $_currentProviderId ===');
+
+                                      if (supabaseId.isNotEmpty) {
+                                        try {
+                                          if (isOpenJob) {
+                                            // Assign open job to this provider
+                                            await Supabase.instance.client
+                                                .from('jobs')
+                                                .update({
+                                              'provider_id': _currentProviderId,
+                                              'status': 'scheduled',
+                                              'updated_at': DateTime.now()
+                                                  .toIso8601String(),
+                                            }).eq('id', supabaseId);
+                                          } else {
+                                            // Confirm direct request: update status to 'accepted'
+                                            await Supabase.instance.client
+                                                .from('direct_job_requests')
+                                                .update({
+                                              'status': 'accepted'
+                                            }).eq('id', supabaseId);
+
+                                            // Insert a new row in the jobs table
+                                            await Supabase.instance.client
+                                                .from('jobs')
+                                                .insert({
+                                              'direct_request_id': supabaseId,
+                                              'customer_id': job['customer_id'],
+                                              'provider_id': _currentProviderId,
+                                              'service_category':
+                                                  job['category'] ?? '',
+                                              'title': job['title'] ?? '',
+                                              'description':
+                                                  job['instructions'] ?? '',
+                                              'location': job['location'] ?? '',
+                                              'city': job['city'] ?? '',
+                                              'area': job['area'] ?? '',
+                                              'scheduled_date':
+                                                  job['date'] ?? '',
+                                              'scheduled_time':
+                                                  job['time'] ?? '',
+                                              'status': 'scheduled',
+                                            });
+                                          }
+                                        } catch (e) {
+                                          debugPrint(
+                                              'Error updating job status: $e');
+                                        }
+                                      }
+
+                                      // Safe haptic feedback alternative
+                                      try {
+                                        // Haptic feedback removed for compatibility
+                                      } catch (e) {
+                                        // Ignore haptic feedback errors
+                                      }
+
+                                      // Remove from feed
+                                      setState(() => _jobAlerts.remove(job));
+
+                                      // Show success message
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Job ${job['id']} accepted and moved to My Jobs!',
+                                            style: GoogleFonts.poppins(),
+                                          ),
+                                          backgroundColor: primary,
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                      );
+                                    } finally {
+                                      if (mounted) {
+                                        setState(
+                                            () => _isProcessingAccept = false);
                                       }
                                     }
-
-                                    // Safe haptic feedback alternative
-                                    try {
-                                      // Haptic feedback removed for compatibility
-                                    } catch (e) {
-                                      // Ignore haptic feedback errors
-                                    }
-
-                                    // Move job to My Jobs screen
-                                    _moveJobToMyJobs(job);
-
-                                    // Remove from feed
-                                    setState(() => _jobAlerts.remove(job));
-
-                                    // Show success message
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Job ${job['id']} accepted and moved to My Jobs!',
-                                          style: GoogleFonts.poppins(),
-                                        ),
-                                        backgroundColor: primary,
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                    );
                                   },
                                 ),
                               )),
                           const SizedBox(height: 8),
-                          // ─── Promotion Hero Section ───
-                          const _PromotionHero(),
+                          // ─── Promotion Hero Section (hidden if active featured ad exists) ───
+                          if (!_hasActiveFeaturedAd)
+                            _PromotionHero(providerData: _providerData),
                         ],
                       ),
                     ),
@@ -1219,26 +1330,56 @@ class _FeedHeader extends StatelessWidget {
                         height: 4), // Increased from 2 for better spacing
                     Row(
                       children: [
-                        ...List.generate(
-                            4,
-                            (_) => const Icon(
-                                  Icons.star_rounded,
-                                  size: 16, // Increased from 14
-                                  color: Color(0xFFFBBF24),
-                                )),
-                        const Icon(
-                          Icons.star_half_rounded,
-                          size: 16, // Increased from 14 to match full stars
-                          color: Color(0xFFFBBF24),
-                        ),
-                        const SizedBox(width: 8), // Increased from 6
-                        Text(
-                          '124 reviews',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12, // Increased from 11
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.75),
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final double rating = double.tryParse(
+                                    providerProfile['rating']?.toString() ??
+                                        '0') ??
+                                0.0;
+                            final int reviewCount = int.tryParse(
+                                    providerProfile['review_count']
+                                            ?.toString() ??
+                                        '0') ??
+                                0;
+
+                            return Row(
+                              children: [
+                                ...List.generate(5, (index) {
+                                  if (index < rating.floor()) {
+                                    return const Icon(
+                                      Icons.star_rounded,
+                                      size: 16,
+                                      color: Color(0xFFFBBF24),
+                                    );
+                                  } else if (index < rating &&
+                                      rating - index >= 0.5) {
+                                    return const Icon(
+                                      Icons.star_half_rounded,
+                                      size: 16,
+                                      color: Color(0xFFFBBF24),
+                                    );
+                                  } else {
+                                    return const Icon(
+                                      Icons.star_outline_rounded,
+                                      size: 16,
+                                      color: Color(0xFFFBBF24),
+                                    );
+                                  }
+                                }),
+                                const SizedBox(width: 8),
+                                Text(
+                                  reviewCount == 0
+                                      ? 'No reviews yet'
+                                      : '$reviewCount ${reviewCount == 1 ? 'review' : 'reviews'}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -1875,7 +2016,9 @@ class _DataChip extends StatelessWidget {
 
 /// ─── Premium Promotion Hero Section ───
 class _PromotionHero extends StatefulWidget {
-  const _PromotionHero();
+  final Map<String, dynamic>? providerData;
+  // ignore: unused_element_parameter
+  const _PromotionHero({super.key, this.providerData});
 
   @override
   State<_PromotionHero> createState() => _PromotionHeroState();
@@ -1887,22 +2030,26 @@ class _PromotionHeroState extends State<_PromotionHero>
   late Animation<double> _rotation;
   late Animation<double> _scale;
 
-  // Get current user profile data
-  Future<Map<String, dynamic>> _getCurrentUserProfile() async {
+  // Get current user profile data from real Supabase provider data
+  Map<String, dynamic> _getCurrentUserProfile() {
     return {
       'userType': 'provider',
-      'userId': 'provider_001',
-      'userName': 'Ahmed Hassan',
-      'userCategory': 'Driver Service',
-      'userRating': 4.8,
+      'userId': widget.providerData?['id']?.toString() ?? '',
+      'userName':
+          widget.providerData?['profiles']?['full_name']?.toString() ?? '',
+      'userCategory':
+          widget.providerData?['service_category']?.toString() ?? '',
+      'userRating':
+          double.tryParse(widget.providerData?['rating']?.toString() ?? '0') ??
+              0.0,
     };
   }
 
   // Show GetFeaturedOverlay with real user data
-  void _showGetFeaturedOverlay() async {
+  void _showGetFeaturedOverlay() {
     if (!mounted) return;
 
-    final userProfile = await _getCurrentUserProfile();
+    final userProfile = _getCurrentUserProfile();
 
     if (!mounted) return;
 

@@ -1168,12 +1168,15 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
           } else if (widget.purchaseType == 'featured_ad') {
             // Save featured ad to Supabase
             if (_featuredAdUserId != null && _featuredAdUserId!.isNotEmpty) {
-              final adDurationDays =
-                  widget.planName.toLowerCase().contains('premium')
-                      ? 30
-                      : widget.planName.toLowerCase().contains('standard')
-                          ? 14
-                          : 7;
+              int adDurationDays;
+              final planType = _featuredAdPlanType?.toLowerCase() ?? 'weekly';
+              if (planType == 'daily') {
+                adDurationDays = 1;
+              } else if (planType == 'monthly') {
+                adDurationDays = 30;
+              } else {
+                adDurationDays = 7; // weekly default
+              }
 
               final adExpiry = now.add(Duration(days: adDurationDays));
 

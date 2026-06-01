@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'customer_home_screen.dart';
 import 'customer_jobs_screen.dart';
@@ -161,6 +162,102 @@ class _CustomerProviderProfileScreenState
             content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  // Open chat with provider - creates or finds a thread in Supabase
+  Future<void> _openChatWithProvider() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null) return;
+
+      // Get current user's profile_id
+      final myProfile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', currentUser.id)
+          .single();
+      final myProfileId = myProfile['id'].toString();
+
+      // Get provider's profile_id
+      final providerProfileId = _provider?['profile_id']?.toString() ?? '';
+      if (providerProfileId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open chat. Please try again.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Check if thread already exists
+      String? threadId;
+
+      final existing1 = await supabase
+          .from('message_threads')
+          .select('id')
+          .eq('participant_1_id', myProfileId)
+          .eq('participant_2_id', providerProfileId)
+          .maybeSingle();
+
+      if (existing1 != null) {
+        threadId = existing1['id'].toString();
+      } else {
+        final existing2 = await supabase
+            .from('message_threads')
+            .select('id')
+            .eq('participant_1_id', providerProfileId)
+            .eq('participant_2_id', myProfileId)
+            .maybeSingle();
+
+        if (existing2 != null) {
+          threadId = existing2['id'].toString();
+        }
+      }
+
+      // Create new thread if none exists
+      if (threadId == null) {
+        final newThread = await supabase
+            .from('message_threads')
+            .insert({
+              'participant_1_id': myProfileId,
+              'participant_2_id': providerProfileId,
+              'is_active': true,
+            })
+            .select('id')
+            .single();
+        threadId = newThread['id'].toString();
+      }
+
+      if (!mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            chatData: {
+              'id': threadId,
+              'name': _provider?['profiles']?['full_name']?.toString() ??
+                  'Provider',
+              'isOnline': true,
+              'avatar':
+                  _provider?['profiles']?['profile_image_url']?.toString() ??
+                      '',
+              'type': 'provider',
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open chat. Please try again.'),
           ),
         );
       }
@@ -415,110 +512,198 @@ class _CustomerProviderProfileScreenState
                                     ),
                                   ),
                                   const SizedBox(height: 12),
-                                  // Achievement Badges
-                                  Row(
+                                  // Achievement Badges — conditionally shown based on real provider data
+                                  Builder(
+                                    builder: (context) {
+                                      final double rating = double.tryParse(
+                                              _provider?['rating']
+                                                      ?.toString() ??
+                                                  '0') ??
+                                          0.0;
+                                      final int experienceYears = int.tryParse(
+                                              _provider?['experience_years']
+                                                      ?.toString() ??
+                                                  '0') ??
+                                          0;
+                                      final bool isPro =
+                                          _provider?['is_pro'] == true;
+
+                                      final bool showTopRated = rating >= 4.0;
+                                      final bool showExpert =
+                                          experienceYears >= 2;
+                                      final bool showFavorite = isPro;
+
+                                      // If provider has earned no badges, show nothing
+                                      final List<Widget> badges = [];
+
+                                      if (showTopRated) {
+                                        badges.add(
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFFF7ED),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.emoji_events,
+                                                    color: Color(0xFFA16207),
+                                                    size: 12),
+                                                const SizedBox(width: 4),
+                                                Text('Top Rated',
+                                                    style: GoogleFonts.poppins(
+                                                        fontSize: 10,
+                                                        color: const Color(
+                                                            0xFFA16207),
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      if (showExpert) {
+                                        if (badges.isNotEmpty) {
+                                          badges.add(const SizedBox(width: 8));
+                                        }
+                                        badges.add(
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEFF6FF),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                    Icons.workspace_premium,
+                                                    color: Color(0xFF1E40AF),
+                                                    size: 12),
+                                                const SizedBox(width: 4),
+                                                Text('Expert',
+                                                    style: GoogleFonts.poppins(
+                                                        fontSize: 10,
+                                                        color: const Color(
+                                                            0xFF1E40AF),
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      if (showFavorite) {
+                                        if (badges.isNotEmpty) {
+                                          badges.add(const SizedBox(width: 8));
+                                        }
+                                        badges.add(
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF0FDF4),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.thumb_up,
+                                                    color: Color(0xFF166534),
+                                                    size: 10),
+                                                const SizedBox(width: 3),
+                                                Text('Favorite',
+                                                    style: GoogleFonts.poppins(
+                                                        fontSize: 9,
+                                                        color: const Color(
+                                                            0xFF166534),
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      if (badges.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+
+                                      return Row(children: badges);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Availability Status Badge
+                            const Spacer(),
+                            Builder(
+                              builder: (context) {
+                                final String status =
+                                    _provider?['availability_status']
+                                            ?.toString() ??
+                                        'offline';
+
+                                Color bgColor;
+                                Color textColor;
+                                Color dotColor;
+                                String label;
+                                IconData icon;
+
+                                if (status == 'available') {
+                                  bgColor = const Color(0xFFDCFCE7);
+                                  textColor = const Color(0xFF166534);
+                                  dotColor = const Color(0xFF22C55E);
+                                  label = 'Available';
+                                  icon = Icons.circle;
+                                } else if (status == 'busy') {
+                                  bgColor = const Color(0xFFFEF3C7);
+                                  textColor = const Color(0xFF92400E);
+                                  dotColor = const Color(0xFFF59E0B);
+                                  label = 'Busy';
+                                  icon = Icons.circle;
+                                } else {
+                                  bgColor = const Color(0xFFF3F4F6);
+                                  textColor = const Color(0xFF6B7280);
+                                  dotColor = const Color(0xFF9CA3AF);
+                                  label = 'Offline';
+                                  icon = Icons.circle;
+                                }
+
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: bgColor,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: dotColor.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // Top Rated Badge
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                              0xFFFFF7ED), // Yellow-100
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.emoji_events,
-                                              color: Color(
-                                                  0xFFA16207), // Yellow-700
-                                              size: 12,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Top Rated',
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 10,
-                                                color: const Color(0xFFA16207),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Expert Badge
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                              0xFFEFF6FF), // Blue-100
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.workspace_premium,
-                                              color:
-                                                  Color(0xFF1E40AF), // Blue-700
-                                              size: 12,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Expert',
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 10,
-                                                color: const Color(0xFF1E40AF),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Customer Favorite Badge
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2), // Reduced from 8 to 6
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                              0xFFF0FDF4), // Green-100
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.thumb_up,
-                                              color: Color(
-                                                  0xFF166534), // Green-700
-                                              size: 10, // Reduced from 12
-                                            ),
-                                            const SizedBox(
-                                                width: 3), // Reduced from 4
-                                            Text(
-                                              'Favorite', // Shortened from 'Customer Favorite'
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 9, // Reduced from 10
-                                                color: const Color(0xFF166534),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
+                                      Icon(icon, color: dotColor, size: 8),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        label,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: textColor,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -608,26 +793,7 @@ class _CustomerProviderProfileScreenState
                             children: [
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => ChatScreen(
-                                          chatData: {
-                                            'name': _provider?['profiles']
-                                                        ?['full_name']
-                                                    ?.toString() ??
-                                                'Provider',
-                                            'isOnline': true,
-                                            'avatar': _provider?['profiles']
-                                                        ?['profile_image_url']
-                                                    ?.toString() ??
-                                                '',
-                                            'type': 'provider',
-                                          },
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                  onPressed: _openChatWithProvider,
                                   icon: const Icon(Icons.chat,
                                       color: Colors.white),
                                   label: Text(
@@ -652,10 +818,23 @@ class _CustomerProviderProfileScreenState
                                 child: OutlinedButton.icon(
                                   onPressed: () {
                                     // Launch phone call
-                                    final phone =
-                                        _provider?['phone']?.toString() ?? '';
+                                    final phone = _provider?['profiles']
+                                                ?['phone_number']
+                                            ?.toString() ??
+                                        '';
                                     if (phone.isNotEmpty) {
-                                      launchUrl(Uri.parse('tel:$phone'));
+                                      launchUrl(
+                                        Uri.parse('tel:$phone'),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Phone number not available'),
+                                        ),
+                                      );
                                     }
                                   },
                                   icon: const Icon(Icons.phone,
@@ -712,9 +891,9 @@ class _CustomerProviderProfileScreenState
                                           ),
                                         ),
                                         Text(
-                                          _provider?['experience']
-                                                  ?.toString() ??
-                                              '3 Years',
+                                          _provider?['experience_years'] != null
+                                              ? '${_provider!['experience_years']} ${_provider!['experience_years'] == 1 ? 'Year' : 'Years'}'
+                                              : '0 Years',
                                           style: GoogleFonts.poppins(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
@@ -757,8 +936,21 @@ class _CustomerProviderProfileScreenState
                                             ),
                                           ),
                                           Text(
-                                            _provider?['city']?.toString() ??
-                                                'City',
+                                            () {
+                                              final area = _provider?['area']
+                                                      ?.toString() ??
+                                                  '';
+                                              final city = _provider?['city']
+                                                      ?.toString() ??
+                                                  '';
+                                              if (area.isNotEmpty &&
+                                                  city.isNotEmpty) {
+                                                return '$area, $city';
+                                              }
+                                              if (city.isNotEmpty) return city;
+                                              if (area.isNotEmpty) return area;
+                                              return 'Location not set';
+                                            }(),
                                             style: GoogleFonts.poppins(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
@@ -855,11 +1047,9 @@ class _CustomerProviderProfileScreenState
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    _provider?['description']?.toString() ??
-                        'Professional service provider with experience. '
-                            'Passionate about delivering exceptional service and ensuring customer satisfaction. '
-                            'Available for both residential and commercial services with flexible scheduling. '
-                            'Trustworthy, reliable, and committed to excellence in every job.',
+                    _provider?['tagline']?.toString().isNotEmpty == true
+                        ? _provider!['tagline'].toString()
+                        : 'No description provided yet.',
                     style: GoogleFonts.inter(
                       fontSize: 14, // 0.875rem
                       color: Colors.grey[600], // muted-foreground
@@ -893,13 +1083,13 @@ class _CustomerProviderProfileScreenState
                   ..._reviews.map((review) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _buildReviewCard(
-                          username:
-                              review['profiles']?['full_name']?.toString() ??
-                                  'Customer',
+                          username: review['customers']?['profiles']
+                                      ?['full_name']
+                                  ?.toString() ??
+                              'Customer',
                           rating: review['rating'] as int? ?? 5,
                           date: _formatDate(review['created_at'] as String?),
-                          review: review['review_text']?.toString() ??
-                              'Great service!',
+                          review: review['review']?.toString() ?? '',
                         ),
                       )),
 
@@ -1251,6 +1441,49 @@ class _CustomerProviderProfileScreenState
 
             const SizedBox(height: 12),
 
+            // Description (new section)
+            if (currentPackage['description'] != null &&
+                currentPackage['description'].toString().isNotEmpty) ...[
+              Text(
+                "What's included:",
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...currentPackage['description']
+                  .toString()
+                  .split('\n')
+                  .where((line) => line.trim().isNotEmpty)
+                  .map((line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline,
+                              size: 14,
+                              color: Color(0xFF047A62),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                line.trim(),
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+              const SizedBox(height: 12),
+            ],
+
             // Price (moved below duration)
             Text(
               'Rs. ${currentPackage['price'] ?? 0}',
@@ -1355,39 +1588,11 @@ class _CustomerProviderProfileScreenState
     );
   }
 
-  // Build Service Areas Section
+  // Build Service Location section with city, area and Google Maps link
   Widget _buildServiceAreas() {
-    final areas = _providerData?['service_areas'] as List<String>? ?? [];
-    if (areas.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Service Areas',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'No service areas specified',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final mapsLink = _provider?['maps_link']?.toString() ?? '';
+    final city = _provider?['city']?.toString() ?? '';
+    final area = _provider?['area']?.toString() ?? '';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1399,33 +1604,105 @@ class _CustomerProviderProfileScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Service Areas',
+            'Where do I provide my Service ?',
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Colors.black87,
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: areas
-                .map((area) => Chip(
-                      label: Text(
-                        area,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
+          const SizedBox(height: 12),
+
+          // Show city/area as location text
+          if (city.isNotEmpty || area.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF047A62).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.place_rounded,
+                    size: 14,
+                    color: Color(0xFF047A62),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      [area, city].where((s) => s.isNotEmpty).join(', '),
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
                       ),
-                      backgroundColor:
-                          const Color(0xFF047A62).withValues(alpha: 0.1),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                    ))
-                .toList(),
-          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (city.isNotEmpty || area.isNotEmpty) const SizedBox(height: 10),
+
+          // Show Google Maps link button if available
+          if (mapsLink.isNotEmpty)
+            GestureDetector(
+              onTap: () async {
+                final uri = Uri.tryParse(mapsLink);
+                if (uri != null) {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(
+                      uri,
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                }
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF047A62),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.map_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'View on Google Maps',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.open_in_new_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // If no location data at all
+          if (mapsLink.isEmpty && city.isEmpty && area.isEmpty)
+            Text(
+              'No service location specified',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
         ],
       ),
     );
@@ -1433,25 +1710,27 @@ class _CustomerProviderProfileScreenState
 
   // Build Availability Section
   Widget _buildAvailability() {
-    final availability = _providerData?['availability'] ?? 'Not specified';
+    final availabilityText = _provider?['availability_text']?.toString() ?? '';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.green.withValues(alpha: 0.1),
+        color: Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.2),
+              color: const Color(0xFF047A62).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
-              Icons.schedule,
-              color: Colors.green,
+              Icons.schedule_rounded,
+              color: Color(0xFF047A62),
               size: 20,
             ),
           ),
@@ -1461,20 +1740,24 @@ class _CustomerProviderProfileScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Availability',
+                  'Working Hours',
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: Colors.grey[600],
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
-                  availability,
+                  availabilityText.isNotEmpty
+                      ? availabilityText
+                      : 'Not specified',
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.green,
+                    color: availabilityText.isNotEmpty
+                        ? Colors.black87
+                        : Colors.grey[400],
                   ),
                 ),
               ],
@@ -1587,67 +1870,29 @@ class _CustomerProviderProfileScreenState
 
   // Build profile photo for circular container
   Widget _buildProfilePhoto() {
-    final profileImagePath =
-        _provider?['profiles']?['profile_image_path'] as String?;
-    final profilePhotoUrl =
-        _provider?['profiles']?['profile_photo_url'] as String?;
-    final avatar = _provider?['profiles']?['profile_image_url'] as String?;
+    final profileImageUrl =
+        _provider?['profiles']?['profile_image_url']?.toString() ?? '';
 
-    const isWeb = kIsWeb;
-
-    // Try to load profile photo with better error handling
-    if (profilePhotoUrl != null &&
-        profilePhotoUrl.isNotEmpty &&
-        !profilePhotoUrl.contains('placeholder.com')) {
+    if (profileImageUrl.isNotEmpty &&
+        !profileImageUrl.contains('placeholder.com')) {
       return Image.network(
-        profilePhotoUrl,
+        profileImageUrl,
         width: 56,
         height: 56,
         fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildDefaultProfilePhoto(),
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
-          return _buildDefaultProfilePhoto();
-        },
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Profile image load error: $error');
-          return _buildDefaultProfilePhoto();
-        },
-      );
-    } else if (profileImagePath != null && !isWeb) {
-      try {
-        if (File(profileImagePath).existsSync()) {
-          return Image.file(
-            File(profileImagePath),
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Profile file load error: $error');
-              return _buildDefaultProfilePhoto();
-            },
+          return Center(
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
           );
-        }
-      } catch (e) {
-        debugPrint('Profile file access error: $e');
-        return _buildDefaultProfilePhoto();
-      }
-    }
-
-    if (avatar != null &&
-        avatar.isNotEmpty &&
-        !avatar.contains('placeholder.com')) {
-      return Image.network(
-        avatar,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return _buildDefaultProfilePhoto();
-        },
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Avatar image load error: $error');
-          return _buildDefaultProfilePhoto();
         },
       );
     }
@@ -1679,14 +1924,18 @@ class _CustomerProviderProfileScreenState
 
   // Build provider image with cover photo support
   Widget _buildProviderImage() {
-    final coverPhotoPath = _providerData?['cover_photo_path'] as String?;
-    final profileImagePath = _providerData?['profile_image_path'] as String?;
+    final coverUrl =
+        _provider?['cover_photo_url']?.toString().isNotEmpty == true
+            ? _provider!['cover_photo_url'].toString()
+            : '';
+    final profileImagePath =
+        _provider?['profiles']?['profile_image_url']?.toString();
 
     // Check if we're on web platform
     const isWeb = kIsWeb;
 
     // Try to load cover photo first, then fall back to profile photo
-    final imagePath = coverPhotoPath ?? profileImagePath;
+    final imagePath = coverUrl.isNotEmpty ? coverUrl : profileImagePath;
 
     // On web, we can't use File.existsSync(), so we'll handle it differently
     if (imagePath != null) {

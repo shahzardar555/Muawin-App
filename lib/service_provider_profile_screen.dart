@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:flutter/services.dart';
 
@@ -396,6 +396,7 @@ class _ServiceProviderProfileScreenState
 
   String _availability = '';
 
+  String _serviceCity = '';
   String _serviceArea = '';
 
   String _serviceLocation = '';
@@ -3226,6 +3227,13 @@ class _ServiceProviderProfileScreenState
   final TextEditingController _withdrawalAmountController =
       TextEditingController();
 
+  // Service details controllers (class-level to survive StatefulBuilder rebuilds)
+  final TextEditingController _availabilityController = TextEditingController();
+  final TextEditingController _serviceCityController = TextEditingController();
+  final TextEditingController _serviceAreaController = TextEditingController();
+  final TextEditingController _serviceLocationController =
+      TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -3265,7 +3273,10 @@ class _ServiceProviderProfileScreenState
             cover_photo_url,
             cnic_number,
             cnic_expiry_date,
-            verification_status
+            verification_status,
+            maps_link,
+            availability_text,
+            availability_status
           ''').eq('profile_id', _currentProfileId).single();
 
       _currentProviderId = provider['id'].toString();
@@ -3277,11 +3288,17 @@ class _ServiceProviderProfileScreenState
         _providerCategory = provider['service_category']?.toString() ?? '';
         _experience = provider['experience_years']?.toString() ?? '';
         _description = provider['tagline']?.toString() ?? '';
-        _serviceLocation = provider['city']?.toString() ?? '';
+        _serviceLocation = provider['maps_link']?.toString() ?? '';
         _serviceArea = provider['area']?.toString() ?? '';
-        _availability =
-            (provider['is_available'] == true) ? 'Available' : 'Unavailable';
+        _serviceCity = provider['city']?.toString() ?? '';
+        _availability = provider['availability_text']?.toString() ?? '';
         _coverPhotoPath = provider['cover_photo_url']?.toString() ?? '';
+
+        // Sync class-level controllers with loaded data
+        _availabilityController.text = _availability;
+        _serviceAreaController.text = _serviceArea;
+        _serviceCityController.text = _serviceCity;
+        _serviceLocationController.text = _serviceLocation;
 
         // Profile image from Supabase
         _profileImagePath = profile['profile_image_url']?.toString() ?? '';
@@ -3344,9 +3361,21 @@ class _ServiceProviderProfileScreenState
 
       for (final package in response) {
         final type = package['package_type']?.toString() ?? '';
-        final price = package['price']?.toString() ?? '';
+        String price = package['price']?.toString() ?? '';
         final description = package['description']?.toString() ?? '';
         final duration = package['duration']?.toString() ?? '';
+
+        // Clamp price to valid ranges - if price is 0 or empty, default to minimums
+        if (price.isEmpty || price == '0' || price == '0.0') {
+          // Use sensible defaults based on package type
+          if (type == 'standard') {
+            price = '1200';
+          } else if (type == 'premium') {
+            price = '2500';
+          } else if (type == 'basic') {
+            price = '600';
+          }
+        }
 
         if (mounted) {
           setState(() {
@@ -3564,6 +3593,10 @@ class _ServiceProviderProfileScreenState
     _premiumDurationController.dispose();
 
     _withdrawalAmountController.dispose();
+    _availabilityController.dispose();
+    _serviceAreaController.dispose();
+    _serviceCityController.dispose();
+    _serviceLocationController.dispose();
 
     super.dispose();
   }
@@ -4912,11 +4945,6 @@ class _ServiceProviderProfileScreenState
   }
 
   Widget _buildAvailabilityStep(StateSetter setState) {
-    final availabilityController = TextEditingController(text: _availability);
-    final serviceAreaController = TextEditingController(text: _serviceArea);
-    final serviceLocationController =
-        TextEditingController(text: _serviceLocation);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4930,7 +4958,7 @@ class _ServiceProviderProfileScreenState
         ),
         const SizedBox(height: _compactSpacing),
         TextField(
-          controller: availabilityController,
+          controller: _availabilityController,
           decoration: InputDecoration(
             labelText: 'Availability',
             hintText: 'e.g., Full-time, Part-time, Weekends',
@@ -4944,6 +4972,29 @@ class _ServiceProviderProfileScreenState
         ),
         SizedBox(height: _responsiveItemSpacing),
         Text(
+          'Service City',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: _compactSpacing),
+        TextField(
+          controller: _serviceCityController,
+          decoration: InputDecoration(
+            labelText: 'City',
+            hintText: 'e.g., Lahore, Karachi, Islamabad',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_cardBorderRadius),
+            ),
+            prefixIcon: const Icon(Icons.location_city_rounded),
+          ),
+          style: GoogleFonts.poppins(),
+          onChanged: (value) => _serviceCity = value,
+        ),
+        SizedBox(height: _responsiveItemSpacing),
+        Text(
           'Service Area',
           style: GoogleFonts.poppins(
             fontSize: 16,
@@ -4953,10 +5004,10 @@ class _ServiceProviderProfileScreenState
         ),
         const SizedBox(height: _compactSpacing),
         TextField(
-          controller: serviceAreaController,
+          controller: _serviceAreaController,
           decoration: InputDecoration(
             labelText: 'Primary Service Area',
-            hintText: 'e.g., Lahore, Karachi, Islamabad',
+            hintText: 'e.g., Gulberg, DHA, Bahria Town',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(_cardBorderRadius),
             ),
@@ -4976,7 +5027,7 @@ class _ServiceProviderProfileScreenState
         ),
         const SizedBox(height: _compactSpacing),
         TextField(
-          controller: serviceLocationController,
+          controller: _serviceLocationController,
           decoration: InputDecoration(
             labelText: 'Google Maps Location Link',
             hintText: 'https://maps.google.com/?q=...',
@@ -5120,11 +5171,13 @@ class _ServiceProviderProfileScreenState
       await supabase.from('providers').update({
         'experience_years': int.tryParse(_experience) ?? 0,
         'tagline': _description,
-        'is_available': _availability.toLowerCase() == 'available',
-        'city': _serviceLocation.trim().isNotEmpty
-            ? _serviceLocation.trim()
-            : _serviceArea.trim(),
-        'area': _serviceArea,
+        'is_available': _availability.trim().isNotEmpty,
+        'availability_text':
+            _availability.trim().isNotEmpty ? _availability.trim() : null,
+        'city': _serviceCity.trim().isNotEmpty ? _serviceCity.trim() : null,
+        'area': _serviceArea.trim().isNotEmpty ? _serviceArea.trim() : null,
+        'maps_link':
+            _serviceLocation.trim().isNotEmpty ? _serviceLocation.trim() : null,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', _currentProviderId);
 
@@ -8875,13 +8928,7 @@ class _ServiceProviderProfileScreenState
 
       final providerId = provider['id'] as String;
 
-      // Delete existing packages first
-      await supabase
-          .from('service_pricing_packages')
-          .delete()
-          .eq('provider_id', providerId);
-
-      // Build packages list to insert
+      // Build packages list to upsert
       final packages = [
         {
           'provider_id': providerId,
@@ -8918,8 +8965,10 @@ class _ServiceProviderProfileScreenState
         },
       ];
 
-      // Insert all packages to Supabase
-      await supabase.from('service_pricing_packages').insert(packages);
+      // Upsert packages to Supabase (updates if exists, inserts if new)
+      await supabase
+          .from('service_pricing_packages')
+          .upsert(packages, onConflict: 'provider_id,package_type');
 
       if (mounted) {
         setState(() => _isSaving = false);
@@ -9238,9 +9287,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 700.0
-                      : double.tryParse(_basicPriceController.text) ?? 700.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 700.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              700.0)
+                      .clamp(600.0, 800.0),
 
                   min: 600.0,
 
@@ -9313,9 +9364,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 300.0
-                      : double.tryParse(_basicPriceController.text) ?? 300.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 300.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              300.0)
+                      .clamp(200.0, 400.0),
 
                   min: 200.0,
 
@@ -9388,9 +9441,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 475.0
-                      : double.tryParse(_basicPriceController.text) ?? 475.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 475.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              475.0)
+                      .clamp(350.0, 600.0),
 
                   min: 350.0,
 
@@ -9463,9 +9518,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 475.0
-                      : double.tryParse(_basicPriceController.text) ?? 475.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 475.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              475.0)
+                      .clamp(350.0, 600.0),
 
                   min: 350.0,
 
@@ -9538,9 +9595,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 850.0
-                      : double.tryParse(_basicPriceController.text) ?? 850.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 850.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              850.0)
+                      .clamp(400.0, 1300.0),
 
                   min: 400.0,
 
@@ -9613,9 +9672,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 2000.0
-                      : double.tryParse(_basicPriceController.text) ?? 2000.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 2000.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              2000.0)
+                      .clamp(1000.0, 3000.0),
 
                   min: 1000.0,
 
@@ -9688,9 +9749,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 900.0
-                      : double.tryParse(_basicPriceController.text) ?? 900.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 900.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              900.0)
+                      .clamp(600.0, 1200.0),
 
                   min: 600.0,
 
@@ -9763,9 +9826,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 575.0
-                      : double.tryParse(_basicPriceController.text) ?? 575.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 575.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              575.0)
+                      .clamp(450.0, 700.0),
 
                   min: 450.0,
 
@@ -9838,9 +9903,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _basicPriceController.text.isEmpty
-                      ? 1625.0
-                      : double.tryParse(_basicPriceController.text) ?? 1625.0,
+                  value: (_basicPriceController.text.isEmpty
+                          ? 1625.0
+                          : double.tryParse(_basicPriceController.text) ??
+                              1625.0)
+                      .clamp(250.0, 3000.0),
 
                   min: 250.0,
 
@@ -9913,10 +9980,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 1000.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          1000.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 1000.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              1000.0)
+                      .clamp(800.0, 1200.0),
 
                   min: 800.0,
 
@@ -9989,9 +10057,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 900.0
-                      : double.tryParse(_standardPriceController.text) ?? 900.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 900.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              900.0)
+                      .clamp(800.0, 1000.0),
 
                   min: 800.0,
 
@@ -10064,9 +10134,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 800.0
-                      : double.tryParse(_standardPriceController.text) ?? 800.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 800.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              800.0)
+                      .clamp(600.0, 1000.0),
 
                   min: 600.0,
 
@@ -10139,10 +10211,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 1850.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          1850.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 1850.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              1850.0)
+                      .clamp(1200.0, 2500.0),
 
                   min: 1200.0,
 
@@ -10215,10 +10288,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 1500.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          1500.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 1500.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              1500.0)
+                      .clamp(1000.0, 2000.0),
 
                   min: 1000.0,
 
@@ -10291,10 +10365,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 3000.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          3000.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 3000.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              3000.0)
+                      .clamp(2000.0, 4000.0),
 
                   min: 2000.0,
 
@@ -10367,10 +10442,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 1600.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          1600.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 1600.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              1600.0)
+                      .clamp(1200.0, 2000.0),
 
                   min: 1200.0,
 
@@ -10443,10 +10519,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 1100.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          1100.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 1100.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              1100.0)
+                      .clamp(700.0, 1500.0),
 
                   min: 700.0,
 
@@ -10519,10 +10596,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _standardPriceController.text.isEmpty
-                      ? 4000.0
-                      : double.tryParse(_standardPriceController.text) ??
-                          4000.0,
+                  value: (_standardPriceController.text.isEmpty
+                          ? 4000.0
+                          : double.tryParse(_standardPriceController.text) ??
+                              4000.0)
+                      .clamp(1000.0, 7000.0),
 
                   min: 1000.0,
 
@@ -10595,9 +10673,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 1600.0
-                      : double.tryParse(_premiumPriceController.text) ?? 1600.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 1600.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              1600.0)
+                      .clamp(1200.0, 2000.0),
 
                   min: 1200.0,
 
@@ -10670,9 +10750,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 2000.0
-                      : double.tryParse(_premiumPriceController.text) ?? 2000.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 2000.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              2000.0)
+                      .clamp(1500.0, 2500.0),
 
                   min: 1500.0,
 
@@ -10745,9 +10827,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 2250.0
-                      : double.tryParse(_premiumPriceController.text) ?? 2250.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 2250.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              2250.0)
+                      .clamp(1500.0, 3000.0),
 
                   min: 1500.0,
 
@@ -10820,9 +10904,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 4750.0
-                      : double.tryParse(_premiumPriceController.text) ?? 4750.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 4750.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              4750.0)
+                      .clamp(2500.0, 7000.0),
 
                   min: 2500.0,
 
@@ -10895,9 +10981,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 2750.0
-                      : double.tryParse(_premiumPriceController.text) ?? 2750.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 2750.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              2750.0)
+                      .clamp(2000.0, 3500.0),
 
                   min: 2000.0,
 
@@ -10970,9 +11058,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 6750.0
-                      : double.tryParse(_premiumPriceController.text) ?? 6750.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 6750.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              6750.0)
+                      .clamp(3500.0, 10000.0),
 
                   min: 3500.0,
 
@@ -11045,9 +11135,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 2750.0
-                      : double.tryParse(_premiumPriceController.text) ?? 2750.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 2750.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              2750.0)
+                      .clamp(2000.0, 3500.0),
 
                   min: 2000.0,
 
@@ -11120,9 +11212,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 2250.0
-                      : double.tryParse(_premiumPriceController.text) ?? 2250.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 2250.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              2250.0)
+                      .clamp(1500.0, 3000.0),
 
                   min: 1500.0,
 
@@ -11195,9 +11289,11 @@ class _ServiceProviderProfileScreenState
                   ],
                 ),
                 Slider(
-                  value: _premiumPriceController.text.isEmpty
-                      ? 5750.0
-                      : double.tryParse(_premiumPriceController.text) ?? 5750.0,
+                  value: (_premiumPriceController.text.isEmpty
+                          ? 5750.0
+                          : double.tryParse(_premiumPriceController.text) ??
+                              5750.0)
+                      .clamp(1500.0, 10000.0),
 
                   min: 1500.0,
 

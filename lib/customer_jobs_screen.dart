@@ -201,6 +201,42 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           .eq('customer_id', _customerId!)
           .order('created_at', ascending: false);
 
+      // Load negotiating direct job requests
+      final negotiatingRequests = await Supabase.instance.client
+          .from('direct_job_requests')
+          .select('''
+            id, title, service_category, status, proposed_price,
+            negotiation_notes, scheduled_date, scheduled_time,
+            location, city, area, created_at, provider_id,
+            providers!inner(
+              id, service_category, rating, city,
+              profiles!inner(
+                full_name, profile_image_url, phone_number
+              )
+            )
+          ''')
+          .eq('customer_id', _customerId!)
+          .eq('status', 'negotiating')
+          .order('created_at', ascending: false);
+
+      // Map negotiating requests to job-like format
+      final negotiatingJobs = (negotiatingRequests as List).map((req) {
+        return {
+          'id': req['id'],
+          'is_direct_request': true,
+          'status': 'negotiating',
+          'title': req['title'] ?? 'Direct Request',
+          'service_category': req['service_category'] ?? '',
+          'scheduled_date': req['scheduled_date'] ?? '',
+          'scheduled_time': req['scheduled_time'] ?? '',
+          'location': req['location'] ?? '',
+          'created_at': req['created_at'] ?? '',
+          'proposed_price': req['proposed_price'] ?? 0,
+          'negotiation_notes': req['negotiation_notes'] ?? '',
+          'providers': req['providers'],
+        };
+      }).toList();
+
       // Split into ongoing, future, and history
       final ongoing = <Map<String, dynamic>>[];
       final future = <Map<String, dynamic>>[];
@@ -216,12 +252,18 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
 
         if (status == 'active') {
           ongoing.add(job);
-        } else if (status == 'scheduled' || status == 'pending') {
+        } else if (status == 'scheduled' ||
+            status == 'pending' ||
+            status == 'negotiating') {
           future.add(job);
         } else {
           history.add(job);
         }
       }
+
+      // Add negotiating requests to future list
+      future.addAll(
+          negotiatingJobs.map((j) => Map<String, dynamic>.from(j)).toList());
 
       if (mounted) {
         setState(() {
@@ -778,6 +820,8 @@ class _OngoingJobsView extends StatelessWidget {
     required this.onCancelJob,
     this.onGetEmergencyContacts,
     this.onSaveReviewData,
+    this.customerId,
+    this.onRefresh,
   });
 
   final List<Map<String, dynamic>> jobs;
@@ -787,6 +831,8 @@ class _OngoingJobsView extends StatelessWidget {
   final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
   final Future<void> Function(String jobId, int rating, String review)?
       onSaveReviewData;
+  final String? customerId;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -864,6 +910,8 @@ class _FutureJobsView extends StatelessWidget {
     required this.onShowDetails,
     this.onGetEmergencyContacts,
     this.onSaveReviewData,
+    this.customerId,
+    this.onRefresh,
   });
 
   final List<Map<String, dynamic>> jobs;
@@ -872,6 +920,8 @@ class _FutureJobsView extends StatelessWidget {
   final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
   final Future<void> Function(String jobId, int rating, String review)?
       onSaveReviewData;
+  final String? customerId;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -937,6 +987,8 @@ class _JobCard extends StatelessWidget {
     this.onCancelJob,
     this.onGetEmergencyContacts,
     this.onSaveReviewData,
+    this.customerId,
+    this.onRefresh,
   });
 
   final Map<String, dynamic> job;
@@ -946,6 +998,8 @@ class _JobCard extends StatelessWidget {
   final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
   final Future<void> Function(String jobId, int rating, String review)?
       onSaveReviewData;
+  final String? customerId;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -962,6 +1016,8 @@ class _JobCard extends StatelessWidget {
       return _buildCompletedCard(context);
     } else if (status == 'cancelled') {
       return _buildCancelledCard(context);
+    } else if (status == 'negotiating') {
+      return _buildNegotiatingCard(context);
     }
 
     return _buildStandardCard(context);
@@ -3027,6 +3083,259 @@ class _JobCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// ─── NEW: Negotiating Card ───
+  Widget _buildNegotiatingCard(BuildContext context) {
+    final provider = job['providers'];
+    final providerProfile = provider?['profiles'];
+    final providerName = providerProfile?['full_name'] ?? 'Provider';
+    final providerImage = providerProfile?['profile_image_url'] ?? '';
+    final providerRating = (provider?['rating'] ?? 0.0).toDouble();
+    final negotiationNotes = job['negotiation_notes']?.toString() ?? '';
+    final proposedPrice = job['proposed_price']?.toString() ?? '0';
+    final category = job['service_category']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade600,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'NEGOTIATING',
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                Text(
+                  category,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage: providerImage.isNotEmpty
+                      ? NetworkImage(providerImage)
+                      : null,
+                  backgroundColor: Colors.grey[200],
+                  child: providerImage.isEmpty
+                      ? const Icon(Icons.person, color: Colors.grey)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        providerName,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Row(children: [
+                        Icon(Icons.star, size: 14, color: Colors.amber[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          providerRating.toStringAsFixed(1),
+                          style: GoogleFonts.inter(fontSize: 12),
+                        ),
+                      ]),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Counter Offer from Provider:',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    negotiationNotes.isNotEmpty
+                        ? negotiationNotes
+                        : 'Provider sent a counter offer',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Original Budget: Rs. $proposedPrice',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _acceptCounterOffer(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      'Accept Offer',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _declineCounterOffer(context),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.red[400]!),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      'Decline',
+                      style: GoogleFonts.inter(
+                        color: Colors.red[400],
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _acceptCounterOffer(BuildContext context) async {
+    try {
+      await Supabase.instance.client.from('direct_job_requests').update({
+        'status': 'accepted',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', job['id']);
+
+      await Supabase.instance.client.from('jobs').insert({
+        'direct_request_id': job['id'],
+        'customer_id': customerId,
+        'provider_id': job['providers']?['id'],
+        'service_category': job['service_category'] ?? '',
+        'title': job['title'] ?? 'Direct Request',
+        'description': job['negotiation_notes'] ?? '',
+        'location': job['location'] ?? '',
+        'scheduled_date': job['scheduled_date'],
+        'scheduled_time': job['scheduled_time'],
+        'status': 'scheduled',
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Offer accepted! Job has been scheduled.'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        onRefresh?.call();
+      }
+    } catch (e) {
+      debugPrint('Error accepting offer: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to accept offer. Try again.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _declineCounterOffer(BuildContext context) async {
+    try {
+      await Supabase.instance.client.from('direct_job_requests').update({
+        'status': 'cancelled',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', job['id']);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Counter offer declined.'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        onRefresh?.call();
+      }
+    } catch (e) {
+      debugPrint('Error declining offer: $e');
+    }
   }
 
   Widget _buildStandardCard(BuildContext context) {

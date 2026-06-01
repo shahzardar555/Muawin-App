@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'customer_home_screen.dart';
@@ -41,6 +41,7 @@ class _CustomerVendorProfileScreenState
   final DatabaseService _databaseService = DatabaseService();
   List<Map<String, dynamic>> _supabaseReviews = [];
   bool _isLoadingReviews = true;
+  String _currentCustomerId = '';
 
   Future<void> _loadVendorData() async {
     try {
@@ -84,10 +85,101 @@ class _CustomerVendorProfileScreenState
     return _supabaseReviews.length > 5;
   }
 
+  Future<void> _loadCurrentCustomerId() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+      final profileId = profile['id'].toString();
+
+      final customer = await supabase
+          .from('customers')
+          .select('id')
+          .eq('profile_id', profileId)
+          .single();
+
+      if (mounted) {
+        setState(() {
+          _currentCustomerId = customer['id'].toString();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading customer ID: $e');
+    }
+  }
+
+  Future<void> _deleteReview(String reviewId, String vendorId) async {
+    // Show confirmation dialog first
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Delete Review',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Are you sure you want to delete your review?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.from('reviews').delete().eq('id', reviewId);
+
+      // Reload reviews after deletion
+      await _loadReviews(vendorId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Review deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete review. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _loadVendorData();
+    _loadCurrentCustomerId();
     _checkProStatus();
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -235,18 +327,20 @@ class _CustomerVendorProfileScreenState
     final rating = (_vendorData?['rating'] as num?)?.toDouble() ??
         (widget.vendor['rating'] as num?)?.toDouble() ??
         0.0;
-    final about = _vendorData?['description']?.toString() ??
-        widget.vendor['about']?.toString() ??
-        'No description available';
+    final about = _vendorData?['about']?.toString().isNotEmpty == true
+        ? _vendorData!['about'].toString()
+        : 'No description provided yet.';
     final reviewCount = (_vendorData?['review_count'] as num?)?.toInt() ??
         (widget.vendor['review_count'] as num?)?.toInt() ??
         0;
-    final vendorCity = _vendorData?['city']?.toString() ??
-        widget.vendor['city']?.toString() ??
-        '';
-
     // Keep these for backward compatibility
-    final distance = widget.vendor['distance']?.toString() ?? vendorCity;
+    final address = _vendorData?['address']?.toString() ?? '';
+    final city = _vendorData?['city']?.toString() ?? '';
+    final distance = address.isNotEmpty
+        ? address
+        : city.isNotEmpty
+            ? city
+            : 'Address not set';
     final experience = widget.vendor['experience']?.toString() ?? '';
     final reviews = reviewCount;
 
@@ -349,8 +443,8 @@ class _CustomerVendorProfileScreenState
 
   Widget _buildHeroHeader() {
     // Get cover photo from vendor data
-    final coverPhotoUrl = _vendorData?['coverPhotoUrl']?.toString();
-    final coverPhotoPath = _vendorData?['coverPhotoPath']?.toString();
+    final coverPhotoUrl = _vendorData?['cover_photo_url']?.toString();
+    const coverPhotoPath = null;
 
     return SizedBox(
       width: double.infinity,
@@ -629,11 +723,20 @@ class _CustomerVendorProfileScreenState
             height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Calling vendor...'),
-                      backgroundColor: Colors.blue),
-                );
+                final phone =
+                    _vendorData?['profiles']?['phone_number']?.toString() ?? '';
+                if (phone.isNotEmpty) {
+                  launchUrl(
+                    Uri.parse('tel:$phone'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Phone number not available'),
+                    ),
+                  );
+                }
               },
               icon: const Icon(Icons.phone, color: Color(0xFF2563EB)),
               label: Text(
@@ -729,23 +832,13 @@ class _CustomerVendorProfileScreenState
                           color: Colors.black,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'away',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
-                        ),
-                      ),
                     ],
                   ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () async {
                     // Check if vendor has a custom Google Maps link
-                    final vendorMapsLink =
-                        widget.vendor['mapsLink']?.toString();
+                    final vendorMapsLink = _vendorData?['location']?.toString();
 
                     String googleMapsUrl;
 
@@ -862,37 +955,75 @@ class _CustomerVendorProfileScreenState
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          AnimatedBuilder(
-                            animation: _pulseController,
-                            builder: (context, child) {
-                              return Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF22C55E),
-                                  borderRadius: BorderRadius.circular(4),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF22C55E).withValues(
-                                        alpha: 0.5 * _pulseController.value,
-                                      ),
-                                      blurRadius:
-                                          4 + (4 * _pulseController.value),
-                                      spreadRadius: 1 * _pulseController.value,
+                          Builder(
+                            builder: (context) {
+                              final status =
+                                  _vendorData?['status']?.toString() ?? 'open';
+                              Color dotColor;
+                              if (status == 'busy') {
+                                dotColor = const Color(0xFFF59E0B);
+                              } else if (status == 'break') {
+                                dotColor = const Color(0xFF9333EA);
+                              } else if (status == 'closed') {
+                                dotColor = const Color(0xFFEF4444);
+                              } else {
+                                dotColor = const Color(0xFF22C55E);
+                              }
+                              return AnimatedBuilder(
+                                animation: _pulseController,
+                                builder: (context, child) {
+                                  return Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: dotColor,
+                                      borderRadius: BorderRadius.circular(4),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: dotColor.withValues(
+                                            alpha: 0.5 * _pulseController.value,
+                                          ),
+                                          blurRadius:
+                                              4 + (4 * _pulseController.value),
+                                          spreadRadius:
+                                              1 * _pulseController.value,
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  );
+                                },
                               );
                             },
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            'Open Now',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF16A34A),
-                            ),
+                          Builder(
+                            builder: (context) {
+                              final status =
+                                  _vendorData?['status']?.toString() ?? 'open';
+                              String label;
+                              Color color;
+                              if (status == 'busy') {
+                                label = 'Busy';
+                                color = const Color(0xFFD97706);
+                              } else if (status == 'break') {
+                                label = 'On Break';
+                                color = const Color(0xFF9333EA);
+                              } else if (status == 'closed') {
+                                label = 'Closed';
+                                color = const Color(0xFFDC2626);
+                              } else {
+                                label = 'Open Now';
+                                color = const Color(0xFF16A34A);
+                              }
+                              return Text(
+                                label,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: color,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -1021,6 +1152,9 @@ class _CustomerVendorProfileScreenState
                   rating: reviewRating,
                   date: dateStr,
                   comment: reviewText,
+                  reviewId: review['id']?.toString() ?? '',
+                  reviewCustomerId: review['customer_id']?.toString() ?? '',
+                  vendorId: widget.vendor['id']?.toString() ?? '',
                 ),
               );
             },
@@ -1069,6 +1203,9 @@ class _CustomerVendorProfileScreenState
     required int rating,
     required String date,
     required String comment,
+    required String reviewId,
+    required String reviewCustomerId,
+    required String vendorId,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1120,14 +1257,35 @@ class _CustomerVendorProfileScreenState
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            date,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-              color: Colors.grey[500],
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                date,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: Colors.grey[500],
+                ),
+              ),
+              if (reviewCustomerId == _currentCustomerId)
+                GestureDetector(
+                  onTap: () => _deleteReview(reviewId, vendorId),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.red,
+                      size: 16,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -1255,7 +1413,7 @@ class _CustomerVendorProfileScreenState
                     'customer_id': customerRecord['id'],
                     'rating': selectedRating,
                     'review': reviewController.text.trim(),
-                    'is_verified': false,
+                    'is_verified': true,
                   });
 
                   // Reload reviews
@@ -1349,51 +1507,28 @@ class _CustomerVendorProfileScreenState
 
   // Build vendor profile photo for circular container
   Widget _buildVendorProfilePhoto() {
-    final coverPhotoPath = _vendorData?['coverPhotoPath'] as String?;
-    final coverPhotoUrl = _vendorData?['coverPhotoUrl'] as String?;
-    final avatar = widget.vendor['avatar'] as String?;
+    final profileImageUrl =
+        _vendorData?['profiles']?['profile_image_url']?.toString() ?? '';
 
-    const isWeb = kIsWeb;
-
-    // Try to load cover photo first, then avatar
-    if (coverPhotoPath != null && !isWeb) {
-      try {
-        if (File(coverPhotoPath).existsSync()) {
-          return Image.file(
-            File(coverPhotoPath),
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildDefaultVendorProfilePhoto();
-            },
+    if (profileImageUrl.isNotEmpty) {
+      return Image.network(
+        profileImageUrl,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildDefaultVendorProfilePhoto(),
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
           );
-        }
-      } catch (e) {
-        return _buildDefaultVendorProfilePhoto();
-      }
-    }
-
-    if (coverPhotoUrl != null && coverPhotoUrl.isNotEmpty) {
-      return Image.network(
-        coverPhotoUrl,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildDefaultVendorProfilePhoto();
-        },
-      );
-    }
-
-    if (avatar != null && avatar.isNotEmpty) {
-      return Image.network(
-        avatar,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildDefaultVendorProfilePhoto();
         },
       );
     }

@@ -377,6 +377,7 @@ class NotificationManager extends ChangeNotifier {
   List<Notification> _vendorNotifications = [];
 
   bool _isInitialized = false;
+  RealtimeChannel? _notificationsChannel;
 
   List<Notification> get customerNotifications =>
       List.unmodifiable(_customerNotifications);
@@ -393,6 +394,7 @@ class NotificationManager extends ChangeNotifier {
     required String body,
     NotificationPriority priority = NotificationPriority.medium,
     Map<String, dynamic>? actionData,
+    String? receiverProfileId,
   }) {
     // Initialize storage if not already done
     if (!_isInitialized) {
@@ -428,7 +430,7 @@ class NotificationManager extends ChangeNotifier {
     _saveToStorage();
 
     // Also save to Supabase asynchronously
-    _saveNotificationToSupabase(notification);
+    _saveNotificationToSupabase(notification, receiverProfileId);
 
     notifyListeners();
   }
@@ -697,21 +699,28 @@ class NotificationManager extends ChangeNotifier {
   }
 
   // Save notification to Supabase
-  Future<void> _saveNotificationToSupabase(Notification notification) async {
+  Future<void> _saveNotificationToSupabase(Notification notification,
+      [String? receiverProfileId]) async {
     try {
       final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
 
-      // Get profile id
-      final profile = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .single();
+      // Use receiverProfileId if provided, otherwise fall back to current user's profile
+      String targetUserId;
+      if (receiverProfileId != null && receiverProfileId.isNotEmpty) {
+        targetUserId = receiverProfileId;
+      } else {
+        final user = supabase.auth.currentUser;
+        if (user == null) return;
+        final profile = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('user_id', user.id)
+            .single();
+        targetUserId = profile['id'].toString();
+      }
 
       await supabase.from('notifications').insert({
-        'user_id': profile['id'],
+        'user_id': targetUserId,
         'type': notification.type.toString().split('.').last,
         'title': notification.title,
         'body': notification.body,
@@ -777,10 +786,37 @@ class NotificationManager extends ChangeNotifier {
         _vendorNotifications = notifications;
       }
 
+      // Subscribe to real-time notifications for this user
+      subscribeToNotifications(profileId);
+
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading notifications from Supabase: $e');
     }
+  }
+
+  /// Subscribe to real-time notifications for a user profile
+  void subscribeToNotifications(String profileId) {
+    // Unsubscribe from any previous channel
+    _notificationsChannel?.unsubscribe();
+
+    _notificationsChannel = Supabase.instance.client
+        .channel('notifications:$profileId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: profileId,
+          ),
+          callback: (payload) {
+            debugPrint('New notification received!');
+            loadNotificationsFromSupabase();
+          },
+        )
+        .subscribe();
   }
 
   // Mark notification as read in Supabase

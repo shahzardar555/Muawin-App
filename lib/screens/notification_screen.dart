@@ -719,9 +719,9 @@ class _NotificationScreenState extends State<NotificationScreen>
 
     return RefreshIndicator(
       onRefresh: () async {
-        // Pull to refresh would trigger a sync with backend
-        // For now, just complete the future
-        await Future.delayed(const Duration(seconds: 1));
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(context, listen: false);
+        await notificationManager.loadNotificationsFromSupabase();
       },
       child: ListView.separated(
         padding: const EdgeInsets.all(16),

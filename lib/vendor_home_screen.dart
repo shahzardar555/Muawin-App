@@ -11,6 +11,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'chat_screen.dart';
 import 'widgets/get_featured_overlay.dart';
 import 'services/service_locator.dart';
 import 'services/vendor_data_service.dart';
@@ -256,7 +257,8 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
             review_count,
             is_pro,
             years_in_business,
-            cover_photo_url
+            cover_photo_url,
+            status
           ''').eq('profile_id', _currentProfileId).maybeSingle();
       debugPrint('Vendor init — vendor: $vendor');
 
@@ -269,7 +271,21 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
       _currentVendorId = vendor['id'].toString();
       debugPrint('Vendor init — setting state');
 
+      // Load status from Supabase
+      final dbStatus = vendor['status']?.toString() ?? 'open';
+      VendorStatus loadedStatus;
+      if (dbStatus == 'busy') {
+        loadedStatus = VendorStatus.busy;
+      } else if (dbStatus == 'break') {
+        loadedStatus = VendorStatus.break_;
+      } else if (dbStatus == 'closed') {
+        loadedStatus = VendorStatus.closed;
+      } else {
+        loadedStatus = VendorStatus.open;
+      }
+
       setState(() {
+        _status = loadedStatus;
         _vendorData = {
           'name': vendor['business_name']?.toString() ??
               profile['full_name']?.toString() ??
@@ -286,6 +302,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
           'mapsLink': vendor['location']?.toString() ?? '',
           'is_pro': vendor['is_pro'] == true,
           'coverPhotoUrl': vendor['cover_photo_url']?.toString(),
+          'status': dbStatus,
         };
         _isLoadingVendorData = false;
       });
@@ -511,6 +528,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
                   status: _status,
                   statusLabel: _statusLabel,
                   onStatusChanged: (status) async {
+                    VendorDataService.updateVendorStatus(status);
                     setState(() {
                       _status = status;
                     });
@@ -1016,10 +1034,163 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
   final TextEditingController _searchController = TextEditingController();
   Map<String, dynamic>? _selectedThread;
 
-  // STEP 1: Add these state variables
-  final bool _isLoadingChats = false;
+  bool _isLoadingChats = false;
 
-  final List<Map<String, dynamic>> _threads = [];
+  List<Map<String, dynamic>> _threads = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChats();
+  }
+
+  Future<void> _loadChats() async {
+    if (!mounted) return;
+    setState(() => _isLoadingChats = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get vendor's profile_id
+      final profileResp = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+      final myProfileId = profileResp['id'].toString();
+
+      // Get threads where vendor is participant_1
+      final threads1 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_1_id', myProfileId)
+          .eq('is_active', true)
+          .order('last_message_at', ascending: false);
+
+      // Get threads where vendor is participant_2
+      final threads2 = await supabase
+          .from('message_threads')
+          .select(
+              'id, participant_1_id, participant_2_id, last_message_at, is_active')
+          .eq('participant_2_id', myProfileId)
+          .eq('is_active', true)
+          .order('last_message_at', ascending: false);
+
+      // Combine and deduplicate
+      final allThreads = [...threads1, ...threads2];
+      final seen = <String>{};
+      final uniqueThreads = allThreads.where((t) {
+        final id = t['id'].toString();
+        return seen.add(id);
+      }).toList();
+
+      // Sort by last_message_at descending
+      uniqueThreads.sort((a, b) {
+        final aTime =
+            DateTime.tryParse(a['last_message_at']?.toString() ?? '') ??
+                DateTime(2000);
+        final bTime =
+            DateTime.tryParse(b['last_message_at']?.toString() ?? '') ??
+                DateTime(2000);
+        return bTime.compareTo(aTime);
+      });
+
+      // For each thread, get other participant info and last message
+      final List<Map<String, dynamic>> result = [];
+
+      for (final thread in uniqueThreads) {
+        final threadId = thread['id'].toString();
+        final otherParticipantId =
+            thread['participant_1_id']?.toString() == myProfileId
+                ? thread['participant_2_id']?.toString() ?? ''
+                : thread['participant_1_id']?.toString() ?? '';
+
+        // Get other participant's profile
+        final otherProfile = await supabase
+            .from('profiles')
+            .select('id, full_name, profile_image_url')
+            .eq('id', otherParticipantId)
+            .maybeSingle();
+
+        // Get last message
+        final lastMessages = await supabase
+            .from('messages')
+            .select('content, created_at, is_read, sender_id')
+            .eq('thread_id', threadId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        String snippet = 'Tap to open conversation';
+        String time = '';
+        bool unread = false;
+
+        if (lastMessages.isNotEmpty) {
+          final last = lastMessages[0];
+          snippet = last['content']?.toString() ?? '';
+          unread = last['is_read'] == false &&
+              last['sender_id']?.toString() != myProfileId;
+
+          final msgTime =
+              DateTime.tryParse(last['created_at']?.toString() ?? '');
+          if (msgTime != null) {
+            final now = DateTime.now();
+            final diff = now.difference(msgTime);
+            if (diff.inMinutes < 60) {
+              time = '${diff.inMinutes}m ago';
+            } else if (diff.inHours < 24) {
+              time = '${diff.inHours}h ago';
+            } else {
+              time = '${diff.inDays}d ago';
+            }
+          }
+        }
+
+        result.add({
+          'id': threadId,
+          'name': otherProfile?['full_name']?.toString() ?? 'Customer',
+          'avatar': otherProfile?['profile_image_url']?.toString() ?? '',
+          'snippet': snippet,
+          'time': time,
+          'unread': unread,
+          'isNewCustomer': false,
+          'otherProfileId': otherParticipantId,
+        });
+      }
+
+      if (mounted) {
+        setState(() => _threads = result);
+      }
+    } catch (e) {
+      debugPrint('Error loading vendor chats: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingChats = false);
+      }
+    }
+  }
+
+  void _openConversation(Map<String, dynamic> thread) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatData: {
+            'id': thread['id'],
+            'name': thread['name'],
+            'avatar': thread['avatar'],
+            'isOnline': false,
+            'type': 'customer',
+          },
+        ),
+      ),
+    )
+        .then((_) {
+      _loadChats();
+    });
+  }
 
   @override
   void dispose() {
@@ -1130,7 +1301,6 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
     final primary = theme.colorScheme.primary;
     final surface = theme.colorScheme.surface;
     final onPrimary = theme.colorScheme.onPrimary;
-    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
 
     final query = _searchController.text.trim().toLowerCase();
     final filtered = _threads.where((t) {
@@ -1437,47 +1607,43 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
                 ),
               ),
               Expanded(
-                child: showingConversation && selectedThread != null
-                    ? _ConversationView(
-                        thread: selectedThread,
-                        primary: primary,
-                        muted: muted,
-                      )
-                    : _isLoadingChats
-                        ? const Center(child: CircularProgressIndicator())
-                        : hasResults
-                            ? ListView.separated(
-                                padding:
-                                    const EdgeInsets.fromLTRB(24, 16, 24, 96),
-                                itemBuilder: (context, index) {
-                                  final t = filtered[index];
-                                  final bool unread = t['unread'] as bool;
-                                  final bool isNew = t['isNewCustomer'] as bool;
-                                  final String name = t['name'] as String;
-                                  final String? avatar = t['avatar'] as String?;
-                                  final String snippet = t['snippet'] as String;
-                                  final String time = t['time'] as String;
+                child: _isLoadingChats
+                    ? const Center(child: CircularProgressIndicator())
+                    : hasResults
+                        ? RefreshIndicator(
+                            onRefresh: _loadChats,
+                            child: ListView.separated(
+                              padding:
+                                  const EdgeInsets.fromLTRB(24, 16, 24, 96),
+                              itemBuilder: (context, index) {
+                                final t = filtered[index];
+                                final bool unread = t['unread'] as bool;
+                                final bool isNew = t['isNewCustomer'] as bool;
+                                final String name = t['name'] as String;
+                                final String? avatar = t['avatar'] as String?;
+                                final String snippet = t['snippet'] as String;
+                                final String time = t['time'] as String;
 
-                                  return GestureDetector(
-                                    onTap: () =>
-                                        setState(() => _selectedThread = t),
-                                    child: _ChatThreadCard(
-                                      name: name,
-                                      avatar: avatar,
-                                      snippet: snippet,
-                                      time: time,
-                                      unread: unread,
-                                      isNewCustomer: isNew,
-                                    ),
-                                  );
-                                },
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemCount: filtered.length,
-                              )
-                            : _ChatsEmptyState(
-                                isSearch: isSearching,
-                              ),
+                                return GestureDetector(
+                                  onTap: () => _openConversation(t),
+                                  child: _ChatThreadCard(
+                                    name: name,
+                                    avatar: avatar,
+                                    snippet: snippet,
+                                    time: time,
+                                    unread: unread,
+                                    isNewCustomer: isNew,
+                                  ),
+                                );
+                              },
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemCount: filtered.length,
+                            ),
+                          )
+                        : _ChatsEmptyState(
+                            isSearch: isSearching,
+                          ),
               ),
             ],
           ),

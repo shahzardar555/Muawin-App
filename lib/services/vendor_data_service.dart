@@ -500,10 +500,44 @@ class VendorDataService {
   // Status management methods
   static Future<bool> updateVendorStatus(VendorStatus status) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('vendor_status', status.toString());
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) return false;
+
+      String statusStr;
+      if (status == VendorStatus.busy) {
+        statusStr = 'busy';
+      } else if (status == VendorStatus.break_) {
+        statusStr = 'break';
+      } else if (status == VendorStatus.closed) {
+        statusStr = 'closed';
+      } else {
+        statusStr = 'open';
+      }
+
+      // Get vendor ID
+      final profile = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+      final profileId = profile['id'].toString();
+
+      final vendor = await supabase
+          .from('vendors')
+          .select('id')
+          .eq('profile_id', profileId)
+          .single();
+      final vendorId = vendor['id'].toString();
+
+      await supabase
+          .from('vendors')
+          .update({'status': statusStr}).eq('id', vendorId);
+
+      debugPrint('Vendor status saved to Supabase: $statusStr');
       return true;
     } catch (e) {
+      debugPrint('Error saving vendor status: $e');
       return false;
     }
   }

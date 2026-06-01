@@ -145,6 +145,11 @@ class DatabaseService {
         )
       """).eq('id', providerId).maybeSingle();
 
+      // Map cover_photo_url to cover_photo_path for compatibility
+      if (response != null && response['cover_photo_url'] != null) {
+        response['cover_photo_path'] = response['cover_photo_url'];
+      }
+
       return response;
     } catch (e) {
       debugPrint('Error in getProviderById: $e');
@@ -212,6 +217,7 @@ class DatabaseService {
           .eq('is_active', true)
           .not('provider_id', 'is', null)
           .gt('end_date', DateTime.now().toIso8601String())
+          .lte('start_date', DateTime.now().toIso8601String())
           .order('plan_type', ascending: false)
           .limit(5);
 
@@ -396,7 +402,6 @@ class DatabaseService {
         )
       """)
           .eq('vendor_id', vendorId)
-          .eq('is_verified', true)
           .order('created_at', ascending: false)
           .limit(limit);
 
