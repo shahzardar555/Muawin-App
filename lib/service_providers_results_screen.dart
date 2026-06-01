@@ -10,9 +10,18 @@ import 'package:muawin_app/widgets/bottom_navigation_bar.dart';
 import 'customer_provider_profile.dart';
 
 class ServiceProvidersResultsScreen extends StatefulWidget {
-  const ServiceProvidersResultsScreen({super.key, required this.category});
+  const ServiceProvidersResultsScreen({
+    super.key,
+    required this.category,
+    this.userLatitude,
+    this.userLongitude,
+    this.userCity,
+  });
 
   final String category;
+  final double? userLatitude;
+  final double? userLongitude;
+  final String? userCity;
 
   @override
   State<ServiceProvidersResultsScreen> createState() =>

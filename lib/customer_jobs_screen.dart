@@ -633,6 +633,8 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           onCancelJob: _cancelJob,
           onGetEmergencyContacts: _getEmergencyContacts,
           onSaveReviewData: _saveReviewData,
+          customerId: _customerId,
+          onRefresh: _loadJobs,
         ),
         _FutureJobsView(
           jobs: _futureJobs,
@@ -640,6 +642,8 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           onShowDetails: _showJobDetailsDialog,
           onGetEmergencyContacts: _getEmergencyContacts,
           onSaveReviewData: _saveReviewData,
+          customerId: _customerId,
+          onRefresh: _loadJobs,
         ),
         _HistoryJobsView(
           jobs: _historyJobs,
@@ -647,6 +651,8 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           onShowDetails: _showJobDetailsDialog,
           onGetEmergencyContacts: _getEmergencyContacts,
           onSaveReviewData: _saveReviewData,
+          customerId: _customerId,
+          onRefresh: _loadJobs,
         ),
       ],
     );
@@ -856,6 +862,8 @@ class _OngoingJobsView extends StatelessWidget {
                   onCancelJob: onCancelJob,
                   onGetEmergencyContacts: onGetEmergencyContacts,
                   onSaveReviewData: onSaveReviewData,
+                  customerId: customerId,
+                  onRefresh: onRefresh,
                 )),
           ],
 
@@ -870,6 +878,8 @@ class _OngoingJobsView extends StatelessWidget {
                   onCancelJob: onCancelJob,
                   onGetEmergencyContacts: onGetEmergencyContacts,
                   onSaveReviewData: onSaveReviewData,
+                  customerId: customerId,
+                  onRefresh: onRefresh,
                 )),
           ],
         ],
@@ -935,6 +945,8 @@ class _FutureJobsView extends StatelessWidget {
                 onShowDetails: onShowDetails,
                 onGetEmergencyContacts: onGetEmergencyContacts,
                 onSaveReviewData: onSaveReviewData,
+                customerId: customerId,
+                onRefresh: onRefresh,
               )),
         ],
       ),
@@ -950,6 +962,8 @@ class _HistoryJobsView extends StatelessWidget {
     required this.onShowDetails,
     this.onGetEmergencyContacts,
     this.onSaveReviewData,
+    this.customerId,
+    this.onRefresh,
   });
 
   final List<Map<String, dynamic>> jobs;
@@ -958,6 +972,8 @@ class _HistoryJobsView extends StatelessWidget {
   final Future<List<Map<String, String>>> Function()? onGetEmergencyContacts;
   final Future<void> Function(String jobId, int rating, String review)?
       onSaveReviewData;
+  final String? customerId;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -971,6 +987,8 @@ class _HistoryJobsView extends StatelessWidget {
                 onShowDetails: onShowDetails,
                 onGetEmergencyContacts: onGetEmergencyContacts,
                 onSaveReviewData: onSaveReviewData,
+                customerId: customerId,
+                onRefresh: onRefresh,
               )),
         ],
       ),
@@ -3104,7 +3122,7 @@ class _JobCard extends StatelessWidget {
         border: Border.all(color: Colors.orange.shade300, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withOpacity(0.1),
+            color: Colors.orange.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -3294,7 +3312,7 @@ class _JobCard extends StatelessWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Offer accepted! Job has been scheduled.'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
@@ -3306,7 +3324,7 @@ class _JobCard extends StatelessWidget {
       debugPrint('Error accepting offer: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Failed to accept offer. Try again.'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
@@ -3325,7 +3343,7 @@ class _JobCard extends StatelessWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Counter offer declined.'),
             backgroundColor: Colors.orange,
             behavior: SnackBarBehavior.floating,

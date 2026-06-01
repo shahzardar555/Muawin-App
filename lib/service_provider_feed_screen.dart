@@ -8,6 +8,7 @@ import 'dart:convert'; // Add this import for jsonDecode
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:provider/provider.dart';
 import 'widgets/get_featured_overlay.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/bottom_navigation_bar.dart';
@@ -16,6 +17,7 @@ import 'widgets/service_provider_notification_bell.dart';
 import 'my_jobs_screen.dart';
 import 'chats_screen.dart';
 import 'service_provider_profile_screen.dart';
+import 'services/notification_manager.dart' as nm;
 
 /// Max width adjusted to match navigation bar span (responsive)
 double _getMaxContentWidth(BuildContext context) {
@@ -349,14 +351,82 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
               SizedBox(
                 height: 54,
                 child: FilledButton(
-                  onPressed: () {
-                    // Safe haptic feedback alternative
-                    try {
-                      // Haptic feedback removed for compatibility
-                    } catch (e) {
-                      // Ignore haptic feedback errors
+                  onPressed: () async {
+                    final counterPrice = priceController.text.trim();
+                    final counterTime = timeController.text.trim();
+                    final supabaseId = job['supabase_id']?.toString() ?? '';
+
+                    if (supabaseId.isEmpty) {
+                      Navigator.pop(ctx);
+                      return;
                     }
-                    Navigator.pop(ctx);
+
+                    // Capture ScaffoldMessenger and NotificationManager before async gap
+                    final messenger = ScaffoldMessenger.of(context);
+                    final notificationManager =
+                        Provider.of<nm.NotificationManager>(context,
+                            listen: false);
+
+                    try {
+                      await Supabase.instance.client
+                          .from('direct_job_requests')
+                          .update({
+                        'status': 'negotiating',
+                        'negotiation_notes': 'Counter offer: Rs.$counterPrice. '
+                            'Preferred time: $counterTime',
+                      }).eq('id', supabaseId);
+
+                      // FIX 2: Send notification to customer about negotiation
+                      // Using captured notificationManager to avoid BuildContext across async gap
+                      try {
+                        final customerData = await Supabase.instance.client
+                            .from('customers')
+                            .select('profile_id')
+                            .eq('id', job['customer_id'])
+                            .maybeSingle();
+
+                        if (customerData != null) {
+                          notificationManager.sendNotification(
+                            receiverId: job['customer_id'],
+                            receiverType: 'customer',
+                            type: nm.NotificationType.jobRequestNegotiation,
+                            title: '💬 Counter Offer Received!',
+                            body:
+                                'Your provider sent a counter offer. Tap to review.',
+                            priority: nm.NotificationPriority.high,
+                            receiverProfileId:
+                                customerData['profile_id']?.toString(),
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint(
+                            'Error sending negotiation notification: $e');
+                      }
+
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        setState(() => _jobAlerts.remove(job));
+                      }
+
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Counter offer sent successfully!'),
+                          backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    } catch (e) {
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                      }
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to send offer. Try again.'),
+                          backgroundColor: Colors.red,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   },
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF047A62),
@@ -984,9 +1054,13 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                     if (_isProcessingAccept) return;
                                     setState(() => _isProcessingAccept = true);
                                     try {
-                                      // Capture ScaffoldMessenger before async gap
+                                      // Capture ScaffoldMessenger and NotificationManager before async gap
                                       final messenger =
                                           ScaffoldMessenger.of(context);
+                                      final notificationManager =
+                                          Provider.of<nm.NotificationManager>(
+                                              context,
+                                              listen: false);
 
                                       final supabaseId =
                                           job['supabase_id']?.toString() ?? '';
@@ -1081,6 +1155,41 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
 
                                       // Remove from feed
                                       setState(() => _jobAlerts.remove(job));
+
+                                      // FIX 1: Send notification to customer when provider accepts direct request
+                                      // Using captured notificationManager to avoid BuildContext across async gap
+                                      if (!isOpenJob) {
+                                        try {
+                                          // Get customer's profile_id
+                                          final customerData = await Supabase
+                                              .instance.client
+                                              .from('customers')
+                                              .select('profile_id')
+                                              .eq('id', job['customer_id'])
+                                              .maybeSingle();
+
+                                          if (customerData != null) {
+                                            notificationManager
+                                                .sendNotification(
+                                              receiverId: job['customer_id'],
+                                              receiverType: 'customer',
+                                              type: nm.NotificationType
+                                                  .jobRequestAccepted,
+                                              title: '🎉 Request Accepted!',
+                                              body:
+                                                  '${_providerProfile['name'] ?? 'Your provider'} has accepted your job request.',
+                                              priority:
+                                                  nm.NotificationPriority.high,
+                                              receiverProfileId:
+                                                  customerData['profile_id']
+                                                      ?.toString(),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          debugPrint(
+                                              'Error sending acceptance notification: $e');
+                                        }
+                                      }
 
                                       // Show success message
                                       messenger.showSnackBar(

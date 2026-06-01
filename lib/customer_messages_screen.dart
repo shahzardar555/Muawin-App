@@ -78,7 +78,7 @@ class _CustomerMessagesScreenState extends State<CustomerMessagesScreen> {
       // Combine and deduplicate
       final Map<String, dynamic> threadMap = {};
       for (final t in [...threads1, ...threads2]) {
-        threadMap[t['id']?.toString() ?? ''] = t;
+        threadMap[t['id'].toString()] = t;
       }
       final threads = threadMap.values.toList();
 

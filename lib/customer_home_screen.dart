@@ -39,6 +39,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   int _currentNavIndex = 0;
   String _customerName = '';
   String _currentLocation = '';
+  double? _userLatitude;
+  double? _userLongitude;
   final TextEditingController _searchController = TextEditingController();
 
   // PRO status state
@@ -80,16 +82,51 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       if (user != null) {
         final profile = await supabase
             .from('profiles')
-            .select('full_name')
+            .select('id, full_name, location, city, area, latitude, longitude')
             .eq('user_id', user.id)
             .single();
         final fullName = profile['full_name']?.toString() ?? 'Customer';
         // Extract first name
         final firstName = fullName.split(' ').first;
+
+        // Set location from saved data
+        final savedCity = profile['city']?.toString() ?? '';
+        final savedArea = profile['area']?.toString() ?? '';
+        final savedLocation = profile['location']?.toString() ?? '';
+        String locationText = '';
+        if (savedCity.isNotEmpty) {
+          locationText =
+              savedArea.isNotEmpty ? '$savedArea, $savedCity' : savedCity;
+        } else if (savedLocation.isNotEmpty) {
+          locationText = savedLocation;
+        }
+
+        // Save coordinates for filtering
+        double? lat;
+        double? lng;
+        if (profile['latitude'] != null) {
+          lat = (profile['latitude'] as num).toDouble();
+        }
+        if (profile['longitude'] != null) {
+          lng = (profile['longitude'] as num).toDouble();
+        }
+
         if (mounted) {
           setState(() {
             _customerName = firstName;
+            if (locationText.isNotEmpty) {
+              _currentLocation = locationText;
+            }
+            _userLatitude = lat;
+            _userLongitude = lng;
           });
+
+          // If coordinates exist but no saved location text, show "My Location"
+          if (mounted && _currentLocation.isEmpty && _userLatitude != null) {
+            setState(() {
+              _currentLocation = 'My Location';
+            });
+          }
         }
       } else {
         if (mounted) {
@@ -634,6 +671,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             primary: primary,
             vendorCategories: _vendorCategories,
             vendorCategoriesLoading: _vendorCategoriesLoading,
+            userCity: _currentLocation.split(',').last.trim(),
+            userLatitude: _userLatitude,
+            userLongitude: _userLongitude,
           ),
           const SizedBox(height: 24),
 
@@ -771,7 +811,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ServiceProvidersResultsScreen(category: name),
+            builder: (_) => ServiceProvidersResultsScreen(
+              category: name,
+              userCity: _currentLocation.split(',').last.trim(),
+              userLatitude: _userLatitude,
+              userLongitude: _userLongitude,
+            ),
           ),
         );
       },
@@ -815,388 +860,752 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(32), // 2rem = 32px
-            topRight: Radius.circular(32),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black,
-              blurRadius: 40, // shadow-2xl
-              offset: Offset(0, 15),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    Provider.of<LanguageProvider>(context)
-                        .translate('select_location'),
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            // Local state for the Lahore area search
+            final List<String> searchResults = <String>[];
+            bool isSearching = false;
+            final TextEditingController searchController =
+                TextEditingController();
+
+            // Search function
+            Future<void> searchLocation(String query) async {
+              if (!context.mounted) return;
+              if (query.trim().length < 3) {
+                if (searchResults.isNotEmpty) searchResults.clear();
+                isSearching = false;
+                setSheetState(() {});
+                return;
+              }
+              isSearching = true;
+              setSheetState(() {});
+              try {
+                final locations =
+                    await locationFromAddress('$query, Lahore, Pakistan');
+                if (!context.mounted) return;
+                final List<String> results = <String>[];
+                for (final loc in locations.take(5)) {
+                  if (!context.mounted) return;
+                  try {
+                    final placemarks = await placemarkFromCoordinates(
+                        loc.latitude, loc.longitude);
+                    if (!context.mounted) return;
+                    if (placemarks.isNotEmpty) {
+                      final p = placemarks.first;
+                      final area = p.subLocality ?? p.locality ?? '';
+                      final city = p.locality ?? 'Lahore';
+                      if (area.isNotEmpty) {
+                        final r = '$area, $city';
+                        if (!results.contains(r)) results.add(r);
+                      }
+                    }
+                  } catch (_) {}
+                }
+                searchResults
+                  ..clear()
+                  ..addAll(results);
+                isSearching = false;
+                setSheetState(() {});
+              } catch (_) {
+                if (!context.mounted) return;
+                searchResults.clear();
+                isSearching = false;
+                setSheetState(() {});
+              }
+            }
+
+            return Container(
+                height: MediaQuery.of(context).size.height * 0.8,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(32), // 2rem = 32px
+                    topRight: Radius.circular(32),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black,
+                      blurRadius: 40, // shadow-2xl
+                      offset: Offset(0, 15),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            // Use Current Location Button - Updated Design
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Container(
-                width: double.infinity, // Full width
-                height: 56, // 3.5rem = 56px
-                decoration: BoxDecoration(
-                  color: const Color(0xFF088771)
-                      .withValues(alpha: 0.05), // 5% Primary Teal
-                  borderRadius: BorderRadius.circular(16), // 1rem
-                  border: Border.all(
-                    color: const Color(0xFF088771), // Primary Teal
-                    width: 1, // 1px solid
-                  ),
+                  ],
                 ),
-                child: InkWell(
-                  onTap: () async {
-                    if (!mounted) return;
-
-                    // Store context before any async operations
-                    final currentContext = context;
-
-                    // Store context-dependent values before async gap
-                    final messenger = ScaffoldMessenger.of(currentContext);
-                    final navigator = Navigator.of(currentContext);
-                    final languageProvider = Provider.of<LanguageProvider>(
-                        currentContext,
-                        listen: false);
-                    const primaryColor = Color(0xFF088771);
-
-                    navigator.pop();
-
-                    // Show loading state (could update a global state here)
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          languageProvider
-                              .translate('getting_current_location'),
-                          style: GoogleFonts.poppins(),
-                        ),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-
-                    // Check if location services are enabled
-                    bool isLocationServiceEnabled =
-                        await Geolocator.isLocationServiceEnabled();
-                    if (!isLocationServiceEnabled) {
-                      if (mounted && currentContext.mounted) {
-                        bool? openSettings = await showDialog<bool>(
-                          context: currentContext,
-                          builder: (dialogContext) => AlertDialog(
-                            title: const Text('Location Services Disabled'),
-                            content: const Text(
-                                'Please enable location services to get your current location.'),
-                            actions: [
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(false),
-                                child: const Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(true),
-                                child: const Text('Open Settings'),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        // Check if still mounted after dialog
-                        if (mounted && openSettings == true) {
-                          await Geolocator.openLocationSettings();
-                        }
-
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Location services are disabled. Please enable them in settings.',
-                                style: GoogleFonts.poppins(),
-                              ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                      return;
-                    }
-
-                    // Request location permission and get current position
-                    try {
-                      LocationPermission permission =
-                          await Geolocator.checkPermission();
-                      if (permission == LocationPermission.denied) {
-                        permission = await Geolocator.requestPermission();
-                      }
-
-                      if (permission == LocationPermission.denied ||
-                          permission == LocationPermission.deniedForever) {
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Location permission denied. Please enable it in app settings.',
-                                style: GoogleFonts.poppins(),
-                              ),
-                              backgroundColor: Colors.red,
-                              action: SnackBarAction(
-                                label: 'Settings',
-                                onPressed: () => Geolocator.openAppSettings(),
-                              ),
-                            ),
-                          );
-                        }
-                        return;
-                      }
-
-                      // Get current position with timeout
-                      Position position = await Geolocator.getCurrentPosition(
-                        desiredAccuracy: LocationAccuracy.high,
-                        timeLimit: const Duration(seconds: 15),
-                      ).timeout(
-                        const Duration(seconds: 15),
-                        onTimeout: () {
-                          throw TimeoutException('Location request timed out',
-                              const Duration(seconds: 15));
-                        },
-                      );
-
-                      // Reverse geocoding to get address
-                      try {
-                        List<Placemark> placemarks =
-                            await placemarkFromCoordinates(
-                                position.latitude, position.longitude);
-
-                        Placemark place = placemarks.first;
-                        String address = '';
-
-                        if (place.street?.isNotEmpty == true) {
-                          address = place.street!;
-                        } else if (place.name?.isNotEmpty == true) {
-                          address = place.name!;
-                        } else if (place.locality?.isNotEmpty == true) {
-                          address = place.locality!;
-                        } else {
-                          address = 'Unknown Location';
-                        }
-
-                        // Update the current location state
-                        setState(() {
-                          _currentLocation = address;
-                        });
-
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Location updated: $address',
-                                style: GoogleFonts.poppins(),
-                              ),
-                              backgroundColor: primaryColor,
-                            ),
-                          );
-                        }
-                      } catch (geocodingError) {
-                        // Fallback to coordinates if geocoding fails
-                        setState(() {
-                          _currentLocation =
-                              'Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}';
-                        });
-
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Location found but address unavailable',
-                                style: GoogleFonts.poppins(),
-                              ),
-                              backgroundColor: Colors.orange,
-                            ),
-                          );
-                        }
-                      }
-                    } on TimeoutException {
-                      if (mounted) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Location request timed out. Please try again.',
-                              style: GoogleFonts.poppins(),
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Failed to get location: ${e.toString()}',
-                              style: GoogleFonts.poppins(),
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      const SizedBox(width: 16), // 1rem horizontal padding
-                      const Icon(
-                        Icons.navigation, // Navigation icon (1.25rem / w-5 h-5)
-                        size: 20, // 1.25rem
-                        color: Color(0xFF088771), // Solid Primary Teal
-                      ),
-                      const SizedBox(width: 16), // 1rem gap
-                      Expanded(
-                        child: Text(
-                          Provider.of<LanguageProvider>(context)
-                              .translate('use_current_location'),
-                          style: GoogleFonts.poppins(
-                            fontSize: 16, // text-base (1rem)
-                            fontWeight: FontWeight.w600, // Semi-bold
-                            color:
-                                const Color(0xFF088771), // Solid Primary Teal
-                          ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 12, bottom: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Popular Areas Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                Provider.of<LanguageProvider>(context)
-                    .translate('popular_areas'),
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Areas List - Static for now, could be made dynamic
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                children: [
-                  'Gulberg III, Lahore',
-                  'DHA Phase 5, Lahore',
-                  'Model Town, Lahore',
-                  'Johar Town, Lahore',
-                  'Bahria Town, Lahore',
-                  'Cantt, Lahore',
-                  'Faisal Town, Lahore',
-                  'Ichhra, Lahore',
-                  'Wapda Town, Lahore',
-                  'Valencia Town, Lahore',
-                ].map((area) {
-                  final isSelected =
-                      area == _currentLocation; // Show current selection
-
-                  return GestureDetector(
-                    onTap: () {
-                      // Update the selected location directly
-                      setState(() {
-                        _currentLocation = area;
-                      });
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? primary.withValues(alpha: 0.1)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected ? primary : Colors.grey[300]!,
-                          width: 1,
-                        ),
-                      ),
+                    ),
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 16),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Icon(
-                            Icons.location_on,
-                            color: isSelected ? primary : Colors.grey[600],
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              area,
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                                color: isSelected ? primary : Colors.black87,
-                              ),
+                          Text(
+                            Provider.of<LanguageProvider>(context)
+                                .translate('select_location'),
+                            style: GoogleFonts.poppins(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
                             ),
                           ),
-                          if (isSelected)
-                            Icon(
-                              Icons.check_circle,
-                              color: primary,
-                              size: 20,
-                            ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.grey),
+                          ),
                         ],
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
+                    // Use Current Location Button - Updated Design
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Container(
+                        width: double.infinity, // Full width
+                        height: 56, // 3.5rem = 56px
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF088771)
+                              .withValues(alpha: 0.05), // 5% Primary Teal
+                          borderRadius: BorderRadius.circular(16), // 1rem
+                          border: Border.all(
+                            color: const Color(0xFF088771), // Primary Teal
+                            width: 1, // 1px solid
+                          ),
+                        ),
+                        child: InkWell(
+                          onTap: () async {
+                            if (!mounted) return;
+
+                            // Store context before any async operations
+                            final currentContext = context;
+
+                            // Store context-dependent values before async gap
+                            final messenger =
+                                ScaffoldMessenger.of(currentContext);
+                            final navigator = Navigator.of(currentContext);
+                            final languageProvider =
+                                Provider.of<LanguageProvider>(currentContext,
+                                    listen: false);
+                            const primaryColor = Color(0xFF088771);
+
+                            navigator.pop();
+
+                            // Show loading state (could update a global state here)
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  languageProvider
+                                      .translate('getting_current_location'),
+                                  style: GoogleFonts.poppins(),
+                                ),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+
+                            // Check if location services are enabled
+                            bool isLocationServiceEnabled =
+                                await Geolocator.isLocationServiceEnabled();
+                            if (!isLocationServiceEnabled) {
+                              if (mounted && currentContext.mounted) {
+                                bool? openSettings = await showDialog<bool>(
+                                  context: currentContext,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text(
+                                        'Location Services Disabled'),
+                                    content: const Text(
+                                        'Please enable location services to get your current location.'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext)
+                                                .pop(true),
+                                        child: const Text('Open Settings'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                // Check if still mounted after dialog
+                                if (mounted && openSettings == true) {
+                                  await Geolocator.openLocationSettings();
+                                }
+
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Location services are disabled. Please enable them in settings.',
+                                        style: GoogleFonts.poppins(),
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                              return;
+                            }
+
+                            // Request location permission and get current position
+                            try {
+                              LocationPermission permission =
+                                  await Geolocator.checkPermission();
+                              if (permission == LocationPermission.denied) {
+                                permission =
+                                    await Geolocator.requestPermission();
+                              }
+
+                              if (permission == LocationPermission.denied ||
+                                  permission ==
+                                      LocationPermission.deniedForever) {
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Location permission denied. Please enable it in app settings.',
+                                        style: GoogleFonts.poppins(),
+                                      ),
+                                      backgroundColor: Colors.red,
+                                      action: SnackBarAction(
+                                        label: 'Settings',
+                                        onPressed: () =>
+                                            Geolocator.openAppSettings(),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              // Get current position with timeout
+                              Position position =
+                                  await Geolocator.getCurrentPosition(
+                                desiredAccuracy: LocationAccuracy.high,
+                                timeLimit: const Duration(seconds: 15),
+                              ).timeout(
+                                const Duration(seconds: 15),
+                                onTimeout: () {
+                                  throw TimeoutException(
+                                      'Location request timed out',
+                                      const Duration(seconds: 15));
+                                },
+                              );
+
+                              // Reverse geocoding to get address
+                              try {
+                                List<Placemark> placemarks =
+                                    await placemarkFromCoordinates(
+                                        position.latitude, position.longitude);
+
+                                Placemark place = placemarks.first;
+                                String address = '';
+
+                                if (place.street?.isNotEmpty == true) {
+                                  address = place.street!;
+                                } else if (place.name?.isNotEmpty == true) {
+                                  address = place.name!;
+                                } else if (place.locality?.isNotEmpty == true) {
+                                  address = place.locality!;
+                                } else {
+                                  address = 'Unknown Location';
+                                }
+
+                                // Update the current location state
+                                setState(() {
+                                  _currentLocation = address;
+                                  _userLatitude = position.latitude;
+                                  _userLongitude = position.longitude;
+                                });
+
+                                // Save location to Supabase
+                                try {
+                                  final user =
+                                      Supabase.instance.client.auth.currentUser;
+                                  if (user != null) {
+                                    final area =
+                                        place.subLocality?.isNotEmpty == true
+                                            ? place.subLocality!
+                                            : place.locality?.isNotEmpty == true
+                                                ? place.locality!
+                                                : '';
+                                    final city =
+                                        place.locality?.isNotEmpty == true
+                                            ? place.locality!
+                                            : place.administrativeArea
+                                                        ?.isNotEmpty ==
+                                                    true
+                                                ? place.administrativeArea!
+                                                : '';
+                                    await Supabase.instance.client
+                                        .from('profiles')
+                                        .update({
+                                      'location': address,
+                                      'city': city,
+                                      'area': area,
+                                      'latitude': position.latitude,
+                                      'longitude': position.longitude,
+                                      'updated_at':
+                                          DateTime.now().toIso8601String(),
+                                    }).eq('user_id', user.id);
+                                  }
+                                } catch (e) {
+                                  debugPrint('Error saving location: $e');
+                                }
+
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Location updated: $address',
+                                        style: GoogleFonts.poppins(),
+                                      ),
+                                      backgroundColor: primaryColor,
+                                    ),
+                                  );
+                                }
+                              } catch (geocodingError) {
+                                // Fallback when geocoding fails — show friendly name
+                                setState(() {
+                                  _currentLocation = 'My Location';
+                                  _userLatitude = position.latitude;
+                                  _userLongitude = position.longitude;
+                                });
+
+                                // Still save coordinates to Supabase even without address
+                                try {
+                                  final user =
+                                      Supabase.instance.client.auth.currentUser;
+                                  if (user != null) {
+                                    await Supabase.instance.client
+                                        .from('profiles')
+                                        .update({
+                                      'latitude': position.latitude,
+                                      'longitude': position.longitude,
+                                      'location': 'My Location',
+                                      'updated_at':
+                                          DateTime.now().toIso8601String(),
+                                    }).eq('user_id', user.id);
+                                  }
+                                } catch (e) {
+                                  debugPrint('Error saving location: $e');
+                                }
+
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Location found but address unavailable',
+                                        style: GoogleFonts.poppins(),
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                }
+                              }
+                            } on TimeoutException {
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Location request timed out. Please try again.',
+                                      style: GoogleFonts.poppins(),
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Failed to get location: ${e.toString()}',
+                                      style: GoogleFonts.poppins(),
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              const SizedBox(
+                                  width: 16), // 1rem horizontal padding
+                              const Icon(
+                                Icons
+                                    .navigation, // Navigation icon (1.25rem / w-5 h-5)
+                                size: 20, // 1.25rem
+                                color: Color(0xFF088771), // Solid Primary Teal
+                              ),
+                              const SizedBox(width: 16), // 1rem gap
+                              Expanded(
+                                child: Text(
+                                  Provider.of<LanguageProvider>(context)
+                                      .translate('use_current_location'),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16, // text-base (1rem)
+                                    fontWeight: FontWeight.w600, // Semi-bold
+                                    color: const Color(
+                                        0xFF088771), // Solid Primary Teal
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Lahore Area Search Bar
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: (val) {
+                            searchLocation(val);
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search area in Lahore...',
+                            hintStyle: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            prefixIcon:
+                                Icon(Icons.search, color: Colors.grey[400]),
+                            suffixIcon: searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.clear,
+                                        color: Colors.grey[400]),
+                                    onPressed: () {
+                                      searchController.clear();
+                                      if (searchResults.isNotEmpty) {
+                                        searchResults.clear();
+                                      }
+                                      (sheetContext as Element)
+                                          .markNeedsBuild();
+                                    },
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Search Results
+                    if (isSearching) ...[
+                      const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ] else if (searchResults.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 4),
+                        child: Text(
+                          'Search Results',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ...(searchResults.map((result) => ListTile(
+                            leading: Icon(Icons.location_on_outlined,
+                                color: Colors.teal[600]),
+                            title: Text(
+                              result,
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            dense: true,
+                            onTap: () async {
+                              // Use parent class's setState
+                              setState(() {
+                                _currentLocation = result;
+                              });
+                              // Close the bottom sheet
+                              Navigator.pop(sheetContext);
+
+                              // Geocode and save same as popular areas
+                              try {
+                                final user =
+                                    Supabase.instance.client.auth.currentUser;
+                                if (user != null) {
+                                  final parts = result.split(',');
+                                  final areaName = parts[0].trim();
+                                  final city = parts.length > 1
+                                      ? parts[1].trim()
+                                      : 'Lahore';
+
+                                  double? lat;
+                                  double? lng;
+                                  try {
+                                    final locs = await locationFromAddress(
+                                        '$result, Pakistan');
+                                    if (locs.isNotEmpty) {
+                                      lat = locs.first.latitude;
+                                      lng = locs.first.longitude;
+                                      if (mounted) {
+                                        setState(() {
+                                          _userLatitude = lat;
+                                          _userLongitude = lng;
+                                        });
+                                      }
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Geocoding failed: $e');
+                                  }
+
+                                  final updateData = <String, dynamic>{
+                                    'location': result,
+                                    'city': city,
+                                    'area': areaName,
+                                    'updated_at':
+                                        DateTime.now().toIso8601String(),
+                                  };
+                                  if (lat != null && lng != null) {
+                                    updateData['latitude'] = lat;
+                                    updateData['longitude'] = lng;
+                                  }
+
+                                  await Supabase.instance.client
+                                      .from('profiles')
+                                      .update(updateData)
+                                      .eq('user_id', user.id);
+                                }
+                              } catch (e) {
+                                debugPrint('Error saving location: $e');
+                              }
+                            },
+                          ))),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24),
+                        child: Divider(),
+                      ),
+                    ],
+                    // Saved location section
+                    if (_currentLocation.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          'Your saved location',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.history, color: Colors.teal[600]),
+                        title: Text(
+                          _currentLocation,
+                          style:
+                              GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                        ),
+                        subtitle: Text('Previously saved',
+                            style: GoogleFonts.poppins(fontSize: 11)),
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                    ],
+                    // Popular Areas Header
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(left: 24, right: 24, bottom: 4),
+                      child: Text(
+                        Provider.of<LanguageProvider>(context)
+                            .translate('popular_areas'),
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Areas List
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        children: [
+                          'Gulberg III, Lahore',
+                          'DHA Phase 5, Lahore',
+                          'Model Town, Lahore',
+                          'Johar Town, Lahore',
+                          'Bahria Town, Lahore',
+                          'Cantt, Lahore',
+                          'Faisal Town, Lahore',
+                          'Ichhra, Lahore',
+                          'Wapda Town, Lahore',
+                          'Valencia Town, Lahore',
+                        ].map((area) {
+                          final isSelected = area ==
+                              _currentLocation; // Show current selection
+
+                          return GestureDetector(
+                            onTap: () async {
+                              // Update the selected location directly
+                              setState(() {
+                                _currentLocation = area;
+                              });
+
+                              // Pop the bottom sheet IMMEDIATELY before any async work
+                              // to avoid using a disposed context after the await
+                              Navigator.pop(context);
+
+                              // Save selected area to Supabase (after pop is safe)
+                              try {
+                                final user =
+                                    Supabase.instance.client.auth.currentUser;
+                                if (user != null) {
+                                  final parts = area.split(',');
+                                  final areaName = parts[0].trim();
+                                  final city = parts.length > 1
+                                      ? parts[1].trim()
+                                      : parts[0].trim();
+
+                                  // Try to geocode the area to get coordinates
+                                  double? lat;
+                                  double? lng;
+                                  try {
+                                    // Add ', Pakistan' to improve geocoding accuracy
+                                    final locations = await locationFromAddress(
+                                        '$area, Pakistan');
+                                    if (locations.isNotEmpty) {
+                                      lat = locations.first.latitude;
+                                      lng = locations.first.longitude;
+                                      // Update local state with new coordinates
+                                      if (mounted) {
+                                        setState(() {
+                                          _userLatitude = lat;
+                                          _userLongitude = lng;
+                                        });
+                                      }
+                                    }
+                                  } catch (e) {
+                                    debugPrint(
+                                        'Geocoding failed for $area: $e');
+                                    // Keep existing coordinates as fallback
+                                  }
+
+                                  // Save everything to Supabase
+                                  final updateData = <String, dynamic>{
+                                    'location': area,
+                                    'city': city,
+                                    'area': areaName,
+                                    'updated_at':
+                                        DateTime.now().toIso8601String(),
+                                  };
+
+                                  // Only update coordinates if geocoding succeeded
+                                  if (lat != null && lng != null) {
+                                    updateData['latitude'] = lat;
+                                    updateData['longitude'] = lng;
+                                  }
+
+                                  await Supabase.instance.client
+                                      .from('profiles')
+                                      .update(updateData)
+                                      .eq('user_id', user.id);
+
+                                  debugPrint(
+                                      'Location saved: $area | lat: $lat | lng: $lng');
+                                }
+                              } catch (e) {
+                                debugPrint('Error saving location: $e');
+                              }
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? primary.withValues(alpha: 0.1)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color:
+                                      isSelected ? primary : Colors.grey[300]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    color:
+                                        isSelected ? primary : Colors.grey[600],
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      area,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? primary
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    Icon(
+                                      Icons.check_circle,
+                                      color: primary,
+                                      size: 20,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ));
+          },
+        );
+      },
     );
   }
 }
@@ -1210,7 +1619,7 @@ class _PrimarySearchField extends StatelessWidget {
     final isSmallMobile = screenWidth < 400;
 
     return GestureDetector(
-      onTap: () => _openSearchModal(context),
+      onTap: () => openSearchModal(context),
       child: Container(
         // Responsive height
         height: isSmallMobile ? 48 : 56,
@@ -1253,7 +1662,7 @@ class _PrimarySearchField extends StatelessWidget {
     );
   }
 
-  void _openSearchModal(BuildContext context) {
+  void openSearchModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1271,37 +1680,37 @@ class _SearchResultsModal extends StatefulWidget {
 }
 
 class _SearchResultsModalState extends State<_SearchResultsModal> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-  String _selectedFilter = 'all';
-  String _selectedSort = 'recommended';
+  final TextEditingController searchController = TextEditingController();
+  String searchQuery0 = '';
+  String selectedFilter = 'all';
+  String selectedSort = 'recommended';
 
   // Voice search state
-  bool _isListening = false;
-  final SpeechToText _speechToText = SpeechToText();
-  bool _speechAvailable = false;
+  bool isListening = false;
+  final SpeechToText speechToText = SpeechToText();
+  bool speechAvailable = false;
 
   // Urdu category mapping for voice search
-  Map<String, String> _urduCategoryMap = {};
+  Map<String, String> urduCategoryMap = {};
 
   // Search results loading state
-  bool _isLoadingResults = false;
+  bool isLoadingResults = false;
 
   @override
   void initState() {
     super.initState();
     // Use addPostFrameCallback to avoid calling setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeSpeech();
-      _loadUrduCategoryMap();
-      _loadAllResults();
+      initializeSpeech();
+      loadUrduCategoryMap();
+      loadAllResults();
     });
   }
 
-  final List<Map<String, dynamic>> _allResults = [];
+  final List<Map<String, dynamic>> allResults = [];
 
-  Future<void> _loadAllResults() async {
-    if (mounted) setState(() => _isLoadingResults = true);
+  Future<void> loadAllResults() async {
+    if (mounted) setState(() => isLoadingResults = true);
     try {
       final supabase = Supabase.instance.client;
 
@@ -1400,26 +1809,26 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
       if (mounted) {
         setState(() {
-          _allResults.clear();
-          _allResults.addAll(combined);
-          _isLoadingResults = false;
+          allResults.clear();
+          allResults.addAll(combined);
+          isLoadingResults = false;
         });
         debugPrint('=== SEARCH LOADED ===');
-        debugPrint('Total results: ${_allResults.length}');
-        if (_allResults.isNotEmpty) {
-          debugPrint('First item: ${_allResults.first}');
+        debugPrint('Total results: ${allResults.length}');
+        if (allResults.isNotEmpty) {
+          debugPrint('First item: ${allResults.first}');
         }
       }
     } catch (e) {
       debugPrint('Error loading search results: $e');
       if (mounted) {
-        setState(() => _isLoadingResults = false);
+        setState(() => isLoadingResults = false);
       }
     }
   }
 
   // Filter options
-  final List<String> _filters = [
+  final List<String> filters = [
     'all',
     'highest_rated',
     'nearest_to_you',
@@ -1429,7 +1838,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
   ];
 
   // Sort options
-  final List<String> _sortOptions = [
+  final List<String> sortOptions = [
     'recommended',
     'highest_to_lowest_fees',
     'lowest_to_highest_fees',
@@ -1442,16 +1851,16 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
   List<Map<String, dynamic>> get _filteredResults {
     // Filter by search query
-    var results = _allResults.where((item) {
-      if (_searchQuery.isEmpty) return true;
-      final query = _searchQuery.toLowerCase();
+    var results = allResults.where((item) {
+      if (searchQuery0.isEmpty) return true;
+      final query = searchQuery0.toLowerCase();
       final name = item['name'].toString().toLowerCase();
       final category = item['category'].toString().toLowerCase();
       return name.contains(query) || category.contains(query);
     }).toList();
 
     // Apply filter
-    switch (_selectedFilter) {
+    switch (selectedFilter) {
       case 'highest_rated':
         results = results.where((r) => (r['rating'] as num) >= 4.5).toList();
         break;
@@ -1494,7 +1903,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     }
 
     // Apply sort
-    switch (_selectedSort) {
+    switch (selectedSort) {
       case 'highest_to_lowest_rated':
         results
             .sort((a, b) => (b['rating'] as num).compareTo(a['rating'] as num));
@@ -1514,21 +1923,21 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _speechToText.stop();
+    searchController.dispose();
+    speechToText.stop();
     super.dispose();
   }
 
   // Initialize speech recognition
-  void _initializeSpeech() async {
-    _speechAvailable = await _speechToText.initialize();
+  void initializeSpeech() async {
+    speechAvailable = await speechToText.initialize();
     if (mounted) {
       setState(() {});
     }
   }
 
   // Load Urdu category mapping from database
-  Future<void> _loadUrduCategoryMap() async {
+  Future<void> loadUrduCategoryMap() async {
     try {
       final supabase = Supabase.instance.client;
       final response = await supabase
@@ -1543,16 +1952,16 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
         }
       }
 
-      setState(() => _urduCategoryMap = urduMap);
+      setState(() => urduCategoryMap = urduMap);
     } catch (e) {
       debugPrint('Error loading Urdu map: $e');
     }
   }
 
   // Voice Search Methods
-  Future<void> _handleVoiceSearch() async {
+  Future<void> handleVoiceSearch() async {
     // Check if speech is available
-    if (!_speechAvailable) {
+    if (!speechAvailable) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1587,10 +1996,10 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     }
 
     // If already listening stop it
-    if (_isListening) {
-      await _speechToText.stop();
+    if (isListening) {
+      await speechToText.stop();
       if (mounted) {
-        setState(() => _isListening = false);
+        setState(() => isListening = false);
       }
       return;
     }
@@ -1602,26 +2011,26 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
         barrierDismissible: true,
         barrierColor: Colors.black.withValues(alpha: 0.85),
         builder: (_) => VoiceSearchOverlay(
-          speechToText: _speechToText,
+          speechToText: speechToText,
           onResult: (String recognizedWords) {
             if (mounted) {
               setState(() {
-                _isListening = false;
-                _searchController.text = recognizedWords;
-                _searchQuery = recognizedWords;
+                isListening = false;
+                searchController.text = recognizedWords;
+                searchQuery0 = recognizedWords;
               });
             }
             Navigator.pop(context);
-            _performVoiceSearch(recognizedWords);
+            performVoiceSearch(recognizedWords);
           },
           onListeningStateChanged: (bool listening) {
             if (mounted) {
-              setState(() => _isListening = listening);
+              setState(() => isListening = listening);
             }
           },
           onCancel: () {
             if (mounted) {
-              setState(() => _isListening = false);
+              setState(() => isListening = false);
             }
             Navigator.pop(context);
           },
@@ -1630,14 +2039,14 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     }
   }
 
-  void _performVoiceSearch(String query) {
+  void performVoiceSearch(String query) {
     // Urdu to English category mapping
     String searchQuery = query;
-    _urduCategoryMap.forEach((urdu, english) {
+    urduCategoryMap.forEach((urdu, english) {
       if (query.contains(urdu)) {
         searchQuery = english;
-        _searchController.text = english;
-        _searchQuery = english;
+        searchController.text = english;
+        searchQuery0 = english;
       }
     });
 
@@ -1744,9 +2153,9 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                       border: Border.all(color: Colors.grey[200]!),
                     ),
                     child: TextField(
-                      controller: _searchController,
+                      controller: searchController,
                       onChanged: (value) {
-                        setState(() => _searchQuery = value);
+                        setState(() => searchQuery0 = value);
                       },
                       decoration: InputDecoration(
                         prefixIcon: Icon(Icons.search, color: primary),
@@ -1768,8 +2177,8 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                 ),
                 const SizedBox(width: 8),
                 ChatMicButton(
-                  isListening: _isListening,
-                  onTap: _handleVoiceSearch,
+                  isListening: isListening,
+                  onTap: handleVoiceSearch,
                 ),
               ],
             ),
@@ -1786,17 +2195,17 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                     height: 44,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: _filters.length,
+                      itemCount: filters.length,
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       itemBuilder: (context, index) {
-                        final filter = _filters[index];
-                        final isSelected = _selectedFilter == filter;
+                        final filter = filters[index];
+                        final isSelected = selectedFilter == filter;
 
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
                             onTap: () {
-                              setState(() => _selectedFilter = filter);
+                              setState(() => selectedFilter = filter);
                             },
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -1838,7 +2247,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
                 // Sort Button
                 GestureDetector(
-                  onTap: () => _showSortBottomSheet(context, primary),
+                  onTap: () => showSortBottomSheet(context, primary),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -1895,7 +2304,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
 
           // Results List
           Expanded(
-            child: _isLoadingResults
+            child: isLoadingResults
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredResults.isEmpty
                     ? Center(
@@ -1906,7 +2315,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                                 size: 64, color: Colors.grey[300]),
                             const SizedBox(height: 16),
                             Text(
-                              _searchQuery.isEmpty
+                              searchQuery0.isEmpty
                                   ? 'Start typing to search'
                                   : 'No results found',
                               style: GoogleFonts.poppins(
@@ -1923,7 +2332,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                         itemBuilder: (context, index) {
                           final result = _filteredResults[index];
                           final isVendor = result['type'] == 'vendor';
-                          return _buildResultCard(result, isVendor, primary);
+                          return buildResultCard(result, isVendor, primary);
                         },
                       ),
           ),
@@ -1932,7 +2341,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     );
   }
 
-  Widget _buildResultCard(
+  Widget buildResultCard(
       Map<String, dynamic> result, bool isVendor, Color primary) {
     return GestureDetector(
       onTap: () {
@@ -2068,7 +2477,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
     );
   }
 
-  void _showSortBottomSheet(BuildContext context, Color primary) {
+  void showSortBottomSheet(BuildContext context, Color primary) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2119,14 +2528,14 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
             SizedBox(
               height: 220, // Further reduced height to fix remaining overflow
               child: ListView.builder(
-                itemCount: _sortOptions.length,
+                itemCount: sortOptions.length,
                 itemBuilder: (context, index) {
-                  final option = _sortOptions[index];
-                  final isSelected = _selectedSort == option;
+                  final option = sortOptions[index];
+                  final isSelected = selectedSort == option;
 
                   return GestureDetector(
                     onTap: () {
-                      setState(() => _selectedSort = option);
+                      setState(() => selectedSort = option);
                       Navigator.pop(context);
                     },
                     child: Container(
@@ -2191,46 +2600,46 @@ class _FeaturedPartnersSection extends StatefulWidget {
 }
 
 class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
-  final ScrollController _scrollController = ScrollController();
-  static const double _cardWidth = 280;
-  static const double _cardMargin = 16;
+  final ScrollController scrollController = ScrollController();
+  static const double cardWidth = 280;
+  static const double cardMargin = 16;
 
   // Featured partners data
-  List<FeaturedAd> _featuredPartners = [];
-  bool _isLoading = true;
+  List<FeaturedAd> featuredPartners0 = [];
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadFeaturedPartners();
+    loadFeaturedPartners();
   }
 
   // Get current logged in user ID from Supabase
-  String? _getCustomerId() {
+  String? getCustomerId() {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return null;
     return user.id;
   }
 
-  Future<void> _loadFeaturedPartners() async {
+  Future<void> loadFeaturedPartners() async {
     try {
       final featuredManager = FeaturedAdManager();
 
       // Filter featured ads by location (within 5km radius) for current customer
       final featuredPartners = await featuredManager.getFeaturedAdsForCustomer(
-        _getCustomerId() ?? '',
+        getCustomerId() ?? '',
         5.0, // 5km radius
       );
 
       if (mounted) {
         setState(() {
-          _featuredPartners = featuredPartners;
-          _isLoading = false;
+          featuredPartners0 = featuredPartners;
+          isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => isLoading = false);
       }
       debugPrint('Error loading featured partners: $e');
     }
@@ -2238,7 +2647,7 @@ class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -2276,13 +2685,13 @@ class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
         Stack(
           children: [
             // Loading State
-            if (_isLoading)
+            if (isLoading)
               const Center(
                 child: CircularProgressIndicator(
                   color: Color(0xFF047A62),
                 ),
               )
-            else if (_featuredPartners.isEmpty)
+            else if (featuredPartners0.isEmpty)
               SizedBox(
                 width: double.infinity,
                 height: 200,
@@ -2310,20 +2719,20 @@ class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
             else
               // Scrollable Content
               SingleChildScrollView(
-                controller: _scrollController,
+                controller: scrollController,
                 scrollDirection: Axis.horizontal,
                 physics:
                     const NeverScrollableScrollPhysics(), // Disable manual scrolling
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: List.generate(
-                    _featuredPartners.length,
+                    featuredPartners0.length,
                     (index) => Container(
-                      width: _cardWidth, // Fixed width smaller than screen
-                      margin: const EdgeInsets.only(right: _cardMargin),
+                      width: cardWidth, // Fixed width smaller than screen
+                      margin: const EdgeInsets.only(right: cardMargin),
                       child: _FeaturedPartnerCard(
                           primary: widget.primary,
-                          featuredPartner: _featuredPartners[index],
+                          featuredPartner: featuredPartners0[index],
                           index: index),
                     ),
                   ),
@@ -2619,23 +3028,29 @@ class _LocalVendorsSection extends StatefulWidget {
     required this.primary,
     required this.vendorCategories,
     required this.vendorCategoriesLoading,
+    this.userCity,
+    this.userLatitude,
+    this.userLongitude,
   });
 
   final Color primary;
   final List<Map<String, dynamic>> vendorCategories;
   final bool vendorCategoriesLoading;
+  final String? userCity;
+  final double? userLatitude;
+  final double? userLongitude;
 
   @override
   State<_LocalVendorsSection> createState() => _LocalVendorsSectionState();
 }
 
 class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
-  final ScrollController _scrollController = ScrollController();
-  static const double _cardMargin = 16;
+  final ScrollController scrollController = ScrollController();
+  static const double cardMargin = 16;
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -2643,7 +3058,7 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
   Widget build(BuildContext context) {
     // Show loading shimmer while loading vendor categories
     if (widget.vendorCategoriesLoading) {
-      return _buildVendorCategoriesShimmer();
+      return buildVendorCategoriesShimmer();
     }
 
     return Column(
@@ -2668,7 +3083,7 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
           children: [
             // Scrollable Content
             SingleChildScrollView(
-              controller: _scrollController,
+              controller: scrollController,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -2676,8 +3091,8 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
                   // Dynamic Vendor Categories from Database
                   ...widget.vendorCategories.map((category) {
                     return Padding(
-                      padding: const EdgeInsets.only(right: _cardMargin),
-                      child: _vendorCategoryCard(
+                      padding: const EdgeInsets.only(right: cardMargin),
+                      child: vendorCategoryCard(
                         primary: widget.primary,
                         category: category,
                       ),
@@ -2693,7 +3108,7 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
   }
 
   // Build shimmer loading state for vendor categories
-  Widget _buildVendorCategoriesShimmer() {
+  Widget buildVendorCategoriesShimmer() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2715,8 +3130,8 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
             children: List.generate(
                 4,
                 (index) => Padding(
-                      padding: const EdgeInsets.only(right: _cardMargin),
-                      child: _buildVendorCardShimmer(),
+                      padding: const EdgeInsets.only(right: cardMargin),
+                      child: buildVendorCardShimmer(),
                     )),
           ),
         ),
@@ -2725,7 +3140,7 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
   }
 
   // Single vendor card shimmer
-  Widget _buildVendorCardShimmer() {
+  Widget buildVendorCardShimmer() {
     return Container(
       width: 120,
       height: 140,
@@ -2737,7 +3152,7 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
   }
 
   // Build vendor category card from database
-  Widget _vendorCategoryCard({
+  Widget vendorCategoryCard({
     required Color primary,
     required Map<String, dynamic> category,
   }) {
@@ -2756,7 +3171,12 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => VendorResultsScreen(category: name),
+            builder: (_) => VendorResultsScreen(
+              category: name,
+              userCity: widget.userCity ?? '',
+              userLatitude: widget.userLatitude,
+              userLongitude: widget.userLongitude,
+            ),
           ),
         );
       },
@@ -2832,16 +3252,16 @@ class _TopRatedProsSection extends StatefulWidget {
 }
 
 class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
-  List<String> _providerIds = [];
-  bool _isLoading = true;
+  List<String> providerIds = [];
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadTopProviders();
+    loadTopProviders();
   }
 
-  Future<void> _loadTopProviders() async {
+  Future<void> loadTopProviders() async {
     try {
       final supabase = Supabase.instance.client;
       final response = await supabase
@@ -2863,26 +3283,26 @@ class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
 
       if (mounted) {
         setState(() {
-          _providerIds = ids;
-          _isLoading = false;
+          providerIds = ids;
+          isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading top providers: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (isLoading) {
       return const SizedBox(
         height: 120,
         child: Center(child: CircularProgressIndicator()),
       );
     }
 
-    if (_providerIds.isEmpty) {
+    if (providerIds.isEmpty) {
       return const SizedBox(
         height: 120,
         child: Center(
@@ -2938,7 +3358,7 @@ class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _providerIds.length,
+          itemCount: providerIds.length,
           itemBuilder: (context, index) {
             return Padding(
               padding:
@@ -2946,7 +3366,7 @@ class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
               child: _TopRatedProCard(
                   primary: widget.primary,
                   index: index,
-                  providerId: _providerIds[index]),
+                  providerId: providerIds[index]),
             );
           },
         ),
@@ -2968,20 +3388,20 @@ class _TopRatedProCard extends StatefulWidget {
 }
 
 class _TopRatedProCardState extends State<_TopRatedProCard> {
-  String _providerName = '';
-  String _serviceType = '';
-  double _rating = 0.0;
-  String _location = '';
-  String _imageUrl = '';
-  bool _isLoading = true;
+  String providerName0 = '';
+  String serviceType0 = '';
+  double rating0 = 0.0;
+  String location0 = '';
+  String imageUrl = '';
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadProviderData();
+    loadProviderData();
   }
 
-  Future<void> _loadProviderData() async {
+  Future<void> loadProviderData() async {
     try {
       final supabase = Supabase.instance.client;
 
@@ -3004,26 +3424,26 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
 
       if (mounted) {
         setState(() {
-          _providerName = response['profiles']?['full_name'] ?? 'Provider';
-          _serviceType = response['service_category'] ?? 'Service';
-          _rating = (response['rating'] as num?)?.toDouble() ?? 0.0;
-          _location = response['area'] ?? response['city'] ?? 'Location';
-          _imageUrl = response['profiles']?['profile_image_url'] ?? '';
-          _isLoading = false;
+          providerName0 = response['profiles']?['full_name'] ?? 'Provider';
+          serviceType0 = response['service_category'] ?? 'Service';
+          rating0 = (response['rating'] as num?)?.toDouble() ?? 0.0;
+          location0 = response['area'] ?? response['city'] ?? 'Location';
+          imageUrl = response['profiles']?['profile_image_url'] ?? '';
+          isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading pro card data: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   // Helper method to build profile image with cross-platform support
-  Widget _buildProfileImage() {
+  Widget buildProfileImage() {
     return ClipOval(
-      child: _imageUrl.isNotEmpty
+      child: imageUrl.isNotEmpty
           ? Image.network(
-              _imageUrl,
+              imageUrl,
               width: 60,
               height: 60,
               fit: BoxFit.cover,
@@ -3038,7 +3458,7 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
   @override
   Widget build(BuildContext context) {
     // Show loading indicator while loading data
-    if (_isLoading) {
+    if (isLoading) {
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
@@ -3085,10 +3505,10 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
     }
 
     // Use real provider data if available, otherwise fallback to mock data
-    final providerName = _providerName;
-    final serviceType = _serviceType;
-    final rating = _rating;
-    final location = _location;
+    final providerName = providerName0;
+    final serviceType = serviceType0;
+    final rating = rating0;
+    final location = location0;
 
     return GestureDetector(
       onTap: () {
@@ -3122,7 +3542,7 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
               children: [
                 // Avatar - using real profile image
                 ClipOval(
-                  child: _buildProfileImage(),
+                  child: buildProfileImage(),
                 ),
                 const SizedBox(width: 16),
 
@@ -3233,16 +3653,16 @@ class _VendorsNearbySection extends StatefulWidget {
 }
 
 class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
-  List<Map<String, dynamic>> _vendors = [];
-  bool _isLoadingVendors = true;
+  List<Map<String, dynamic>> vendors = [];
+  bool isLoadingVendors = true;
 
   @override
   void initState() {
     super.initState();
-    _loadVendors();
+    loadVendors();
   }
 
-  Future<void> _loadVendors() async {
+  Future<void> loadVendors() async {
     try {
       final supabase = Supabase.instance.client;
 
@@ -3290,19 +3710,19 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
 
       if (mounted) {
         setState(() {
-          _vendors = loaded;
-          _isLoadingVendors = false;
+          vendors = loaded;
+          isLoadingVendors = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading nearby vendors: $e');
-      if (mounted) setState(() => _isLoadingVendors = false);
+      if (mounted) setState(() => isLoadingVendors = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingVendors) {
+    if (isLoadingVendors) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3368,7 +3788,7 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
       );
     }
 
-    if (_vendors.isEmpty) {
+    if (vendors.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3491,14 +3911,14 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _vendors.length,
+          itemCount: vendors.length,
           itemBuilder: (context, index) {
             return Padding(
               padding:
                   const EdgeInsets.only(bottom: 16), // 1rem gap (space-y-4)
               child: _VendorNearbyCard(
                 primary: widget.primary,
-                vendor: _vendors[index],
+                vendor: vendors[index],
               ),
             );
           },
@@ -3519,54 +3939,54 @@ class _MuawinProAd extends StatefulWidget {
 
 class _MuawinProAdState extends State<_MuawinProAd>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _rotationAnimation;
-  late Animation<double> _scaleAnimation;
+  late AnimationController animationController;
+  late Animation<double> rotationAnimation;
+  late Animation<double> scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
+    animationController = AnimationController(
       duration: const Duration(milliseconds: 700),
       vsync: this,
     );
 
-    _rotationAnimation = Tween<double>(
+    rotationAnimation = Tween<double>(
       begin: 0.20944, // -12 degrees in radians
       end: 0.0, // 0 degrees
     ).animate(CurvedAnimation(
-      parent: _animationController,
+      parent: animationController,
       curve: Curves.easeInOut,
     ));
 
-    _scaleAnimation = Tween<double>(
+    scaleAnimation = Tween<double>(
       begin: 1.0,
       end: 1.1,
     ).animate(CurvedAnimation(
-      parent: _animationController,
+      parent: animationController,
       curve: Curves.easeInOut,
     ));
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    animationController.dispose();
     super.dispose();
   }
 
-  void _handleHover(bool isHovering) {
+  void handleHover(bool isHovering) {
     if (isHovering) {
-      _animationController.forward();
+      animationController.forward();
     } else {
-      _animationController.reverse();
+      animationController.reverse();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => _handleHover(true),
-      onExit: (_) => _handleHover(false),
+      onEnter: (_) => handleHover(true),
+      onExit: (_) => handleHover(false),
       child: Container(
         // Primary Container: Full-width premium card
         width: double.infinity,
@@ -3704,13 +4124,13 @@ class _MuawinProAdState extends State<_MuawinProAd>
                 Column(
                   children: [
                     // Feature items with 0.5rem (8px) spacing
-                    _buildFeatureItem('Priority customer support'),
+                    buildFeatureItem('Priority customer support'),
                     const SizedBox(height: 8),
-                    _buildFeatureItem('Exclusive discounts on services'),
+                    buildFeatureItem('Exclusive discounts on services'),
                     const SizedBox(height: 8),
-                    _buildFeatureItem('Advanced booking features'),
+                    buildFeatureItem('Advanced booking features'),
                     const SizedBox(height: 8),
-                    _buildFeatureItem('Premium verification badges'),
+                    buildFeatureItem('Premium verification badges'),
                   ],
                 ),
                 const SizedBox(height: 32), // space-y-8
@@ -3767,12 +4187,12 @@ class _MuawinProAdState extends State<_MuawinProAd>
               top: 50,
               right: 0,
               child: AnimatedBuilder(
-                animation: _animationController,
+                animation: animationController,
                 builder: (context, child) {
                   return Transform.rotate(
-                    angle: _rotationAnimation.value,
+                    angle: rotationAnimation.value,
                     child: Transform.scale(
-                      scale: _scaleAnimation.value,
+                      scale: scaleAnimation.value,
                       child: Icon(
                         Icons.emoji_events, // Trophy icon
                         size: 160, // 10rem wide
@@ -3790,7 +4210,7 @@ class _MuawinProAdState extends State<_MuawinProAd>
     );
   }
 
-  Widget _buildFeatureItem(String feature) {
+  Widget buildFeatureItem(String feature) {
     return Row(
       children: [
         // Check Icon Anchor: Fixed 1rem x 1rem perfect circle
@@ -3840,7 +4260,8 @@ class _FeaturedAdsSection extends StatelessWidget {
     final isProvider = featuredAd!['provider_id'] != null;
     final providerData = featuredAd!['providers'] as Map<String, dynamic>?;
     final vendorData = featuredAd!['vendors'] as Map<String, dynamic>?;
-    final providerName = providerData?['profiles']?['full_name'];
+    final providerName =
+        (providerData?['profiles'] as Map<String, dynamic>?)?['full_name'];
     final vendorName = vendorData?['business_name'];
     final providerCategory = providerData?['service_category'];
     final vendorCategory = vendorData?['business_type'];
@@ -4008,31 +4429,7 @@ class _FeaturedAdsSection extends StatelessWidget {
                       // Arrow button
                       GestureDetector(
                         onTap: () {
-                          if (featuredAd == null) return;
-
-                          final isProvider = featuredAd!['provider_id'] != null;
-
-                          if (isProvider) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CustomerProviderProfileScreen(
-                                  providerId:
-                                      featuredAd!['provider_id']?.toString() ??
-                                          '',
-                                ),
-                              ),
-                            );
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CustomerVendorProfileScreen(
-                                  vendor: featuredAd!['vendors'],
-                                ),
-                              ),
-                            );
-                          }
+                          // Navigation handled in parent
                         },
                         child: Container(
                           padding: const EdgeInsets.all(8),
@@ -4189,43 +4586,43 @@ class _AIChatBottomSheet extends StatefulWidget {
 }
 
 class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
-  final TextEditingController _controller = TextEditingController();
-  final List<Map<String, dynamic>> _messages = [];
-  final List<Map<String, dynamic>> _conversationHistory = [];
-  bool _isBotTyping = false;
-  static const String _backendUrl = 'http://localhost:3001';
+  final TextEditingController controller = TextEditingController();
+  final List<Map<String, dynamic>> messages = [];
+  final List<Map<String, dynamic>> conversationHistory = [];
+  bool isBotTyping = false;
+  static const String backendUrl = 'http://localhost:3001';
 
   // Chat voice state variables
-  bool _isChatListening = false;
-  String _chatLocale = 'en_US';
-  double _chatSoundLevel = 0.0;
+  bool isChatListening = false;
+  String chatLocale = 'en_US';
+  double chatSoundLevel = 0.0;
 
   // Phase 2: Smart language detection
-  String _detectedLanguage = 'unknown';
-  double _languageConfidence = 0.0;
+  String detectedLanguage = 'unknown';
+  double languageConfidence = 0.0;
 
   // Phase 2: Error handling
-  int _voiceRetryCount = 0;
+  int voiceRetryCount = 0;
 
   // Speech recognition instance
-  final SpeechToText _speechToText = SpeechToText();
+  final SpeechToText speechToText = SpeechToText();
 
-  void _sendMessage({bool isVoiceMessage = false}) async {
-    final userMessage = _controller.text.trim();
+  void sendMessage({bool isVoiceMessage = false}) async {
+    final userMessage = controller.text.trim();
     if (userMessage.isEmpty) return;
 
     setState(() {
-      _messages.add({
+      messages.add({
         'text': userMessage,
         'isUser': true,
         'isVoiceMessage': isVoiceMessage,
       });
-      _controller.clear();
-      _isBotTyping = true;
+      controller.clear();
+      isBotTyping = true;
     });
 
     // Add to conversation history for context
-    _conversationHistory.add({
+    conversationHistory.add({
       'role': 'user',
       'content': userMessage,
     });
@@ -4233,11 +4630,11 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
     try {
       final response = await http
           .post(
-            Uri.parse('$_backendUrl/api/ai/chat'),
+            Uri.parse('$backendUrl/api/ai/chat'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'message': userMessage,
-              'conversationHistory': _conversationHistory,
+              'conversationHistory': conversationHistory,
             }),
           )
           .timeout(const Duration(seconds: 30));
@@ -4248,15 +4645,15 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             'Sorry, I could not understand that.';
 
         // Add bot response to history
-        _conversationHistory.add({
+        conversationHistory.add({
           'role': 'assistant',
           'content': botReply,
         });
 
         if (mounted) {
           setState(() {
-            _isBotTyping = false;
-            _messages.add({
+            isBotTyping = false;
+            messages.add({
               'text': botReply,
               'isUser': false,
             });
@@ -4269,8 +4666,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
       debugPrint('AI chat error: $e');
       if (mounted) {
         setState(() {
-          _isBotTyping = false;
-          _messages.add({
+          isBotTyping = false;
+          messages.add({
             'text':
                 'Sorry, I am having trouble connecting. Please check your internet connection and try again.',
             'isUser': false,
@@ -4281,7 +4678,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   }
 
   // Chat Voice Handler
-  Future<void> _handleChatVoice() async {
+  Future<void> handleChatVoice() async {
     // Check permission
     final micPermission = await Permission.microphone.status;
 
@@ -4328,7 +4725,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
 
                   // Check if permission was granted and retry voice command
                   if (result.isGranted && mounted) {
-                    _handleChatVoice(); // Retry after permission granted
+                    handleChatVoice(); // Retry after permission granted
                   } else if (result.isPermanentlyDenied && mounted) {
                     // Open app settings if permission is permanently denied
                     await Permission.microphone
@@ -4354,10 +4751,10 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
     }
 
     // Initialize speech to text if not already initialized
-    bool available = await _speechToText.initialize(
+    bool available = await speechToText.initialize(
       onError: (error) {
         if (mounted) {
-          setState(() => _isChatListening = false);
+          setState(() => isChatListening = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -4372,7 +4769,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
       onStatus: (status) {
         if (mounted) {
           if (status == 'notListening' || status == 'done') {
-            setState(() => _isChatListening = false);
+            setState(() => isChatListening = false);
           }
         }
       },
@@ -4380,7 +4777,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
 
     if (!available) {
       if (mounted) {
-        setState(() => _isChatListening = false);
+        setState(() => isChatListening = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -4395,20 +4792,20 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
     }
 
     // If already listening stop
-    if (_isChatListening) {
-      await _speechToText.stop();
+    if (isChatListening) {
+      await speechToText.stop();
       if (mounted) {
-        setState(() => _isChatListening = false);
+        setState(() => isChatListening = false);
       }
       return;
     }
 
     // Start listening
     if (mounted) {
-      setState(() => _isChatListening = true);
+      setState(() => isChatListening = true);
     }
 
-    await _speechToText
+    await speechToText
         .listen(
       onResult: (result) {
         if (!mounted) return;
@@ -4435,13 +4832,13 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
         urduChatPhrases.forEach((urdu, english) {
           if (recognizedText.contains(urdu)) {
             recognizedText = english;
-            _detectedLanguage = 'urdu';
-            _languageConfidence = 0.8;
+            detectedLanguage = 'urdu';
+            languageConfidence = 0.8;
           }
         });
 
         // Phase 2: Smart language detection based on text patterns
-        if (_detectedLanguage == 'unknown') {
+        if (detectedLanguage == 'unknown') {
           final urduChars =
               recognizedText.replaceAll(RegExp(r'[^\u0600-\u06FF]'), '');
           final englishChars =
@@ -4450,38 +4847,38 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
           if (urduChars.isNotEmpty &&
               (englishChars.isEmpty ||
                   urduChars.length > englishChars.length)) {
-            _detectedLanguage = 'urdu';
-            _languageConfidence = urduChars.length / recognizedText.length;
+            detectedLanguage = 'urdu';
+            languageConfidence = urduChars.length / recognizedText.length;
           } else if (englishChars.isNotEmpty) {
-            _detectedLanguage = 'english';
-            _languageConfidence = englishChars.length / recognizedText.length;
+            detectedLanguage = 'english';
+            languageConfidence = englishChars.length / recognizedText.length;
           }
         }
 
-        _controller.text = recognizedText;
-        _controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: _controller.text.length),
+        controller.text = recognizedText;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: controller.text.length),
         );
 
         if (result.finalResult) {
           if (mounted) {
             setState(() {
-              _isChatListening = false;
-              _voiceRetryCount = 0; // Reset retry count on success
+              isChatListening = false;
+              voiceRetryCount = 0; // Reset retry count on success
             });
           }
 
           // Phase 2: Check if voice input is empty and handle error
           if (recognizedText.trim().isEmpty) {
-            _showVoiceError('I didn\'t hear anything. Please try again.');
+            showVoiceError('I didn\'t hear anything. Please try again.');
             return;
           }
 
           // Show manual send options instead of auto-sending
-          _showVoiceSendOptions();
+          showVoiceSendOptions();
         }
       },
-      localeId: _chatLocale,
+      localeId: chatLocale,
       listenFor: const Duration(seconds: 15),
       pauseFor: const Duration(seconds: 3),
       listenOptions: SpeechListenOptions(
@@ -4493,7 +4890,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
       ),
       onSoundLevelChange: (level) {
         if (mounted) {
-          setState(() => _chatSoundLevel = level);
+          setState(() => chatSoundLevel = level);
         }
       },
     )
@@ -4502,7 +4899,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
       if (!mounted) return;
 
       setState(() {
-        _isChatListening = false;
+        isChatListening = false;
       });
 
       String errorMessage = 'Voice recognition failed';
@@ -4514,12 +4911,12 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
         errorMessage = 'No speech detected. Please speak clearly.';
       }
 
-      _showVoiceError(errorMessage);
+      showVoiceError(errorMessage);
     });
   }
 
   // Show voice send options after speech recognition
-  void _showVoiceSendOptions() {
+  void showVoiceSendOptions() {
     if (!mounted) return;
 
     showModalBottomSheet(
@@ -4566,7 +4963,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                     color: const Color(0xFF047A62).withValues(alpha: 0.3)),
               ),
               child: Text(
-                _controller.text,
+                controller.text,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   color: Colors.black87,
@@ -4583,8 +4980,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      _controller.clear();
-                      _handleChatVoice(); // Retry voice input
+                      controller.clear();
+                      handleChatVoice(); // Retry voice input
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey[200],
@@ -4643,7 +5040,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      _sendMessage(isVoiceMessage: true);
+                      sendMessage(isVoiceMessage: true);
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF047A62),
@@ -4673,7 +5070,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _controller.clear();
+                controller.clear();
               },
               child: Text(
                 'Cancel',
@@ -4690,10 +5087,10 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   }
 
   // Phase 2: Enhanced voice error handling
-  void _showVoiceError(String errorMessage) {
+  void showVoiceError(String errorMessage) {
     if (!mounted) return;
 
-    _voiceRetryCount++;
+    voiceRetryCount++;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4707,11 +5104,11 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                 style: GoogleFonts.poppins(),
               ),
             ),
-            if (_voiceRetryCount < 3)
+            if (voiceRetryCount < 3)
               TextButton(
                 onPressed: () {
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  _handleChatVoice(); // Retry voice input
+                  handleChatVoice(); // Retry voice input
                 },
                 child: Text(
                   'Retry',
@@ -4730,11 +5127,11 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
         ),
         duration: const Duration(seconds: 6),
         action: SnackBarAction(
-          label: _voiceRetryCount >= 3 ? 'Type Instead' : 'Cancel',
+          label: voiceRetryCount >= 3 ? 'Type Instead' : 'Cancel',
           textColor: Colors.white,
           onPressed: () {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            if (_voiceRetryCount >= 3) {
+            if (voiceRetryCount >= 3) {
               // Focus on text field for manual typing
               FocusScope.of(context).requestFocus(FocusNode());
             }
@@ -4746,8 +5143,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
 
   @override
   void dispose() {
-    _controller.dispose();
-    _speechToText.stop();
+    controller.dispose();
+    speechToText.stop();
     super.dispose();
   }
 
@@ -4844,9 +5241,9 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
-                      itemCount: _messages.length,
+                      itemCount: messages.length,
                       itemBuilder: (context, index) {
-                        final msg = _messages[index];
+                        final msg = messages[index];
                         final isUser = msg['isUser'] as bool;
                         final isVoiceMessage =
                             msg['isVoiceMessage'] as bool? ?? false;
@@ -4898,7 +5295,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                       },
                     ),
                   ),
-                  if (_isBotTyping)
+                  if (isBotTyping)
                     Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
@@ -4936,20 +5333,20 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             // Voice indicator (shows when listening)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              height: _isChatListening ? 80 : 0,
-              child: _isChatListening
+              height: isChatListening ? 80 : 0,
+              child: isChatListening
                   ? ChatVoiceIndicator(
-                      soundLevel: _chatSoundLevel,
-                      locale: _chatLocale,
+                      soundLevel: chatSoundLevel,
+                      locale: chatLocale,
                       onLanguageChange: (locale) {
-                        setState(() => _chatLocale = locale);
+                        setState(() => chatLocale = locale);
                       },
                       onStop: () async {
-                        await _speechToText.stop();
-                        setState(() => _isChatListening = false);
+                        await speechToText.stop();
+                        setState(() => isChatListening = false);
                       },
-                      detectedLanguage: _detectedLanguage,
-                      languageConfidence: _languageConfidence,
+                      detectedLanguage: detectedLanguage,
+                      languageConfidence: languageConfidence,
                     )
                   : const SizedBox.shrink(),
             ),
@@ -4960,11 +5357,11 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                   children: [
                     Expanded(
                       child: TextField(
-                        controller: _controller,
+                        controller: controller,
                         decoration: InputDecoration(
                           hintText: 'Type or tap 🎤 to speak...',
                           hintStyle: GoogleFonts.poppins(color: Colors.grey),
-                          prefixIcon: _controller.text.isEmpty
+                          prefixIcon: controller.text.isEmpty
                               ? Icon(Icons.mic_none_rounded,
                                   color: Colors.grey[400], size: 18)
                               : null,
@@ -4984,13 +5381,13 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                                 const BorderSide(color: Color(0xFF088771)),
                           ),
                         ),
-                        onSubmitted: (_) => _sendMessage(),
+                        onSubmitted: (_) => sendMessage(),
                       ),
                     ),
                     const SizedBox(width: 8),
                     ChatMicButton(
-                      isListening: _isChatListening,
-                      onTap: _handleChatVoice,
+                      isListening: isChatListening,
+                      onTap: handleChatVoice,
                     ),
                     const SizedBox(width: 8),
                     CircleAvatar(
@@ -4999,7 +5396,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
                       child: IconButton(
                         icon: const Icon(Icons.send,
                             color: Colors.white, size: 20),
-                        onPressed: _sendMessage,
+                        onPressed: sendMessage,
                       ),
                     ),
                   ],
@@ -5037,5 +5434,5 @@ class _HeaderPatternPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
 }

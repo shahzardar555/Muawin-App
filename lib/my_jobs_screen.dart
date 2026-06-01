@@ -6,10 +6,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:muawin_app/chats_screen.dart';
 import 'package:muawin_app/widgets/bottom_navigation_bar.dart';
 import 'package:muawin_app/service_provider_feed_screen.dart';
 import 'package:muawin_app/service_provider_profile_screen.dart';
+import 'package:muawin_app/services/notification_manager.dart' as nm;
 
 /// Max content width adjusted to match navigation bar span (responsive)
 double _getMaxContentWidth(BuildContext context) {
@@ -508,7 +510,11 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
   void _markJobAsCompleted(BuildContext context, Map<String, dynamic> jobData) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
+        // Capture notification manager before any async operations
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(dialogContext, listen: false);
+
         return AlertDialog(
           title: Row(
             children: [
@@ -619,7 +625,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: Text(
                 'Cancel',
                 style: GoogleFonts.poppins(
@@ -630,8 +636,8 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
             ),
             FilledButton(
               onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.of(context).pop();
+                final messenger = ScaffoldMessenger.of(dialogContext);
+                Navigator.of(dialogContext).pop();
                 // Supabase: update job status to completed
                 try {
                   await Supabase.instance.client.from('jobs').update({
@@ -643,6 +649,36 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
                 } catch (e) {
                   debugPrint('Error completing job: $e');
                 }
+
+                // FIX 5: Send notification to customer when job is completed
+                // Using captured notificationManager to avoid BuildContext across async gap
+                try {
+                  final customerId = jobData['customer_id']?.toString() ?? '';
+                  if (customerId.isNotEmpty) {
+                    final customerData = await Supabase.instance.client
+                        .from('customers')
+                        .select('profile_id')
+                        .eq('id', customerId)
+                        .maybeSingle();
+
+                    if (customerData != null) {
+                      notificationManager.sendNotification(
+                        receiverId: customerId,
+                        receiverType: 'customer',
+                        type: nm.NotificationType.jobCompleted,
+                        title: '✅ Job Completed!',
+                        body:
+                            '${jobData['title'] ?? 'Your job'} has been completed. Please leave a review!',
+                        priority: nm.NotificationPriority.high,
+                        receiverProfileId:
+                            customerData['profile_id']?.toString(),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('Error sending completion notification: $e');
+                }
+
                 setState(() {
                   activeJobs.removeWhere((job) => job['id'] == jobData['id']);
                   final completedJob = Map<String, dynamic>.from(jobData);
@@ -682,9 +718,13 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
 
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
+        // Capture notification manager before any async operations
+        final notificationManager =
+            Provider.of<nm.NotificationManager>(dialogContext, listen: false);
+
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
+          builder: (BuildContext innerContext, StateSetter setDialogState) {
             return AlertDialog(
               title: Row(
                 children: [
@@ -923,6 +963,38 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
                                   .split('T')[0],
                               'updated_at': DateTime.now().toIso8601String(),
                             }).eq('id', jobData['id']);
+
+                            // FIX 3: Send notification to customer when provider cancels job
+                            // Capture notificationManager before async operations to avoid BuildContext across async gaps
+                            try {
+                              final customerId =
+                                  jobData['customer_id']?.toString() ?? '';
+                              if (customerId.isNotEmpty) {
+                                final customerData = await Supabase
+                                    .instance.client
+                                    .from('customers')
+                                    .select('profile_id')
+                                    .eq('id', customerId)
+                                    .maybeSingle();
+
+                                if (customerData != null) {
+                                  notificationManager.sendNotification(
+                                    receiverId: customerId,
+                                    receiverType: 'customer',
+                                    type: nm.NotificationType.jobCancelled,
+                                    title: '❌ Job Cancelled',
+                                    body:
+                                        'Your provider has cancelled the scheduled job.',
+                                    priority: nm.NotificationPriority.high,
+                                    receiverProfileId:
+                                        customerData['profile_id']?.toString(),
+                                  );
+                                }
+                              }
+                            } catch (e) {
+                              debugPrint(
+                                  'Error sending cancellation notification: $e');
+                            }
                           } catch (e) {
                             debugPrint('Error cancelling job: $e');
                           }
@@ -996,6 +1068,13 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
   final int _currentNavIndex = 1;
 
   Future<void> _checkAndPromoteJobs() async {
+    // Check if widget is still mounted before proceeding
+    if (!mounted) return;
+
+    // Capture notification manager before any async operations
+    final notificationManager =
+        Provider.of<nm.NotificationManager>(context, listen: false);
+
     final now = DateTime.now();
 
     // Find scheduled jobs whose time has passed
@@ -1034,6 +1113,33 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
           'status': 'active',
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', job['id']);
+
+        // FIX 4: Send notification to customer when job becomes active
+        // Using captured notificationManager to avoid BuildContext across async gap
+        try {
+          final customerId = job['customer_id']?.toString() ?? '';
+          if (customerId.isNotEmpty) {
+            final customerData = await Supabase.instance.client
+                .from('customers')
+                .select('profile_id')
+                .eq('id', customerId)
+                .maybeSingle();
+
+            if (customerData != null) {
+              notificationManager.sendNotification(
+                receiverId: customerId,
+                receiverType: 'customer',
+                type: nm.NotificationType.jobStarted,
+                title: '🚀 Job Started!',
+                body: '${job['title'] ?? 'Your job'} is now in progress.',
+                priority: nm.NotificationPriority.high,
+                receiverProfileId: customerData['profile_id']?.toString(),
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint('Error sending job started notification: $e');
+        }
       } catch (e) {
         // Silently handle update errors
       }

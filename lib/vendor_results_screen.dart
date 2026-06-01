@@ -10,9 +10,18 @@ import 'widgets/bottom_navigation_bar.dart';
 import 'services/database_service.dart';
 
 class VendorResultsScreen extends StatefulWidget {
-  const VendorResultsScreen({super.key, required this.category});
+  const VendorResultsScreen({
+    super.key,
+    required this.category,
+    this.userLatitude,
+    this.userLongitude,
+    this.userCity,
+  });
 
   final String category;
+  final double? userLatitude;
+  final double? userLongitude;
+  final String? userCity;
 
   @override
   State<VendorResultsScreen> createState() => _VendorResultsScreenState();

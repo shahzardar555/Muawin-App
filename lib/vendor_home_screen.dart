@@ -129,7 +129,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
       // Combine and deduplicate
       final Map<String, dynamic> threadMap = {};
       for (final t in [...threads1, ...threads2]) {
-        threadMap[t['id']?.toString() ?? ''] = t;
+        threadMap[t['id'].toString()] = t;
       }
       final threads = threadMap.values.toList();
 
@@ -1104,9 +1104,9 @@ class _VendorChatsTabState extends State<_VendorChatsTab> {
       for (final thread in uniqueThreads) {
         final threadId = thread['id'].toString();
         final otherParticipantId =
-            thread['participant_1_id']?.toString() == myProfileId
-                ? thread['participant_2_id']?.toString() ?? ''
-                : thread['participant_1_id']?.toString() ?? '';
+            thread['participant_1_id'].toString() == myProfileId
+                ? thread['participant_2_id'].toString()
+                : thread['participant_1_id'].toString();
 
         // Get other participant's profile
         final otherProfile = await supabase
