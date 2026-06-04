@@ -580,49 +580,6 @@ class _CustomerVendorProfileScreenState
                     ),
                   ),
                 ),
-                Icon(Icons.verified, color: primaryColor, size: 24),
-                const SizedBox(width: 16),
-                // Vendor Status Display
-                if (_vendorData != null) ...[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(
-                                _vendorData!['status']?.toString() ?? 'open'),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _getStatusIcon(
-                                _vendorData!['status']?.toString() ?? 'open'),
-                            color: Colors.white,
-                            size: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _getStatusLabel(
-                              _vendorData!['status']?.toString() ?? 'open'),
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
             const SizedBox(height: 12),
@@ -1461,50 +1418,6 @@ class _CustomerVendorProfileScreenState
   }
 
   // Status display helper methods
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'open':
-        return const Color(0xFF4ADE80); // Green
-      case 'busy':
-        return const Color(0xFFFBBF24); // Amber
-      case 'break_':
-        return const Color(0xFF60A5FA); // Blue
-      case 'closed':
-        return const Color(0xFF94A3B8); // Slate
-      default:
-        return const Color(0xFF4ADE80); // Default to green
-    }
-  }
-
-  IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'open':
-        return Icons.circle; // Open circle
-      case 'busy':
-        return Icons.schedule; // Clock/schedule
-      case 'break_':
-        return Icons.pause_circle; // Pause
-      case 'closed':
-        return Icons.power_settings_new; // Settings/closed
-      default:
-        return Icons.circle; // Default circle
-    }
-  }
-
-  String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'open':
-        return 'Open';
-      case 'busy':
-        return 'Busy';
-      case 'break_':
-        return 'Break';
-      case 'closed':
-        return 'Closed';
-      default:
-        return 'Open';
-    }
-  }
 
   // Build vendor profile photo for circular container
   Widget _buildVendorProfilePhoto() {

@@ -44,7 +44,6 @@ class _ProviderDocumentVerificationScreenState
   bool _submitted = false;
   bool _isUploading = false;
   String _uploadError = '';
-  static const String _faceMatchingUrl = 'http://localhost:5000';
   final ImagePicker _imagePicker = ImagePicker();
 
   // Store captured images for each step
@@ -459,7 +458,8 @@ class _ProviderDocumentVerificationScreenState
       }
 
       // Upload CNIC front
-      final cnicFrontPath = 'cnic/$providerId/front_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final cnicFrontPath =
+          'cnic/$providerId/front_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await supabase.storage
           .from('verification-documents')
           .upload(cnicFrontPath, cnicFrontFile);
@@ -468,13 +468,15 @@ class _ProviderDocumentVerificationScreenState
           .getPublicUrl(cnicFrontPath);
 
       // Upload CNIC back
-      final cnicBackPath = 'cnic/$providerId/back_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final cnicBackPath =
+          'cnic/$providerId/back_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await supabase.storage
           .from('verification-documents')
           .upload(cnicBackPath, cnicBackFile);
 
       // Upload selfie
-      final selfiePath = 'selfies/$providerId/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final selfiePath =
+          'selfies/$providerId/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await supabase.storage
           .from('verification-documents')
           .upload(selfiePath, selfieFile);
@@ -482,22 +484,52 @@ class _ProviderDocumentVerificationScreenState
           .from('verification-documents')
           .getPublicUrl(selfiePath);
 
-      // Call face matching service
-      bool faceMatched = false;
-      try {
-        final faceResponse = await http.post(
-          Uri.parse('$_faceMatchingUrl/api/match-faces'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+      // Step 1: Update providers table
+      await supabase.from('providers').update({
+        'verification_status': 'pending',
+        'cnic_front_url': cnicFrontUrl,
+        'selfie_url': selfieUrl,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', providerId);
+
+      // Step 2: Create verification record
+      final verificationResponse = await supabase
+          .from('verifications')
+          .insert({
             'provider_id': providerId,
+            'document_type': 'cnic',
+            'document_url': cnicFrontUrl,
             'cnic_url': cnicFrontUrl,
             'selfie_url': selfieUrl,
-            'attempt_number': 1,
-          }),
-        ).timeout(const Duration(seconds: 30));
+            'status': 'pending',
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .select('id')
+          .single();
+
+      final verificationId = verificationResponse['id'];
+
+      // Step 3: Call Python face match service
+      bool faceMatched = false;
+      Map<String, dynamic>? faceData;
+
+      try {
+        final faceResponse = await http
+            .post(
+              Uri.parse('http://192.168.1.10:5000/api/match-faces'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'provider_id': providerId,
+                'cnic_url': cnicFrontUrl,
+                'selfie_url': selfieUrl,
+                'attempt_number': 1,
+              }),
+            )
+            .timeout(const Duration(seconds: 30));
 
         if (faceResponse.statusCode == 200) {
-          final faceData = jsonDecode(faceResponse.body);
+          faceData = jsonDecode(faceResponse.body) as Map<String, dynamic>;
           faceMatched = faceData['match'] == true ||
               faceData['verified'] == true ||
               (faceData['confidence'] != null &&
@@ -505,30 +537,49 @@ class _ProviderDocumentVerificationScreenState
         }
       } catch (e) {
         debugPrint('Face matching error: $e');
-        // Continue even if face matching fails
-        // Admin will review manually
       }
 
-      // Update provider verification status in Supabase
-      await supabase.from('providers').update({
-        'verification_status': faceMatched ? 'under_review' : 'under_review',
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', providerId);
+      // Step 4: Save face match result
+      if (faceData != null) {
+        try {
+          final confidence = faceData['confidence'] != null
+              ? (faceData['confidence'] as num).toDouble()
+              : 0.0;
+          final distance = faceData['distance'] != null
+              ? (faceData['distance'] as num).toDouble()
+              : 1.0;
 
-      // Save document URLs to providers table if columns exist
-      try {
-        await supabase.from('providers').update({
-          'cnic_number': 'PENDING_REVIEW',
-        }).eq('id', providerId);
-      } catch (e) {
-        debugPrint('Could not update CNIC number: $e');
+          await supabase.from('face_match_results').insert({
+            'verification_id': verificationId,
+            'confidence_score': confidence,
+            'confidence_percentage':
+                '${(confidence * 100).toStringAsFixed(1)}%',
+            'distance': distance,
+            'is_match': faceMatched,
+            'model_used': faceData['model'] ?? 'DeepFace',
+            'decision': faceMatched ? 'MATCH' : 'NO_MATCH',
+            'recommendation': faceMatched ? 'APPROVE' : 'REJECT',
+            'cnic_url': cnicFrontUrl,
+            'selfie_url': selfieUrl,
+            'cnic_face_detected': true,
+            'selfie_face_detected': true,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          // Update verification with face match decision
+          await supabase.from('verifications').update({
+            'status': faceMatched ? 'pending' : 'pending',
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', verificationId);
+        } catch (e) {
+          debugPrint('Failed to save face match result: $e');
+        }
       }
 
       setState(() {
         _isUploading = false;
         _submitted = true;
       });
-
     } catch (e) {
       debugPrint('Verification error: $e');
       setState(() {

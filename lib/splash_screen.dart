@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_screen.dart';
 import 'customer_home_screen.dart';
 import 'vendor_home_screen.dart';
 import 'service_provider_feed_screen.dart';
+import 'provider_document_verification_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -24,9 +25,6 @@ class _SplashScreenState extends State<SplashScreen>
   // New animation controllers for enhanced sequence
   late AnimationController _urduFadeController;
   late AnimationController _logoFadeController;
-
-  bool _isUserLoggedIn = false;
-  String _userType = 'customer'; // 'customer', 'vendor', or 'service_provider'
 
   // Enhanced animation state
   bool _showFirstPart = false;
@@ -190,21 +188,8 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _initializeApp() async {
-    try {
-      // Check SharedPreferences, validate token, load config
-      final prefs = await SharedPreferences.getInstance();
-      _isUserLoggedIn = prefs.getString('auth_token') != null;
-
-      // Check user type if logged in
-      if (_isUserLoggedIn) {
-        _userType = prefs.getString('user_type') ?? 'customer';
-      }
-
-      // Simulate additional app initialization
-      await Future.delayed(const Duration(milliseconds: 800));
-    } catch (e) {
-      // Handle initialization errors gracefully
-    }
+    // Session restoration is now handled in _navigateToNextScreen
+    // via Supabase SDK's built-in session persistence
   }
 
   void _navigateToNextScreen() async {
@@ -214,35 +199,91 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    // Check authentication status and route accordingly
-    if (_isUserLoggedIn) {
-      // User is logged in - navigate to appropriate home screen
-      if (_userType == 'vendor') {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const VendorHomeScreen(),
-          ),
-        );
-      } else if (_userType == 'service_provider') {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const ServiceProviderFeedScreen(),
-          ),
-        );
-      } else {
+    try {
+      // Check if Supabase has an active session
+      final session = Supabase.instance.client.auth.currentSession;
+      final user = Supabase.instance.client.auth.currentUser;
+
+      if (session == null || user == null) {
+        // No active session — go to auth screen
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const AuthScreen(),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Session exists — get user role from profiles table
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('id, role')
+          .eq('user_id', user.id)
+          .single();
+
+      final role = profile['role']?.toString() ?? '';
+
+      if (!mounted) return;
+
+      if (role == 'customer') {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => const CustomerHomeScreen(),
           ),
         );
+      } else if (role == 'provider') {
+        // Check if provider is verified
+        final provider = await Supabase.instance.client
+            .from('providers')
+            .select('is_verified, verification_status')
+            .eq('profile_id', profile['id']?.toString() ?? '')
+            .maybeSingle();
+
+        final isVerified = provider?['is_verified'] == true;
+
+        if (!mounted) return;
+
+        if (isVerified) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const ServiceProviderFeedScreen(),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const ProviderDocumentVerificationScreen(),
+            ),
+          );
+        }
+      } else if (role == 'vendor') {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const VendorHomeScreen(),
+          ),
+        );
+      } else {
+        // Unknown role or admin — go to auth
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const AuthScreen(),
+            ),
+          );
+        }
       }
-    } else {
-      // User is not logged in - navigate to auth
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const AuthScreen(),
-        ),
-      );
+    } catch (e) {
+      debugPrint('Session restore error: $e');
+      // On any error — go to auth screen
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const AuthScreen(),
+          ),
+        );
+      }
     }
   }
 

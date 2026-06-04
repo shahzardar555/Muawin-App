@@ -2720,8 +2720,7 @@ class _FeaturedPartnersSectionState extends State<_FeaturedPartnersSection> {
               SingleChildScrollView(
                 controller: scrollController,
                 scrollDirection: Axis.horizontal,
-                physics:
-                    const NeverScrollableScrollPhysics(), // Disable manual scrolling
+                physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: List.generate(
