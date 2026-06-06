@@ -487,6 +487,12 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
           ''')
           .eq('provider_id', _currentProviderId)
           .eq('status', 'pending')
+          .gte(
+              'created_at',
+              DateTime.now()
+                  .toUtc()
+                  .subtract(const Duration(hours: 24))
+                  .toIso8601String())
           .order('created_at', ascending: false);
 
       debugPrint('Direct requests count: ${response.length}');
@@ -1641,20 +1647,25 @@ class _JobLeadCard extends StatelessWidget {
                 child: Text(
                   job['customer']?.toString() ?? '',
                   style: GoogleFonts.poppins(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: Colors.black87,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                job['id']?.toString() ?? '',
+                'ID: ${(job['id']?.toString() ?? '').length > 8 ? (job['id']?.toString() ?? '').substring(0, 8).toUpperCase() : (job['id']?.toString() ?? '').toUpperCase()}...',
                 style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black38,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                  letterSpacing: 0.5,
                 ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ],
           ),
@@ -3397,7 +3408,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             // Voice indicator (shows when listening)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              height: _isChatListening ? 120 : 0,
+              height: _isChatListening ? 200 : 0,
               child: _isChatListening
                   ? ChatVoiceIndicator(
                       soundLevel: _chatSoundLevel,

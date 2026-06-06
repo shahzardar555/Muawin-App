@@ -1155,31 +1155,38 @@ class _JobCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       // Category and Job ID parallel to icon
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Name
-                          Text(
-                            job['service_category'] ?? 'Service',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18, // 1.125rem = 18px
-                              fontWeight: FontWeight.bold,
-                              height: 1, // leading-none
-                              color: Colors.black,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Name
+                            Text(
+                              job['service_category'] ?? 'Service',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18, // 1.125rem = 18px
+                                fontWeight: FontWeight.bold,
+                                height: 1, // leading-none
+                                color: Colors.black,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          // Job ID
-                          Text(
-                            job['id']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10, // 0.625rem = 10px
-                              fontWeight: FontWeight.w900, // Black (900) weight
-                              color: Colors.grey[600], // muted gray
-                              letterSpacing: 2.0, // tracking-widest
+                            const SizedBox(height: 2),
+                            // Job ID
+                            Text(
+                              job['id']?.toString() ?? '',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10, // 0.625rem = 10px
+                                fontWeight:
+                                    FontWeight.w900, // Black (900) weight
+                                color: Colors.grey[600], // muted gray
+                                letterSpacing: 2.0, // tracking-widest
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1426,12 +1433,16 @@ class _JobCard extends StatelessWidget {
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            job['location']?.toString() ?? 'Location',
-                            style: GoogleFonts.poppins(
-                              fontSize: 11, // 0.68rem = 11px
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[600], // muted gray
+                          Expanded(
+                            child: Text(
+                              job['location']?.toString() ?? 'Location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11, // 0.68rem = 11px
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[600], // muted gray
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
@@ -1675,31 +1686,38 @@ class _JobCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       // Category and Job ID parallel to icon
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Name
-                          Text(
-                            job['service_category'] ?? 'Service',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18, // 1.125rem = 18px
-                              fontWeight: FontWeight.bold,
-                              height: 1, // leading-none
-                              color: Colors.black,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Name
+                            Text(
+                              job['service_category'] ?? 'Service',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18, // 1.125rem = 18px
+                                fontWeight: FontWeight.bold,
+                                height: 1, // leading-none
+                                color: Colors.black,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          // Job ID
-                          Text(
-                            job['id']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10, // 0.625rem = 10px
-                              fontWeight: FontWeight.w900, // Black (900) weight
-                              color: Colors.grey[600], // muted gray
-                              letterSpacing: 2.0, // tracking-widest
+                            const SizedBox(height: 2),
+                            // Job ID
+                            Text(
+                              job['id']?.toString() ?? '',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10, // 0.625rem = 10px
+                                fontWeight:
+                                    FontWeight.w900, // Black (900) weight
+                                color: Colors.grey[600], // muted gray
+                                letterSpacing: 2.0, // tracking-widest
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1887,12 +1905,16 @@ class _JobCard extends StatelessWidget {
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            job['location']?.toString() ?? 'Location',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
+                          Expanded(
+                            child: Text(
+                              job['location']?.toString() ?? 'Location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
@@ -2073,31 +2095,38 @@ class _JobCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       // Category and Job ID parallel to icon
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Name
-                          Text(
-                            job['service_category'] ?? 'Service',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18, // 1.125rem = 18px
-                              fontWeight: FontWeight.bold,
-                              height: 1, // leading-none
-                              color: Colors.black,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Name
+                            Text(
+                              job['service_category'] ?? 'Service',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18, // 1.125rem = 18px
+                                fontWeight: FontWeight.bold,
+                                height: 1, // leading-none
+                                color: Colors.black,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          // Job ID
-                          Text(
-                            job['id']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10, // 0.625rem = 10px
-                              fontWeight: FontWeight.w900, // Black (900) weight
-                              color: Colors.grey[600], // muted gray
-                              letterSpacing: 2.0, // tracking-widest
+                            const SizedBox(height: 2),
+                            // Job ID
+                            Text(
+                              job['id']?.toString() ?? '',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10, // 0.625rem = 10px
+                                fontWeight:
+                                    FontWeight.w900, // Black (900) weight
+                                color: Colors.grey[600], // muted gray
+                                letterSpacing: 2.0, // tracking-widest
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -2285,12 +2314,16 @@ class _JobCard extends StatelessWidget {
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            job['location']?.toString() ?? 'Location',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
+                          Expanded(
+                            child: Text(
+                              job['location']?.toString() ?? 'Location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
@@ -2481,31 +2514,38 @@ class _JobCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       // Category and Job ID parallel to icon
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Name
-                          Text(
-                            job['service_category'] ?? 'Service',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18, // 1.125rem = 18px
-                              fontWeight: FontWeight.bold,
-                              height: 1, // leading-none
-                              color: Colors.black,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Name
+                            Text(
+                              job['service_category'] ?? 'Service',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18, // 1.125rem = 18px
+                                fontWeight: FontWeight.bold,
+                                height: 1, // leading-none
+                                color: Colors.black,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          // Job ID
-                          Text(
-                            job['id']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10, // 0.625rem = 10px
-                              fontWeight: FontWeight.w900, // Black (900) weight
-                              color: Colors.grey[600], // muted gray
-                              letterSpacing: 2.0, // tracking-widest
+                            const SizedBox(height: 2),
+                            // Job ID
+                            Text(
+                              job['id']?.toString() ?? '',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10, // 0.625rem = 10px
+                                fontWeight:
+                                    FontWeight.w900, // Black (900) weight
+                                color: Colors.grey[600], // muted gray
+                                letterSpacing: 2.0, // tracking-widest
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -2690,12 +2730,16 @@ class _JobCard extends StatelessWidget {
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            job['location']?.toString() ?? 'Location',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
+                          Expanded(
+                            child: Text(
+                              job['location']?.toString() ?? 'Location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
@@ -2894,31 +2938,38 @@ class _JobCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       // Category and Job ID parallel to icon
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category Name
-                          Text(
-                            job['service_category'] ?? 'Service',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18, // 1.125rem = 18px
-                              fontWeight: FontWeight.bold,
-                              height: 1, // leading-none
-                              color: Colors.black,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Name
+                            Text(
+                              job['service_category'] ?? 'Service',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18, // 1.125rem = 18px
+                                fontWeight: FontWeight.bold,
+                                height: 1, // leading-none
+                                color: Colors.black,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          // Job ID
-                          Text(
-                            job['id']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10, // 0.625rem = 10px
-                              fontWeight: FontWeight.w900, // Black (900) weight
-                              color: Colors.grey[600], // muted gray
-                              letterSpacing: 2.0, // tracking-widest
+                            const SizedBox(height: 2),
+                            // Job ID
+                            Text(
+                              job['id']?.toString() ?? '',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10, // 0.625rem = 10px
+                                fontWeight:
+                                    FontWeight.w900, // Black (900) weight
+                                color: Colors.grey[600], // muted gray
+                                letterSpacing: 2.0, // tracking-widest
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -3070,12 +3121,16 @@ class _JobCard extends StatelessWidget {
                             color: Colors.grey[400],
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            job['location']?.toString() ?? 'Location',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[600],
+                          Expanded(
+                            child: Text(
+                              job['location']?.toString() ?? 'Location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[600],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ],
@@ -3369,6 +3424,7 @@ class _JobCard extends StatelessWidget {
         'scheduled_date': job['scheduled_date'],
         'scheduled_time': job['scheduled_time'],
         'status': 'scheduled',
+        'total_amount': (job['proposed_price'] as num?)?.toDouble() ?? 0.0,
       });
 
       if (context.mounted) {
@@ -3807,22 +3863,30 @@ class _JobCard extends StatelessWidget {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(color: Colors.red[600]),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                'Getting location and sending alert...',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Row(
+            children: [
+              Icon(
+                Icons.location_on,
+                size: 14, // 0.875rem = 14px
+                color: primary,
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  job['location']?.toString() ?? 'Location',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3830,19 +3894,45 @@ class _JobCard extends StatelessWidget {
 
   Future<void> _sendWhatsAppToContact(String phone, String message) async {
     try {
-      // Remove any non-digit characters from phone number
-      final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+      // Clean phone number — keep digits only
+      String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
 
-      // Use WhatsApp URL scheme with encoded message
-      final uri = Uri.parse(
-        'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}',
+      // Normalize Pakistani numbers to international format
+      // 03XXXXXXXXX → 923XXXXXXXXX
+      if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
+        cleanPhone = '92${cleanPhone.substring(1)}';
+      }
+      // If already has 92 prefix, keep as is
+      // If starts with +92, the + was already stripped
+
+      final encodedMessage = Uri.encodeComponent(message);
+
+      // Try whatsapp:// scheme first (works on Android)
+      final whatsappUri = Uri.parse(
+        'whatsapp://send?phone=$cleanPhone&text=$encodedMessage',
       );
 
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(whatsappUri)) {
+        await launchUrl(
+          whatsappUri,
+          mode: LaunchMode.externalApplication,
+        );
       } else {
-        debugPrint('Could not open WhatsApp for $cleanPhone');
+        // Fallback to wa.me link
+        final fallbackUri = Uri.parse(
+          'https://wa.me/$cleanPhone?text=$encodedMessage',
+        );
+        if (await canLaunchUrl(fallbackUri)) {
+          await launchUrl(
+            fallbackUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } else {
+          debugPrint('Could not launch WhatsApp for: $cleanPhone');
+        }
       }
+
+      await Future.delayed(const Duration(milliseconds: 500));
     } catch (e) {
       debugPrint('Error sending WhatsApp message: $e');
     }

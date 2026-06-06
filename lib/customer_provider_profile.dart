@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io';
 import 'customer_home_screen.dart';
 import 'customer_jobs_screen.dart';
 import 'post_job_step1_screen.dart';
@@ -469,7 +467,8 @@ class _CustomerProviderProfileScreenState
                             ),
                             const SizedBox(width: 16),
                             // Identity Column
-                            Expanded(
+                            Flexible(
+                              fit: FlexFit.loose,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -644,7 +643,7 @@ class _CustomerProviderProfileScreenState
                               ),
                             ),
                             // Availability Status Badge
-                            const Spacer(),
+                            const SizedBox(width: 8),
                             Builder(
                               builder: (context) {
                                 final String status =
@@ -678,29 +677,38 @@ class _CustomerProviderProfileScreenState
                                   icon = Icons.circle;
                                 }
 
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: bgColor,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                        color: dotColor.withValues(alpha: 0.4)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(icon, color: dotColor, size: 8),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        label,
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: textColor,
+                                return ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 90),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: bgColor,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                          color:
+                                              dotColor.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(icon, color: dotColor, size: 8),
+                                        const SizedBox(width: 4),
+                                        Flexible(
+                                          child: Text(
+                                            label,
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: textColor,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 );
                               },
@@ -999,7 +1007,7 @@ class _CustomerProviderProfileScreenState
                         ),
                         const SizedBox(width: 12),
                         Text(
-                          '${_provider?['review_count'] as int? ?? _reviews.length} Reviews',
+                          '${(_provider?['review_count'] as num?)?.toInt() ?? _reviews.length} Reviews',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -1019,8 +1027,10 @@ class _CustomerProviderProfileScreenState
                               'Provider',
                       overallRating:
                           (_provider?['rating'] as num?)?.toDouble() ?? 0.0,
-                      totalReviews: _provider?['review_count'] as int? ?? 0,
-                      totalJobs: _provider?['job_count'] as int? ?? 0,
+                      totalReviews:
+                          (_provider?['review_count'] as num?)?.toInt() ?? 0,
+                      totalJobs:
+                          (_provider?['job_count'] as num?)?.toInt() ?? 0,
                       category: _provider?['service_category'] as String? ??
                           'Service',
                       recentReviews: const [
@@ -1088,7 +1098,7 @@ class _CustomerProviderProfileScreenState
                                       ?['full_name']
                                   ?.toString() ??
                               'Customer',
-                          rating: review['rating'] as int? ?? 5,
+                          rating: (review['rating'] as num?)?.toInt() ?? 5,
                           date: _formatDate(review['created_at'] as String?),
                           review: review['review']?.toString() ?? '',
                         ),
@@ -1929,67 +1939,38 @@ class _CustomerProviderProfileScreenState
         _provider?['cover_photo_url']?.toString().isNotEmpty == true
             ? _provider!['cover_photo_url'].toString()
             : '';
-    final profileImagePath =
-        _provider?['profiles']?['profile_image_url']?.toString();
+    final profileImageUrl =
+        _provider?['profiles']?['profile_image_url']?.toString() ?? '';
 
-    // Check if we're on web platform
-    const isWeb = kIsWeb;
+    // Prefer cover photo, fall back to profile image
+    final imageUrl = coverUrl.isNotEmpty ? coverUrl : profileImageUrl;
 
-    // Try to load cover photo first, then fall back to profile photo
-    final imagePath = coverUrl.isNotEmpty ? coverUrl : profileImagePath;
-
-    // On web, we can't use File.existsSync(), so we'll handle it differently
-    if (imagePath != null) {
-      if (isWeb) {
-        // On web, try to use the path as a URL or show default
-        if (imagePath.startsWith('http') ||
-            imagePath.startsWith('blob:') ||
-            imagePath.startsWith('data:')) {
-          return Image.network(
-            imagePath,
+    // If we have a network URL, load it directly
+    if (imageUrl.isNotEmpty &&
+        (imageUrl.startsWith('http') || imageUrl.startsWith('https'))) {
+      return Image.network(
+        imageUrl,
+        width: double.infinity,
+        height: 250,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('Cover image load error: $error');
+          return _buildDefaultProviderImage();
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
             width: double.infinity,
             height: 250,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildDefaultProviderImage();
-            },
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                width: double.infinity,
-                height: 250,
-                color: Colors.grey[200],
-                child: Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
-                        : null,
-                  ),
-                ),
-              );
-            },
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF047A62),
+              ),
+            ),
           );
-        }
-      } else {
-        // On mobile/desktop, check if file exists
-        try {
-          if (File(imagePath).existsSync()) {
-            return Image.file(
-              File(imagePath),
-              width: double.infinity,
-              height: 250,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _buildDefaultProviderImage();
-              },
-            );
-          }
-        } catch (e) {
-          // Handle any file system errors gracefully
-          debugPrint('Error checking file existence: $e');
-        }
-      }
+        },
+      );
     }
 
     // Fallback to default image

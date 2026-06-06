@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/pro_status_checker.dart';
+import 'services/job_request_limiter.dart';
 
 // Step 3 Screen - Confirm Details
 class PostJobStep3Screen extends StatefulWidget {
@@ -25,6 +27,23 @@ class PostJobStep3Screen extends StatefulWidget {
 
 class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
   bool _isPosting = false;
+  bool _isProUser = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkProStatus();
+  }
+
+  // Check if user is a PRO user
+  Future<void> _checkProStatus() async {
+    final isPro = await ProStatusChecker.isProUser();
+    if (mounted) {
+      setState(() {
+        _isProUser = isPro;
+      });
+    }
+  }
 
   String _formatDateTime(DateTime? date, TimeOfDay? time) {
     if (date == null || time == null) return 'Not scheduled';
@@ -416,6 +435,8 @@ class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
                                         debugPrint(
                                             'user: ${Supabase.instance.client.auth.currentUser?.id ?? 'NULL'}');
                                         final navigator = Navigator.of(context);
+                                        final scaffoldMessenger =
+                                            ScaffoldMessenger.of(context);
                                         navigator.pop();
                                         setState(() => _isPosting = true);
 
@@ -447,6 +468,34 @@ class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
                                                   ?.toString() ??
                                               '';
 
+                                          // Check daily limit for non-PRO users
+                                          if (!_isProUser) {
+                                            final canPost =
+                                                await JobRequestLimiter
+                                                    .canPostJob();
+                                            if (!canPost) {
+                                              if (mounted) {
+                                                setState(
+                                                    () => _isPosting = false);
+                                                scaffoldMessenger.showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'Daily limit reached. Non-PRO accounts can post 5 jobs per day. Upgrade to Muawin PRO for unlimited postings.',
+                                                      style:
+                                                          GoogleFonts.poppins(
+                                                              fontSize: 13),
+                                                    ),
+                                                    backgroundColor:
+                                                        Colors.red.shade700,
+                                                    duration: const Duration(
+                                                        seconds: 4),
+                                                  ),
+                                                );
+                                              }
+                                              return;
+                                            }
+                                          }
+
                                           await supabase.from('jobs').insert({
                                             'customer_id': customer['id'],
                                             'service_category': categoryName,
@@ -469,6 +518,11 @@ class _PostJobStep3ScreenState extends State<PostJobStep3Screen> {
                                                         '0') ??
                                                 0.0,
                                           });
+
+                                          if (!_isProUser) {
+                                            await JobRequestLimiter
+                                                .incrementJobCount();
+                                          }
 
                                           debugPrint(
                                               'Job posted successfully!');

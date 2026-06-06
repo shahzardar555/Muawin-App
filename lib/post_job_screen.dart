@@ -8,6 +8,7 @@ import 'customer_jobs_screen.dart';
 import 'customer_messages_screen.dart';
 import 'customer_profile_screen.dart';
 import 'services/pro_status_checker.dart';
+import 'services/job_request_limiter.dart';
 import 'services/notification_manager.dart' as nm;
 
 /// Post Job Screen (/customer/post-job)
@@ -1024,6 +1025,26 @@ class _PostJobScreenState extends State<PostJobScreen> {
       debugPrint('description: ${_descriptionController.text.trim()}');
       debugPrint('location: ${_locationController.text.trim()}');
 
+      // Check daily limit for non-PRO users
+      if (!_isProUser) {
+        final canPost = await JobRequestLimiter.canPostJob();
+        if (!canPost) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Daily limit reached. Non-PRO accounts can post 5 jobs per day. Upgrade to Muawin PRO for unlimited postings.',
+                  style: GoogleFonts.poppins(fontSize: 13),
+                ),
+                backgroundColor: Colors.red.shade700,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       // Insert job into Supabase
       final jobResponse = await supabase
           .from('jobs')
@@ -1045,6 +1066,10 @@ class _PostJobScreenState extends State<PostJobScreen> {
           })
           .select('id')
           .single();
+
+      if (!_isProUser) {
+        await JobRequestLimiter.incrementJobCount();
+      }
 
       final jobId = jobResponse['id'].toString();
       final shortId = '#MUA-${jobId.substring(0, 8).toUpperCase()}';

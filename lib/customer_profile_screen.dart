@@ -638,11 +638,15 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                                 size: 16,
                               ),
                               const SizedBox(width: 4),
-                              Text(
-                                _userEmail,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.white.withValues(alpha: 0.8),
+                              Expanded(
+                                child: Text(
+                                  _userEmail,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
                             ],
@@ -656,11 +660,15 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen>
                                 size: 16,
                               ),
                               const SizedBox(width: 4),
-                              Text(
-                                _userPhone,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.white.withValues(alpha: 0.8),
+                              Expanded(
+                                child: Text(
+                                  _userPhone,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
                             ],

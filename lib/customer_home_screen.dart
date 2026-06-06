@@ -82,7 +82,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       if (user != null) {
         final profile = await supabase
             .from('profiles')
-            .select('id, full_name, location, city, area, latitude, longitude')
+            .select(
+                'id, full_name, location, city, area, latitude, longitude, display_location')
             .eq('user_id', user.id)
             .single();
         final fullName = profile['full_name']?.toString() ?? 'Customer';
@@ -93,8 +94,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         final savedCity = profile['city']?.toString() ?? '';
         final savedArea = profile['area']?.toString() ?? '';
         final savedLocation = profile['location']?.toString() ?? '';
+        final displayLocation = profile['display_location']?.toString() ?? '';
         String locationText = '';
-        if (savedCity.isNotEmpty) {
+        if (displayLocation.isNotEmpty) {
+          locationText = displayLocation;
+        } else if (savedCity.isNotEmpty) {
           locationText =
               savedArea.isNotEmpty ? '$savedArea, $savedCity' : savedCity;
         } else if (savedLocation.isNotEmpty) {
@@ -1160,6 +1164,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                                       'area': area,
                                       'latitude': position.latitude,
                                       'longitude': position.longitude,
+                                      'display_location': address,
                                       'updated_at':
                                           DateTime.now().toIso8601String(),
                                     }).eq('user_id', user.id);
@@ -1393,6 +1398,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                                     'location': result,
                                     'city': city,
                                     'area': areaName,
+                                    'display_location': result,
                                     'updated_at':
                                         DateTime.now().toIso8601String(),
                                   };
@@ -1528,6 +1534,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                                     'location': area,
                                     'city': city,
                                     'area': areaName,
+                                    'display_location': area,
                                     'updated_at':
                                         DateTime.now().toIso8601String(),
                                   };
@@ -5331,7 +5338,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
             // Voice indicator (shows when listening)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              height: isChatListening ? 80 : 0,
+              height: isChatListening ? 200 : 0,
               child: isChatListening
                   ? ChatVoiceIndicator(
                       soundLevel: chatSoundLevel,

@@ -436,18 +436,35 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
 
   Future<void> _sendWhatsAppToContact(String phone, String message) async {
     try {
-      final formattedPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
-      final encodedMessage = Uri.encodeComponent(message);
-      final whatsappUrl = 'https://wa.me/$formattedPhone?text=$encodedMessage';
+      String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
 
-      final uri = Uri.parse(whatsappUrl);
-      if (await canLaunchUrl(uri)) {
+      if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
+        cleanPhone = '92${cleanPhone.substring(1)}';
+      }
+
+      final encodedMessage = Uri.encodeComponent(message);
+
+      final whatsappUri = Uri.parse(
+        'whatsapp://send?phone=$cleanPhone&text=$encodedMessage',
+      );
+
+      if (await canLaunchUrl(whatsappUri)) {
         await launchUrl(
-          uri,
+          whatsappUri,
           mode: LaunchMode.externalApplication,
         );
       } else {
-        debugPrint('Could not launch WhatsApp for phone: $formattedPhone');
+        final fallbackUri = Uri.parse(
+          'https://wa.me/$cleanPhone?text=$encodedMessage',
+        );
+        if (await canLaunchUrl(fallbackUri)) {
+          await launchUrl(
+            fallbackUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } else {
+          debugPrint('Could not launch WhatsApp for: $cleanPhone');
+        }
       }
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -457,22 +474,31 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
   }
 
   void _showLocationLoadingDialog(BuildContext context) {
+    if (!context.mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(color: Colors.red[600]),
-            const SizedBox(width: 16),
-            Text(
-              'Getting location and sending alert...',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.black87,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Colors.red[600]),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Getting location and sending alert...',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -583,12 +609,15 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
                       children: [
                         const Icon(Icons.work, size: 16, color: Colors.green),
                         const SizedBox(width: 8),
-                        Text(
-                          'Job ID: ${jobData['id'] ?? 'N/A'}',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.green[700],
+                        Flexible(
+                          child: Text(
+                            'Job ID: ${jobData['id']?.toString().substring(0, 8) ?? 'N/A'}...',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green[700],
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -795,12 +824,15 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
                               const Icon(Icons.work,
                                   size: 16, color: Colors.red),
                               const SizedBox(width: 8),
-                              Text(
-                                'Job ID: ${jobData['id'] ?? 'N/A'}',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.red[700],
+                              Flexible(
+                                child: Text(
+                                  'Job ID: ${jobData['id']?.toString().substring(0, 8) ?? 'N/A'}...',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.red[700],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1530,7 +1562,11 @@ class _JobCard extends StatelessWidget {
                         color: primary),
                     overflow: TextOverflow.ellipsis),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
               Flexible(
                 child: Text(
                     jobData['time'] ??
@@ -1784,12 +1820,14 @@ class _JobCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Job ID: ${jobData['id'] ?? 'N/A'}',
+                'Job ID: ${jobData['id']?.toString().substring(0, 8) ?? 'N/A'}...',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
                 ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
               const SizedBox(height: 8),
               Text(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/notification_manager.dart' as nm;
 import 'services/pro_status_checker.dart';
+import 'services/job_request_limiter.dart';
 // ignore: unused_import
 import 'services/database_service.dart';
 import 'widgets/muawin_pro_badge.dart';
@@ -373,8 +374,34 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
         'status': 'pending',
       };
 
+      // Check daily limit for non-PRO users
+      if (!_isProUser) {
+        final canSend = await JobRequestLimiter.canSendDirectRequest();
+        if (!canSend) {
+          final remaining =
+              await JobRequestLimiter.getRemainingDirectRequests();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Daily limit reached ($remaining requests remaining). Non-PRO accounts can send 10 direct requests per day. Upgrade to Muawin PRO for unlimited requests.',
+                  style: GoogleFonts.poppins(fontSize: 13),
+                ),
+                backgroundColor: Colors.red.shade700,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       // Insert into direct_job_requests table
       await supabase.from('direct_job_requests').insert(requestData);
+
+      if (!_isProUser) {
+        await JobRequestLimiter.incrementDirectRequestCount();
+      }
 
       if (!mounted) return;
 
@@ -2216,52 +2243,70 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Provider info
-                Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF047A62).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.person_rounded,
-                        color: Color(0xFF047A62),
-                        size: 25,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.providerData['name']?.toString() ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              const Icon(Icons.star_rounded,
-                                  color: Color(0xFFFFD700), size: 16),
-                              const SizedBox(width: 4),
-                              Text(
-                                '4.8 (24 reviews)',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
+                Builder(
+                  builder: (context) {
+                    final double rating =
+                        (widget.providerData['average_rating'] as num?)
+                                ?.toDouble() ??
+                            0.0;
+                    final int reviewCount =
+                        (widget.providerData['total_reviews'] as num?)
+                                ?.toInt() ??
+                            0;
+                    final String? imageUrl =
+                        widget.providerData['profile_image_url']?.toString();
+                    final bool hasImage =
+                        imageUrl != null && imageUrl.isNotEmpty;
+
+                    return Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 25,
+                          backgroundColor:
+                              const Color(0xFF047A62).withValues(alpha: 0.1),
+                          backgroundImage:
+                              hasImage ? NetworkImage(imageUrl) : null,
+                          child: hasImage
+                              ? null
+                              : const Icon(
+                                  Icons.person_rounded,
+                                  color: Color(0xFF047A62),
+                                  size: 25,
                                 ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.providerData['name']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  const Icon(Icons.star_rounded,
+                                      color: Color(0xFFFFD700), size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${rating.toStringAsFixed(1)} ($reviewCount reviews)',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 20),
 

@@ -900,22 +900,9 @@ class _DashboardHeader extends StatelessWidget {
                                   vendorProfileImageUrl != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(14),
-                                  child: kIsWeb && vendorProfileImageUrl != null
-                                      ? Image.network(
-                                          vendorProfileImageUrl!,
-                                          width: _kProfileSize,
-                                          height: _kProfileSize,
-                                          fit: BoxFit.cover,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                            return const Icon(
-                                              Icons.store_rounded,
-                                              size: 26,
-                                              color: Colors.black87,
-                                            );
-                                          },
-                                        )
-                                      : Image.file(
+                                  child: vendorProfileImageFile != null &&
+                                          !kIsWeb
+                                      ? Image.file(
                                           vendorProfileImageFile!,
                                           width: _kProfileSize,
                                           height: _kProfileSize,
@@ -928,7 +915,28 @@ class _DashboardHeader extends StatelessWidget {
                                               color: Colors.black87,
                                             );
                                           },
-                                        ),
+                                        )
+                                      : vendorProfileImageUrl != null &&
+                                              vendorProfileImageUrl!.isNotEmpty
+                                          ? Image.network(
+                                              vendorProfileImageUrl!,
+                                              width: _kProfileSize,
+                                              height: _kProfileSize,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                return const Icon(
+                                                  Icons.store_rounded,
+                                                  size: 26,
+                                                  color: Colors.black87,
+                                                );
+                                              },
+                                            )
+                                          : const Icon(
+                                              Icons.store_rounded,
+                                              size: 26,
+                                              color: Colors.black87,
+                                            ),
                                 )
                               : const Icon(
                                   Icons.store_rounded,
@@ -5317,7 +5325,7 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
           // Voice indicator (shows when listening)
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            height: _isChatListening ? 80 : 0,
+            height: _isChatListening ? 200 : 0,
             child: _isChatListening
                 ? ChatVoiceIndicator(
                     soundLevel: _chatSoundLevel,

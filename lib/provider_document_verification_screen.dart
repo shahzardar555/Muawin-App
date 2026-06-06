@@ -526,7 +526,7 @@ class _ProviderDocumentVerificationScreenState
                 'attempt_number': 1,
               }),
             )
-            .timeout(const Duration(seconds: 30));
+            .timeout(const Duration(seconds: 120));
 
         if (faceResponse.statusCode == 200) {
           faceData = jsonDecode(faceResponse.body) as Map<String, dynamic>;
@@ -742,11 +742,11 @@ class _ProviderDocumentVerificationScreenState
 
 /// Navigation Header:
 /// - Centered micro-typography: "PROVIDER VERIFICATION".
-/// - Rounded-full ghost back button with ArrowLeft icon.
 /// - Logout button on the right.
 class _NavigationHeader extends StatelessWidget {
   const _NavigationHeader({required this.onBack});
 
+  // ignore: unused_field
   final VoidCallback onBack;
 
   @override
@@ -757,22 +757,6 @@ class _NavigationHeader extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        GestureDetector(
-          onTap: onBack,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.04),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 18,
-              color: Colors.black87,
-            ),
-          ),
-        ),
         Expanded(
           child: Center(
             child: Text(

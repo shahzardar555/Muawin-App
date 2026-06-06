@@ -52,6 +52,8 @@ class _ServiceProvidersResultsScreenState
     try {
       final data =
           await DatabaseService().getProviders(category: widget.category);
+      debugPrint(
+          'PROVIDER DATA SAMPLE: ${data.isNotEmpty ? data.first.toString() : "empty"}');
       if (mounted) {
         setState(() {
           _providers = data;
