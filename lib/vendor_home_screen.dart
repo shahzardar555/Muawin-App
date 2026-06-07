@@ -66,7 +66,8 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   bool _showChatBot = false;
   final List<Map<String, dynamic>> _chatMessages = [];
   final List<Map<String, dynamic>> _conversationHistory = [];
-  static const String _backendUrl = 'http://localhost:3001';
+  static const String _backendUrl =
+      'https://muawin-nodejs-backend-production.up.railway.app';
   final TextEditingController _chatController = TextEditingController();
 
   // Profile picture state for web/mobile compatibility

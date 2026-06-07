@@ -2505,7 +2505,8 @@ class _AIChatBottomSheetState extends State<_AIChatBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
   final List<Map<String, dynamic>> _conversationHistory = [];
-  static const String _backendUrl = 'http://localhost:3001';
+  static const String _backendUrl =
+      'https://muawin-nodejs-backend-production.up.railway.app';
 
   // Chat voice state variables
   bool _isChatListening = false;

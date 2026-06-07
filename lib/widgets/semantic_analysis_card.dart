@@ -87,7 +87,8 @@ class _SemanticAnalysisCardState extends State<SemanticAnalysisCard>
   Future<void> _fetchAIAnalysis() async {
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:3001/api/ai/analyze-profile'),
+        Uri.parse(
+            'https://muawin-nodejs-backend-production.up.railway.app/api/ai/analyze-profile'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'profileId': widget.profileId,
