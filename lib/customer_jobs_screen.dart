@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:muawin_app/services/location_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'customer_home_screen.dart';
 import 'post_job_screen.dart';
 import 'customer_profile_screen.dart';
 import 'customer_messages_screen.dart';
+import 'chat_screen.dart';
 
 /// Customer Jobs Screen (/customer/jobs)
 /// Provides clear status tracking and safety protocols through a tiered card hierarchy.
@@ -1334,16 +1336,97 @@ class _JobCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       // Message Button
                       GestureDetector(
-                        onTap: () {
-                          // Navigate to specific chat with assigned service provider
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider']?.toString() ??
-                                    'Service Provider',
+                        onTap: () async {
+                          try {
+                            final supabase = Supabase.instance.client;
+                            final currentUser = supabase.auth.currentUser;
+                            if (currentUser == null) return;
+
+                            // Get current user profile_id
+                            final myProfile = await supabase
+                                .from('profiles')
+                                .select('id')
+                                .eq('user_id', currentUser.id)
+                                .single();
+                            final myProfileId = myProfile['id'].toString();
+
+                            // Get provider's profile_id
+                            final providerProfileId = await supabase
+                                .from('providers')
+                                .select('profile_id')
+                                .eq('id',
+                                    job['providers']?['id']?.toString() ?? '')
+                                .single();
+                            final otherProfileId =
+                                providerProfileId['profile_id'].toString();
+
+                            // Find or create thread
+                            String? threadId;
+                            final existing1 = await supabase
+                                .from('message_threads')
+                                .select('id')
+                                .eq('participant_1_id', myProfileId)
+                                .eq('participant_2_id', otherProfileId)
+                                .maybeSingle();
+
+                            if (existing1 != null) {
+                              threadId = existing1['id'].toString();
+                            } else {
+                              final existing2 = await supabase
+                                  .from('message_threads')
+                                  .select('id')
+                                  .eq('participant_1_id', otherProfileId)
+                                  .eq('participant_2_id', myProfileId)
+                                  .maybeSingle();
+
+                              if (existing2 != null) {
+                                threadId = existing2['id'].toString();
+                              } else {
+                                final newThread = await supabase
+                                    .from('message_threads')
+                                    .insert({
+                                      'participant_1_id': myProfileId,
+                                      'participant_2_id': otherProfileId,
+                                      'is_active': true,
+                                    })
+                                    .select('id')
+                                    .single();
+                                threadId = newThread['id'].toString();
+                              }
+                            }
+
+                            if (!context.mounted) return;
+
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  chatData: {
+                                    'id': threadId,
+                                    'name': job['providers']?['profiles']
+                                                ?['full_name']
+                                            ?.toString() ??
+                                        'Service Provider',
+                                    'avatar': job['providers']?['profiles']
+                                                ?['profile_image_url']
+                                            ?.toString() ??
+                                        '',
+                                    'isOnline': false,
+                                    'type': 'provider',
+                                  },
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          } catch (e) {
+                            debugPrint('Chat error: $e');
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Could not open chat. Please try again.'),
+                                ),
+                              );
+                            }
+                          }
                         },
                         child: Container(
                           width: 40, // 2.5rem = 40px
@@ -3765,16 +3848,20 @@ class _JobCard extends StatelessWidget {
         timeLimit: const Duration(seconds: 10),
       );
 
+      // Reverse geocode to get readable address name
+      String addressName = await LocationService.getAddressFromLatLng(
+          position.latitude, position.longitude);
+
       // Create Google Maps URL
       final mapsUrl =
           'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
 
-      // Create emergency message with location
+      // Create emergency message with location name
       final emergencyMessage = '🚨 EMERGENCY ALERT 🚨\n\n'
           'I need immediate help!\n\n'
           'My current location:\n'
+          '$addressName\n'
           '$mapsUrl\n\n'
-          'Coordinates: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}\n'
           'Time: ${DateTime.now().toString()}\n\n'
           'Sent from Muawin App Emergency SOS';
 
@@ -4046,134 +4133,36 @@ class _JobCard extends StatelessWidget {
   }
 
   String _getProviderPhone() {
-    // In a real app, this would get the actual phone number from job data
-    // For demonstration, we'll return a sample phone number
-    // The phone number could be stored in job['providerPhone'] or similar
-    return job['providerPhone']?.toString() ?? '+1234567890';
+    return job['providers']?['profiles']?['phone_number']?.toString() ?? '';
   }
 
   void _initiatePhoneCall(String phoneNumber, BuildContext context) async {
-    // In a real app, this would use the url_launcher package
-    // For demonstration, we'll simulate the call with dismissible SnackBar
-
-    // Real implementation would be:
-    // import 'package:url_launcher/url_launcher.dart';
-    // final uri = Uri.parse('tel:$phoneNumber');
-    // if (await canLaunchUrl(uri)) {
-    //   await launchUrl(uri);
-    //   _activeCallSnackBar = _showActiveCallSnackBar(phoneNumber, context);
-    // } else {
-    //   // Show error
-    // }
-
-    // For demonstration, we'll show a dismissible "active call" SnackBar
-    _showActiveCallSnackBar(phoneNumber, context);
-  }
-
-  void _showActiveCallSnackBar(String phoneNumber, BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Active Call',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    phoneNumber,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green[600],
-        duration: const Duration(
-            days: 1), // Very long duration, will be dismissed manually
-        action: SnackBarAction(
-          label: 'END CALL',
-          textColor: Colors.white,
-          backgroundColor: Colors.red[600],
-          onPressed: () {
-            _endCall(context);
-          },
-        ),
-      ),
-    );
-  }
-
-  void _endCall(BuildContext context) {
-    // Check if context is still valid before accessing ScaffoldMessenger
-    if (!context.mounted) return;
-
     try {
-      // Clear all SnackBars to completely remove the active call indicator
-      ScaffoldMessenger.of(context).clearSnackBars();
+      // Clean phone number
+      String cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
 
-      // In a real app, this would actually end the phone call
-      // For demonstration, we'll show a brief call ended message
+      // Normalize Pakistani numbers
+      if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
+        cleanPhone = '+92${cleanPhone.substring(1)}';
+      }
 
-      // Real implementation would be:
-      // import 'package:url_launcher/url_launcher.dart';
-      // await launchUrl(Uri.parse('tel:')); // This ends the call on some devices
-
-      // Show a very brief call ended message (optional)
-      Future.delayed(const Duration(milliseconds: 100), () {
+      final uri = Uri.parse('tel:$cleanPhone');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
         if (context.mounted) {
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.phone_missed, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Call Ended',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: Colors.red[600],
-                duration: const Duration(seconds: 1), // Very brief
-              ),
-            );
-          } catch (e) {
-            // Ignore errors if context is no longer valid
-          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not launch phone dialer'),
+            ),
+          );
         }
-      });
+      }
     } catch (e) {
-      // Ignore errors if ScaffoldMessenger is not available
+      debugPrint('Phone call error: $e');
     }
   }
 

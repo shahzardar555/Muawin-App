@@ -1522,7 +1522,6 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                                               icon: Icons.g_mobiledata,
                                               color: const Color(0xFF4285F4),
                                               onPressed: () {
-                                                // TODO: Implement Google login
                                                 HapticFeedback.lightImpact();
                                               },
                                             ),
@@ -1534,7 +1533,6 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                                               icon: Icons.facebook,
                                               color: const Color(0xFF1877F2),
                                               onPressed: () {
-                                                // TODO: Implement Facebook login
                                                 HapticFeedback.lightImpact();
                                               },
                                             ),
@@ -1547,7 +1545,6 @@ class _CustomerRegisterScreenState extends State<CustomerRegisterScreen>
                                         icon: Icons.apple,
                                         color: Colors.black,
                                         onPressed: () {
-                                          // TODO: Implement Apple login
                                           HapticFeedback.lightImpact();
                                         },
                                       ),

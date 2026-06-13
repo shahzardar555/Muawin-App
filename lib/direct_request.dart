@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/notification_manager.dart' as nm;
 import 'services/pro_status_checker.dart';
 import 'services/job_request_limiter.dart';
-// ignore: unused_import
 import 'services/database_service.dart';
 import 'widgets/muawin_pro_badge.dart';
 
@@ -63,51 +63,25 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   bool isLoading = false;
   bool isSuccess = false;
 
-  // Real package prices loaded from Supabase
-  double _basicPrice = 800;
-  double _standardPrice = 1200;
-  double _premiumPrice = 1800;
+  // Fetched packages loaded from Supabase
+  List<Map<String, dynamic>> fetchedPackages = [];
+  bool _isLoadingPackages = true;
+  String? _packagesError;
 
-  // Package data
-  final Map<String, Map<String, dynamic>> packageData = {
+  // Package styling per type (colors and badges only)
+  final Map<String, Map<String, dynamic>> packageStyles = {
     'basic': {
-      'name': 'Basic',
-      'price': 800.0,
       'color': const Color(0xFFE8F5E9),
       'borderColor': const Color(0xFF4CAF50),
-      'description': 'Essential services for your basic needs',
-      'duration': '2-3 hours',
-      'features': ['Basic cleaning', 'Standard equipment', 'Limited time'],
     },
     'standard': {
-      'name': 'Standard',
-      'price': 1200.0,
       'color': const Color(0xFFE3F2FD),
       'borderColor': const Color(0xFF2196F3),
-      'description': 'Comprehensive services with extra features',
-      'duration': '3-4 hours',
-      'features': [
-        'Deep cleaning',
-        'Premium equipment',
-        'Extended time',
-        'Priority support'
-      ],
       'badge': 'Most Popular',
     },
     'premium': {
-      'name': 'Premium',
-      'price': 1800.0,
       'color': const Color(0xFFFFF8E1),
       'borderColor': const Color(0xFFFF9800),
-      'description': 'Complete premium experience with all features',
-      'duration': '4-5 hours',
-      'features': [
-        'Complete service',
-        'Premium equipment',
-        'Unlimited time',
-        '24/7 support',
-        'Guaranteed satisfaction'
-      ],
       'badge': 'Best Value',
     },
   };
@@ -133,9 +107,8 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     ));
 
     _pulseController.repeat(reverse: true);
-    proposedPrice = packageData['basic']!['price'];
     _checkProStatus();
-    _loadPackagePrices();
+    _loadPackages();
   }
 
   // Check if user is a PRO user
@@ -148,42 +121,45 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     }
   }
 
-  // Load real package prices from Supabase service_pricing_packages table
-  Future<void> _loadPackagePrices() async {
+  // Load real packages from Supabase service_pricing_packages table
+  Future<void> _loadPackages() async {
+    setState(() {
+      _isLoadingPackages = true;
+      _packagesError = null;
+    });
     try {
-      final supabase = Supabase.instance.client;
       final providerId = widget.providerData['id']?.toString() ?? '';
-      if (providerId.isEmpty) return;
-
-      final packages = await supabase
-          .from('service_pricing_packages')
-          .select('package_type, price')
-          .eq('provider_id', providerId)
-          .eq('is_active', true);
-
+      if (providerId.isEmpty) {
+        setState(() {
+          _packagesError = 'Provider ID not found';
+          _isLoadingPackages = false;
+        });
+        return;
+      }
+      final packages =
+          await DatabaseService().getProviderPricingPackages(providerId);
       if (mounted) {
         setState(() {
-          for (final pkg in packages) {
-            final type = pkg['package_type']?.toString() ?? '';
-            final price = double.tryParse(pkg['price']?.toString() ?? '0') ?? 0;
-            if (type == 'basic' && price > 0) _basicPrice = price;
-            if (type == 'standard' && price > 0) _standardPrice = price;
-            if (type == 'premium' && price > 0) _premiumPrice = price;
-          }
-          // Update packageData map with real prices
-          packageData['basic']!['price'] = _basicPrice;
-          packageData['standard']!['price'] = _standardPrice;
-          packageData['premium']!['price'] = _premiumPrice;
-          // Update proposed price if it was using default fallback
-          if (proposedPrice == 800 ||
-              proposedPrice == 1200 ||
-              proposedPrice == 1800) {
-            proposedPrice = _basicPrice;
+          fetchedPackages = packages;
+          _isLoadingPackages = false;
+          // Auto-select first package
+          if (packages.isNotEmpty) {
+            selectedPackage =
+                packages.first['package_type']?.toString() ?? 'basic';
+            proposedPrice =
+                double.tryParse(packages.first['price']?.toString() ?? '800') ??
+                    800;
           }
         });
       }
     } catch (e) {
-      debugPrint('Error loading package prices: $e');
+      debugPrint('Error loading packages: $e');
+      if (mounted) {
+        setState(() {
+          _packagesError = 'Failed to load packages';
+          _isLoadingPackages = false;
+        });
+      }
     }
   }
 
@@ -194,6 +170,34 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     _cityController.dispose();
     _areaController.dispose();
     super.dispose();
+  }
+
+  /// Get the currently selected package map from fetchedPackages
+  Map<String, dynamic>? get _selectedPackageMap {
+    try {
+      return fetchedPackages
+          .firstWhere((p) => p['package_type']?.toString() == selectedPackage);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Get the provider's price for the selected package
+  double get _selectedPackagePrice {
+    final pkg = _selectedPackageMap;
+    if (pkg != null) {
+      return double.tryParse(pkg['price']?.toString() ?? '0') ?? 0;
+    }
+    return proposedPrice;
+  }
+
+  /// Get style map for a package type
+  Map<String, dynamic> _getPackageStyle(String packageType) {
+    return packageStyles[packageType] ??
+        {
+          'color': Colors.grey.shade100,
+          'borderColor': Colors.grey,
+        };
   }
 
   List<DateTime> _getNext14Days() {
@@ -287,8 +291,12 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       case 1:
         return selectedDate != null && selectedTime.isNotEmpty;
       case 2:
-        return proposedPrice >= packageData[selectedPackage]!['price'] * 0.5 &&
-            proposedPrice <= packageData[selectedPackage]!['price'] * 1.5;
+        {
+          final providerPrice = _selectedPackagePrice;
+          if (providerPrice <= 0) return false;
+          return proposedPrice >= providerPrice * 0.5 &&
+              proposedPrice <= providerPrice * 1.5;
+        }
       case 3:
         return _isPaymentMethodValid();
       case 4:
@@ -610,165 +618,253 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
         ),
         const SizedBox(height: 24),
 
-        // Package cards
-        ...packageData.entries.map((entry) {
-          final package = entry.value;
-          final isSelected = selectedPackage == entry.key;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              decoration: BoxDecoration(
-                color: package['color'],
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color:
-                      isSelected ? package['borderColor'] : Colors.transparent,
-                  width: 2,
-                ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: package['borderColor'].withValues(alpha: 0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
-                        ),
-                      ]
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+        // Loading, Error, Empty, or Package cards
+        if (_isLoadingPackages)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: CircularProgressIndicator(
+                color: Color(0xFF047A62),
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      selectedPackage = entry.key;
-                      proposedPrice = package['price'];
-                    });
-                  },
+            ),
+          )
+        else if (_packagesError != null)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                  const SizedBox(height: 12),
+                  Text(
+                    _packagesError!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.red[400],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _loadPackages,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF047A62),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (fetchedPackages.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Column(
+                children: [
+                  Icon(Icons.info_outline, size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 12),
+                  Text(
+                    "This provider hasn't set up pricing packages yet",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...fetchedPackages.map((pkg) {
+            final packageType = pkg['package_type']?.toString() ?? '';
+            final style = _getPackageStyle(packageType);
+            final isSelected = selectedPackage == packageType;
+            final pkgPrice =
+                double.tryParse(pkg['price']?.toString() ?? '0') ?? 0;
+            final pkgName =
+                pkg['package_name']?.toString() ?? packageType.toUpperCase();
+            final pkgDescription = pkg['description']?.toString() ?? '';
+            final pkgDuration = pkg['duration']?.toString() ?? '';
+            final pkgIncludes = pkg['includes'];
+            final List<String> features = [];
+            if (pkgIncludes is List) {
+              for (final item in pkgIncludes) {
+                features.add(item.toString());
+              }
+            } else if (pkgIncludes is String) {
+              try {
+                final parsed = jsonDecode(pkgIncludes);
+                if (parsed is List) {
+                  for (final item in parsed) {
+                    features.add(item.toString());
+                  }
+                }
+              } catch (_) {
+                features.add(pkgIncludes);
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: style['color'],
                   borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header with badge
-                        Row(
-                          children: [
-                            Expanded(
+                  border: Border.all(
+                    color:
+                        isSelected ? style['borderColor'] : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: style['borderColor'].withValues(alpha: 0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ]
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        selectedPackage = packageType;
+                        proposedPrice = pkgPrice;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header with badge
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  pkgName,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              if (style['badge'] != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: style['borderColor'],
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    style['badge'],
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Price
+                          Text(
+                            'Rs. ${pkgPrice.toStringAsFixed(0)}/visit',
+                            style: GoogleFonts.poppins(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              color: style['borderColor'],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Description
+                          if (pkgDescription.isNotEmpty)
+                            Text(
+                              pkgDescription,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          if (pkgDescription.isNotEmpty)
+                            const SizedBox(height: 12),
+
+                          // Duration badge
+                          if (pkgDuration.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               child: Text(
-                                package['name'],
+                                '⏱ $pkgDuration',
                                 style: GoogleFonts.poppins(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
                                   color: Colors.black87,
                                 ),
                               ),
                             ),
-                            if (package['badge'] != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: package['borderColor'],
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  package['badge'],
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
+                          if (pkgDuration.isNotEmpty)
+                            const SizedBox(height: 12),
+
+                          // Features
+                          ...features.map<Widget>((feature) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_rounded,
+                                    color: style['borderColor'],
+                                    size: 16,
                                   ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Price
-                        Text(
-                          'Rs. ${package['price'].toStringAsFixed(0)}/visit',
-                          style: GoogleFonts.poppins(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                            color: package['borderColor'],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Description
-                        Text(
-                          package['description'],
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Duration badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '⏱ ${package['duration']}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Features
-                        ...package['features'].map<Widget>((feature) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.check_circle_rounded,
-                                  color: package['borderColor'],
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    feature,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      color: Colors.black87,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      feature,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        color: Colors.black87,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
         const SizedBox(height: 32),
 
         // PRO-Only Options Section
@@ -1227,7 +1323,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   }
 
   Widget _buildStep3() {
-    final providerPrice = packageData[selectedPackage]!['price'];
+    final providerPrice = _selectedPackagePrice;
     final minPrice = providerPrice * 0.5;
     final maxPrice = providerPrice * 1.5;
 
@@ -2196,8 +2292,11 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   }
 
   Widget _buildStep5() {
-    final package = packageData[selectedPackage]!;
-    final providerPrice = package['price'];
+    final pkg = _selectedPackageMap;
+    final pkgName =
+        pkg?['package_name']?.toString() ?? selectedPackage.toUpperCase();
+    final pkgStyle = _getPackageStyle(selectedPackage);
+    final providerPrice = _selectedPackagePrice;
     final priceDifference = proposedPrice - providerPrice;
     final platformFee = proposedPrice * 0.1;
     final totalAmount = proposedPrice + platformFee;
@@ -2320,12 +2419,12 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: package['color'],
+                        color: pkgStyle['color'],
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
                         Icons.workspace_premium_rounded,
-                        color: package['borderColor'],
+                        color: pkgStyle['borderColor'],
                         size: 20,
                       ),
                     ),
@@ -2335,7 +2434,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            package['name'] + ' Package',
+                            '$pkgName Package',
                             style: GoogleFonts.poppins(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -2343,7 +2442,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                             ),
                           ),
                           Text(
-                            '⏱ ${package['duration']}',
+                            '⏱ ${pkg?['duration'] ?? ''}',
                             style: GoogleFonts.poppins(
                               fontSize: 14,
                               color: Colors.grey.shade600,

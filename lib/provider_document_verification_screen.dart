@@ -517,7 +517,8 @@ class _ProviderDocumentVerificationScreenState
       try {
         final faceResponse = await http
             .post(
-              Uri.parse('http://192.168.1.10:5000/api/match-faces'),
+              Uri.parse(
+                  'https://web-production-2911d.up.railway.app/api/match-faces'),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode({
                 'provider_id': providerId,

@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'dart:math';
 import 'featured_ad_manager.dart';
 
@@ -246,6 +247,38 @@ class LocationService {
       return await Geolocator.requestPermission();
     } catch (e) {
       return LocationPermission.denied;
+    }
+  }
+
+  /// Get human-readable address from latitude/longitude coordinates (reverse geocoding)
+  static Future<String> getAddressFromLatLng(
+      double latitude, double longitude) async {
+    try {
+      final url = Uri.parse('https://nominatim.openstreetmap.org/reverse'
+          '?format=json'
+          '&lat=$latitude'
+          '&lon=$longitude'
+          '&zoom=16'
+          '&addressdetails=1');
+      final response = await http.get(url, headers: {
+        'User-Agent': 'MuawinApp/1.0',
+        'Accept-Language': 'en',
+      });
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final address = data['address'] as Map<String, dynamic>?;
+        if (address != null) {
+          final area = address['suburb'] ??
+              address['neighbourhood'] ??
+              address['road'] ??
+              '';
+          final city = address['city'] ?? address['town'] ?? 'Lahore';
+          return area.isNotEmpty ? '$area, $city' : city;
+        }
+      }
+      return 'My Location';
+    } catch (e) {
+      return 'My Location';
     }
   }
 

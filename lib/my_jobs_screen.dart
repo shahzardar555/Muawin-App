@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:muawin_app/services/location_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:muawin_app/chats_screen.dart';
@@ -353,14 +354,18 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
         timeLimit: const Duration(seconds: 10),
       );
 
+      // Reverse geocode to get readable address name
+      String addressName = await LocationService.getAddressFromLatLng(
+          position.latitude, position.longitude);
+
       final mapsUrl =
           'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
 
       final emergencyMessage = '🚨 *EMERGENCY ALERT* 🚨\n\n'
           'I need immediate help!\n\n'
           '*My Current Location:*\n'
+          '$addressName\n'
           '$mapsUrl\n\n'
-          '*Coordinates:* ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}\n'
           '*Time:* ${DateTime.now().toString()}\n\n'
           'Sent from Muawin App Emergency SOS';
 

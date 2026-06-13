@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
+import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:muawin_app/customer_home_screen.dart';
 
@@ -1323,7 +1325,8 @@ class PostJobStep2Screen extends StatefulWidget {
 
   final String? selectedJobType;
 
-  const PostJobStep2Screen({super.key, this.selectedCategory, this.location, this.selectedJobType});
+  const PostJobStep2Screen(
+      {super.key, this.selectedCategory, this.location, this.selectedJobType});
 
   @override
   State<PostJobStep2Screen> createState() => _PostJobStep2ScreenState();
@@ -1431,14 +1434,44 @@ class _PostJobStep2ScreenState extends State<PostJobStep2Screen> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      // Create a formatted address from coordinates
-
-      String address =
-          '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-
-      // You can use a geocoding service here to convert coordinates to address
-
-      // For now, we'll use coordinates as the location
+      // Reverse geocode to get human-readable address
+      String address;
+      try {
+        final url = Uri.parse('https://nominatim.openstreetmap.org/reverse'
+            '?format=json'
+            '&lat=${position.latitude}'
+            '&lon=${position.longitude}'
+            '&zoom=16'
+            '&addressdetails=1');
+        final response = await http.get(url, headers: {
+          'User-Agent': 'MuawinApp/1.0',
+          'Accept-Language': 'en',
+        });
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final addr = data['address'] as Map<String, dynamic>?;
+          if (addr != null) {
+            final area = addr['suburb'] ??
+                addr['neighbourhood'] ??
+                addr['quarter'] ??
+                addr['residential'] ??
+                addr['road'] ??
+                '';
+            final city =
+                addr['city'] ?? addr['town'] ?? addr['county'] ?? 'Lahore';
+            address = area.isNotEmpty ? '$area, $city' : city;
+          } else {
+            address =
+                '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+          }
+        } else {
+          address =
+              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+        }
+      } catch (e) {
+        address =
+            '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+      }
 
       if (mounted) {
         _locationController.text = address;
@@ -1695,7 +1728,8 @@ class _PostJobStep2ScreenState extends State<PostJobStep2Screen> {
 
                       // PREFERRED DATE Heading - Hide for PRO users with Hiring (handled in Step 1)
                       // Show for non-PRO users and PRO users who selected One-time job
-                      if (!_isProUser || widget.selectedJobType == 'one_time') ...[
+                      if (!_isProUser ||
+                          widget.selectedJobType == 'one_time') ...[
                         Text(
                           'PREFERRED DATE',
                           style: GoogleFonts.inter(

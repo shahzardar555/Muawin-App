@@ -21,7 +21,6 @@ class MockVendorService implements VendorService {
   String _vendorId = '';
 
   /// Default vendor data structure
-  // TODO: Connect to Supabase
   static const Map<String, dynamic> _defaultVendorData = {
     'id': '',
     'name': '',
@@ -81,10 +80,8 @@ class MockVendorService implements VendorService {
         return Map<String, dynamic>.from(jsonDecode(vendorDataJson));
       }
 
-      // TODO: Connect to Supabase
       return {};
     } catch (e) {
-      // TODO: Connect to Supabase
       return {};
     }
   }
@@ -399,37 +396,31 @@ class MockVendorService implements VendorService {
 
   @override
   Future<String> getVendorName() async {
-    // TODO: Connect to Supabase
     return await getVendorField('name') ?? '';
   }
 
   @override
   Future<String> getVendorCategory() async {
-    // TODO: Connect to Supabase
     return await getVendorField('category') ?? '';
   }
 
   @override
   Future<String> getVendorPhone() async {
-    // TODO: Connect to Supabase
     return await getVendorField('phone') ?? '';
   }
 
   @override
   Future<String> getVendorAddress() async {
-    // TODO: Connect to Supabase
     return await getVendorField('address') ?? '';
   }
 
   @override
   Future<String> getVendorMapsLink() async {
-    // TODO: Connect to Supabase
     return await getVendorField('mapsLink') ?? '';
   }
 
   @override
   Future<String> getVendorAbout() async {
-    // TODO: Connect to Supabase
     return await getVendorField('about') ?? '';
   }
 
@@ -440,13 +431,11 @@ class MockVendorService implements VendorService {
 
   @override
   Future<String> getVendorRating() async {
-    // TODO: Connect to Supabase
     return await getVendorField('rating') ?? '0.0';
   }
 
   @override
   Future<int> getVendorReviewCount() async {
-    // TODO: Connect to Supabase
     final count = await getVendorField('reviewCount');
     return int.tryParse(count ?? '') ?? 0;
   }
@@ -474,7 +463,6 @@ class VendorDataService {
   static Future<bool> resetToDefaults() => _instance.resetToDefaults();
   static Future<bool> clearAllData() => _instance.clearAllData();
   static Future<bool> hasVendorData() => _instance.hasVendorData();
-  // TODO: Connect to Supabase
   static String get vendorId => '';
 
   // Convenience getters for common fields

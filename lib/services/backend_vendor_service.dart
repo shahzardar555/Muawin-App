@@ -20,7 +20,6 @@ class BackendVendorService implements VendorService {
        _timeout = timeout;
 
   @override
-  // TODO: Connect to Supabase
   String get vendorId => ''; // Get from authentication
 
   @override
@@ -171,37 +170,31 @@ class BackendVendorService implements VendorService {
   // Convenience getters
   @override
   Future<String> getVendorName() async {
-    // TODO: Connect to Supabase
     return await getVendorField('name') ?? '';
   }
 
   @override
   Future<String> getVendorCategory() async {
-    // TODO: Connect to Supabase
     return await getVendorField('category') ?? '';
   }
 
   @override
   Future<String> getVendorPhone() async {
-    // TODO: Connect to Supabase
     return await getVendorField('phone') ?? '';
   }
 
   @override
   Future<String> getVendorAddress() async {
-    // TODO: Connect to Supabase
     return await getVendorField('address') ?? '';
   }
 
   @override
   Future<String> getVendorMapsLink() async {
-    // TODO: Connect to Supabase
     return await getVendorField('mapsLink') ?? '';
   }
 
   @override
   Future<String> getVendorAbout() async {
-    // TODO: Connect to Supabase
     return await getVendorField('about') ?? '';
   }
 
@@ -212,7 +205,6 @@ class BackendVendorService implements VendorService {
 
   @override
   Future<String> getVendorRating() async {
-    // TODO: Connect to Supabase
     return await getVendorField('rating') ?? '0.0';
   }
 

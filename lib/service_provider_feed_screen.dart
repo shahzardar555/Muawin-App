@@ -1020,143 +1020,69 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                           // Section Header
                           _SectionHeader(availableCount: availableCount),
                           const SizedBox(height: 16),
-                          // Job Alert Cards
-                          ..._jobAlerts.map((job) => Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: _JobLeadCard(
-                                  job: job,
-                                  primary: primary,
-                                  onDecline: () async {
-                                    final supabaseId =
-                                        job['supabase_id']?.toString() ?? '';
-                                    final isOpenJob =
-                                        job['is_open_job'] == true;
-
-                                    if (supabaseId.isNotEmpty) {
-                                      try {
-                                        if (!isOpenJob) {
-                                          // Only cancel direct requests, not open jobs
-                                          // (open jobs stay available for other providers)
-                                          await Supabase.instance.client
-                                              .from('direct_job_requests')
-                                              .update({
-                                            'status': 'cancelled'
-                                          }).eq('id', supabaseId);
-                                        }
-                                        // For open jobs, just remove from this provider's feed locally
-                                      } catch (e) {
-                                        debugPrint('Error declining job: $e');
-                                      }
-                                    }
-
-                                    // Safe haptic feedback alternative
-                                    try {
-                                      // Haptic feedback removed for compatibility
-                                    } catch (e) {
-                                      // Ignore haptic feedback errors
-                                    }
-                                    setState(() => _jobAlerts.remove(job));
-                                  },
-                                  onNegotiate: () => _showNegotiationModal(job),
-                                  onAccept: () async {
-                                    // Prevent double execution
-                                    if (_isProcessingAccept) return;
-                                    setState(() => _isProcessingAccept = true);
-                                    try {
-                                      // Capture ScaffoldMessenger and NotificationManager before async gap
-                                      final messenger =
-                                          ScaffoldMessenger.of(context);
-                                      final notificationManager =
-                                          Provider.of<nm.NotificationManager>(
-                                              context,
-                                              listen: false);
-
+                          // Job Alert Cards or Empty State
+                          if (_jobAlerts.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 48),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.work_off_outlined,
+                                      size: 80,
+                                      color: Colors.grey.shade300,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No Jobs available at the moment',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'New job requests will appear here',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w400,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            ..._jobAlerts.map((job) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: _JobLeadCard(
+                                    job: job,
+                                    primary: primary,
+                                    onDecline: () async {
                                       final supabaseId =
                                           job['supabase_id']?.toString() ?? '';
                                       final isOpenJob =
                                           job['is_open_job'] == true;
 
-                                      // Safety: re-fetch provider ID if empty
-                                      if (_currentProviderId.isEmpty) {
-                                        debugPrint(
-                                            '=== Re-fetching provider ID (was empty) ===');
-                                        try {
-                                          final user = Supabase
-                                              .instance.client.auth.currentUser;
-                                          final profile = await Supabase
-                                              .instance.client
-                                              .from('profiles')
-                                              .select('id')
-                                              .eq('user_id', user!.id)
-                                              .single();
-                                          final provider = await Supabase
-                                              .instance.client
-                                              .from('providers')
-                                              .select('id')
-                                              .eq('profile_id', profile['id'])
-                                              .single();
-                                          _currentProviderId =
-                                              provider['id'].toString();
-                                          debugPrint(
-                                              '=== Re-fetched provider ID: $_currentProviderId ===');
-                                        } catch (e) {
-                                          debugPrint(
-                                              '=== Error re-fetching provider ID: $e ===');
-                                        }
-                                      }
-                                      debugPrint(
-                                          '=== INSERTING JOB with provider_id: $_currentProviderId ===');
-
                                       if (supabaseId.isNotEmpty) {
                                         try {
-                                          if (isOpenJob) {
-                                            // Assign open job to this provider
-                                            await Supabase.instance.client
-                                                .from('jobs')
-                                                .update({
-                                              'provider_id': _currentProviderId,
-                                              'status': 'scheduled',
-                                              'updated_at': DateTime.now()
-                                                  .toIso8601String(),
-                                            }).eq('id', supabaseId);
-                                          } else {
-                                            // Confirm direct request: update status to 'accepted'
+                                          if (!isOpenJob) {
+                                            // Only cancel direct requests, not open jobs
+                                            // (open jobs stay available for other providers)
                                             await Supabase.instance.client
                                                 .from('direct_job_requests')
                                                 .update({
-                                              'status': 'accepted'
+                                              'status': 'cancelled'
                                             }).eq('id', supabaseId);
-
-                                            // Insert a new row in the jobs table
-                                            await Supabase.instance.client
-                                                .from('jobs')
-                                                .insert({
-                                              'direct_request_id': supabaseId,
-                                              'customer_id': job['customer_id'],
-                                              'provider_id': _currentProviderId,
-                                              'service_category':
-                                                  job['category'] ?? '',
-                                              'title': job['title'] ?? '',
-                                              'description':
-                                                  job['instructions'] ?? '',
-                                              'location': job['location'] ?? '',
-                                              'city': job['city'] ?? '',
-                                              'area': job['area'] ?? '',
-                                              'scheduled_date':
-                                                  job['date'] ?? '',
-                                              'scheduled_time':
-                                                  job['time'] ?? '',
-                                              'status': 'scheduled',
-                                              'total_amount': double.tryParse(
-                                                      job['proposed_price']
-                                                              ?.toString() ??
-                                                          '0') ??
-                                                  0.0,
-                                            });
                                           }
+                                          // For open jobs, just remove from this provider's feed locally
                                         } catch (e) {
-                                          debugPrint(
-                                              'Error updating job status: $e');
+                                          debugPrint('Error declining job: $e');
                                         }
                                       }
 
@@ -1166,69 +1092,187 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                       } catch (e) {
                                         // Ignore haptic feedback errors
                                       }
-
-                                      // Remove from feed
                                       setState(() => _jobAlerts.remove(job));
+                                    },
+                                    onNegotiate: () =>
+                                        _showNegotiationModal(job),
+                                    onAccept: () async {
+                                      // Prevent double execution
+                                      if (_isProcessingAccept) return;
+                                      setState(
+                                          () => _isProcessingAccept = true);
+                                      try {
+                                        // Capture ScaffoldMessenger and NotificationManager before async gap
+                                        final messenger =
+                                            ScaffoldMessenger.of(context);
+                                        final notificationManager =
+                                            Provider.of<nm.NotificationManager>(
+                                                context,
+                                                listen: false);
 
-                                      // FIX 1: Send notification to customer when provider accepts direct request
-                                      // Using captured notificationManager to avoid BuildContext across async gap
-                                      if (!isOpenJob) {
-                                        try {
-                                          // Get customer's profile_id
-                                          final customerData = await Supabase
-                                              .instance.client
-                                              .from('customers')
-                                              .select('profile_id')
-                                              .eq('id', job['customer_id'])
-                                              .maybeSingle();
+                                        final supabaseId =
+                                            job['supabase_id']?.toString() ??
+                                                '';
+                                        final isOpenJob =
+                                            job['is_open_job'] == true;
 
-                                          if (customerData != null) {
-                                            notificationManager
-                                                .sendNotification(
-                                              receiverId: job['customer_id'],
-                                              receiverType: 'customer',
-                                              type: nm.NotificationType
-                                                  .jobRequestAccepted,
-                                              title: '🎉 Request Accepted!',
-                                              body:
-                                                  '${_providerProfile['name'] ?? 'Your provider'} has accepted your job request.',
-                                              priority:
-                                                  nm.NotificationPriority.high,
-                                              receiverProfileId:
-                                                  customerData['profile_id']
-                                                      ?.toString(),
-                                            );
-                                          }
-                                        } catch (e) {
+                                        // Safety: re-fetch provider ID if empty
+                                        if (_currentProviderId.isEmpty) {
                                           debugPrint(
-                                              'Error sending acceptance notification: $e');
+                                              '=== Re-fetching provider ID (was empty) ===');
+                                          try {
+                                            final user = Supabase.instance
+                                                .client.auth.currentUser;
+                                            final profile = await Supabase
+                                                .instance.client
+                                                .from('profiles')
+                                                .select('id')
+                                                .eq('user_id', user!.id)
+                                                .single();
+                                            final provider = await Supabase
+                                                .instance.client
+                                                .from('providers')
+                                                .select('id')
+                                                .eq('profile_id', profile['id'])
+                                                .single();
+                                            _currentProviderId =
+                                                provider['id'].toString();
+                                            debugPrint(
+                                                '=== Re-fetched provider ID: $_currentProviderId ===');
+                                          } catch (e) {
+                                            debugPrint(
+                                                '=== Error re-fetching provider ID: $e ===');
+                                          }
+                                        }
+                                        debugPrint(
+                                            '=== INSERTING JOB with provider_id: $_currentProviderId ===');
+
+                                        if (supabaseId.isNotEmpty) {
+                                          try {
+                                            if (isOpenJob) {
+                                              // Assign open job to this provider
+                                              await Supabase.instance.client
+                                                  .from('jobs')
+                                                  .update({
+                                                'provider_id':
+                                                    _currentProviderId,
+                                                'status': 'scheduled',
+                                                'updated_at': DateTime.now()
+                                                    .toIso8601String(),
+                                              }).eq('id', supabaseId);
+                                            } else {
+                                              // Confirm direct request: update status to 'accepted'
+                                              await Supabase.instance.client
+                                                  .from('direct_job_requests')
+                                                  .update({
+                                                'status': 'accepted'
+                                              }).eq('id', supabaseId);
+
+                                              // Insert a new row in the jobs table
+                                              await Supabase.instance.client
+                                                  .from('jobs')
+                                                  .insert({
+                                                'direct_request_id': supabaseId,
+                                                'customer_id':
+                                                    job['customer_id'],
+                                                'provider_id':
+                                                    _currentProviderId,
+                                                'service_category':
+                                                    job['category'] ?? '',
+                                                'title': job['title'] ?? '',
+                                                'description':
+                                                    job['instructions'] ?? '',
+                                                'location':
+                                                    job['location'] ?? '',
+                                                'city': job['city'] ?? '',
+                                                'area': job['area'] ?? '',
+                                                'scheduled_date':
+                                                    job['date'] ?? '',
+                                                'scheduled_time':
+                                                    job['time'] ?? '',
+                                                'status': 'scheduled',
+                                                'total_amount': double.tryParse(
+                                                        job['proposed_price']
+                                                                ?.toString() ??
+                                                            '0') ??
+                                                    0.0,
+                                              });
+                                            }
+                                          } catch (e) {
+                                            debugPrint(
+                                                'Error updating job status: $e');
+                                          }
+                                        }
+
+                                        // Safe haptic feedback alternative
+                                        try {
+                                          // Haptic feedback removed for compatibility
+                                        } catch (e) {
+                                          // Ignore haptic feedback errors
+                                        }
+
+                                        // Remove from feed
+                                        setState(() => _jobAlerts.remove(job));
+
+                                        // FIX 1: Send notification to customer when provider accepts direct request
+                                        // Using captured notificationManager to avoid BuildContext across async gap
+                                        if (!isOpenJob) {
+                                          try {
+                                            // Get customer's profile_id
+                                            final customerData = await Supabase
+                                                .instance.client
+                                                .from('customers')
+                                                .select('profile_id')
+                                                .eq('id', job['customer_id'])
+                                                .maybeSingle();
+
+                                            if (customerData != null) {
+                                              notificationManager
+                                                  .sendNotification(
+                                                receiverId: job['customer_id'],
+                                                receiverType: 'customer',
+                                                type: nm.NotificationType
+                                                    .jobRequestAccepted,
+                                                title: '🎉 Request Accepted!',
+                                                body:
+                                                    '${_providerProfile['name'] ?? 'Your provider'} has accepted your job request.',
+                                                priority: nm
+                                                    .NotificationPriority.high,
+                                                receiverProfileId:
+                                                    customerData['profile_id']
+                                                        ?.toString(),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            debugPrint(
+                                                'Error sending acceptance notification: $e');
+                                          }
+                                        }
+
+                                        // Show success message
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Job ${job['id']} accepted and moved to My Jobs!',
+                                              style: GoogleFonts.poppins(),
+                                            ),
+                                            backgroundColor: primary,
+                                            behavior: SnackBarBehavior.floating,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                        );
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() =>
+                                              _isProcessingAccept = false);
                                         }
                                       }
-
-                                      // Show success message
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Job ${job['id']} accepted and moved to My Jobs!',
-                                            style: GoogleFonts.poppins(),
-                                          ),
-                                          backgroundColor: primary,
-                                          behavior: SnackBarBehavior.floating,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                      );
-                                    } finally {
-                                      if (mounted) {
-                                        setState(
-                                            () => _isProcessingAccept = false);
-                                      }
-                                    }
-                                  },
-                                ),
-                              )),
+                                    },
+                                  ),
+                                )),
                           const SizedBox(height: 8),
                           // ─── Promotion Hero Section (hidden if active featured ad exists) ───
                           if (!_hasActiveFeaturedAd)

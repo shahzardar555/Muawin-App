@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:muawin_app/services/location_service.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -125,11 +125,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             _userLongitude = lng;
           });
 
-          // If coordinates exist but no saved location text, show "My Location"
+          // If coordinates exist but no saved location text, reverse geocode
           if (mounted && _currentLocation.isEmpty && _userLatitude != null) {
-            setState(() {
-              _currentLocation = 'My Location';
-            });
+            String address = await LocationService.getAddressFromLatLng(
+                _userLatitude!, _userLongitude ?? 0.0);
+            if (mounted) {
+              setState(() {
+                _currentLocation = address;
+              });
+            }
           }
         }
       } else {
@@ -872,50 +876,95 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            // Search function
-            Future<void> searchLocation(String query) async {
-              if (!context.mounted) return;
-              if (query.trim().length < 3) {
-                if (searchResults.isNotEmpty) searchResults.clear();
-                isSearching = false;
-                setSheetState(() {});
+            // Search function - local filter without API calls
+            void searchLocation(String query) {
+              if (query.trim().length < 2) {
+                setSheetState(() {
+                  searchResults.clear();
+                  isSearching = false;
+                });
                 return;
               }
-              isSearching = true;
-              setSheetState(() {});
-              try {
-                final locations =
-                    await locationFromAddress('$query, Lahore, Pakistan');
-                if (!context.mounted) return;
-                final List<String> results = <String>[];
-                for (final loc in locations.take(5)) {
-                  if (!context.mounted) return;
-                  try {
-                    final placemarks = await placemarkFromCoordinates(
-                        loc.latitude, loc.longitude);
-                    if (!context.mounted) return;
-                    if (placemarks.isNotEmpty) {
-                      final p = placemarks.first;
-                      final area = p.subLocality ?? p.locality ?? '';
-                      final city = p.locality ?? 'Lahore';
-                      if (area.isNotEmpty) {
-                        final r = '$area, $city';
-                        if (!results.contains(r)) results.add(r);
-                      }
-                    }
-                  } catch (_) {}
-                }
-                searchResults
-                  ..clear()
-                  ..addAll(results);
-                isSearching = false;
-                setSheetState(() {});
-              } catch (_) {
-                if (!context.mounted) return;
+
+              const lahoreAreas = [
+                'Gulberg I, Lahore',
+                'Gulberg II, Lahore',
+                'Gulberg III, Lahore',
+                'DHA Phase 1, Lahore',
+                'DHA Phase 2, Lahore',
+                'DHA Phase 3, Lahore',
+                'DHA Phase 4, Lahore',
+                'DHA Phase 5, Lahore',
+                'DHA Phase 6, Lahore',
+                'Model Town, Lahore',
+                'Johar Town, Lahore',
+                'Bahria Town, Lahore',
+                'Cantt, Lahore',
+                'Faisal Town, Lahore',
+                'Ichhra, Lahore',
+                'Wapda Town, Lahore',
+                'Valencia Town, Lahore',
+                'Garden Town, Lahore',
+                'Iqbal Town, Lahore',
+                'Township, Lahore',
+                'Shadman, Lahore',
+                'Cavalry Ground, Lahore',
+                'Askari, Lahore',
+                'Allama Iqbal Town, Lahore',
+                'Samanabad, Lahore',
+                'Shahdara, Lahore',
+                'Raiwind Road, Lahore',
+                'Multan Road, Lahore',
+                'Ferozepur Road, Lahore',
+                'Mall Road, Lahore',
+                'Liberty Market, Lahore',
+                'MM Alam Road, Lahore',
+                'Thokar Niaz Baig, Lahore',
+                'Bedian Road, Lahore',
+                'Barki Road, Lahore',
+                'Airport Road, Lahore',
+                'Walton Road, Lahore',
+                'Wahdat Road, Lahore',
+                'Band Road, Lahore',
+                'Nishtar Colony, Lahore',
+                'Mozang, Lahore',
+                'Anarkali, Lahore',
+                'Old City, Lahore',
+                'Data Darbar, Lahore',
+                'Badami Bagh, Lahore',
+                'Kot Lakhpat, Lahore',
+                'Sundar, Lahore',
+                'Johar Town Phase 1, Lahore',
+                'Johar Town Phase 2, Lahore',
+                'Lake City, Lahore',
+                'Paragon City, Lahore',
+                'Eden Gardens, Lahore',
+                'Green Town, Lahore',
+                'Shalimar Town, Lahore',
+                'Muslim Town, Lahore',
+                'Gulshan Ravi, Lahore',
+                'Krishan Nagar, Lahore',
+                'Baghbanpura, Lahore',
+                'Dharampura, Lahore',
+                'Harbanspura, Lahore',
+                'Mustafa Town, Lahore',
+                'Shad Bagh, Lahore',
+                'Manga Mandi, Lahore',
+                'Chunian, Lahore',
+                'Raiwind, Lahore',
+              ];
+
+              final queryLower = query.trim().toLowerCase();
+              final filtered = lahoreAreas
+                  .where((area) => area.toLowerCase().contains(queryLower))
+                  .take(6)
+                  .toList();
+
+              setSheetState(() {
                 searchResults.clear();
+                searchResults.addAll(filtered);
                 isSearching = false;
-                setSheetState(() {});
-              }
+              });
             }
 
             return Container(
@@ -935,680 +984,802 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                   ],
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Handle bar
-                    Center(
-                      child: Container(
-                        margin: const EdgeInsets.only(top: 12, bottom: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Handle bar
+                      Center(
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 12, bottom: 8),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            Provider.of<LanguageProvider>(context)
-                                .translate('select_location'),
-                            style: GoogleFonts.poppins(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              Provider.of<LanguageProvider>(context)
+                                  .translate('select_location'),
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Use Current Location Button - Updated Design
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Container(
+                          width: double.infinity, // Full width
+                          height: 56, // 3.5rem = 56px
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF088771)
+                                .withValues(alpha: 0.05), // 5% Primary Teal
+                            borderRadius: BorderRadius.circular(16), // 1rem
+                            border: Border.all(
+                              color: const Color(0xFF088771), // Primary Teal
+                              width: 1, // 1px solid
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close, color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Use Current Location Button - Updated Design
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Container(
-                        width: double.infinity, // Full width
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF088771)
-                              .withValues(alpha: 0.05), // 5% Primary Teal
-                          borderRadius: BorderRadius.circular(16), // 1rem
-                          border: Border.all(
-                            color: const Color(0xFF088771), // Primary Teal
-                            width: 1, // 1px solid
-                          ),
-                        ),
-                        child: InkWell(
-                          onTap: () async {
-                            if (!mounted) return;
+                          child: InkWell(
+                            onTap: () async {
+                              if (!mounted) return;
 
-                            // Store context before any async operations
-                            final currentContext = context;
+                              // Store context before any async operations
+                              final currentContext = context;
 
-                            // Store context-dependent values before async gap
-                            final messenger =
-                                ScaffoldMessenger.of(currentContext);
-                            final navigator = Navigator.of(currentContext);
-                            final languageProvider =
-                                Provider.of<LanguageProvider>(currentContext,
-                                    listen: false);
-                            const primaryColor = Color(0xFF088771);
+                              // Store context-dependent values before async gap
+                              final messenger =
+                                  ScaffoldMessenger.of(currentContext);
+                              final navigator = Navigator.of(currentContext);
+                              final languageProvider =
+                                  Provider.of<LanguageProvider>(currentContext,
+                                      listen: false);
+                              const primaryColor = Color(0xFF088771);
 
-                            navigator.pop();
+                              navigator.pop();
 
-                            // Show loading state (could update a global state here)
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  languageProvider
-                                      .translate('getting_current_location'),
-                                  style: GoogleFonts.poppins(),
-                                ),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-
-                            // Check if location services are enabled
-                            bool isLocationServiceEnabled =
-                                await Geolocator.isLocationServiceEnabled();
-                            if (!isLocationServiceEnabled) {
-                              if (mounted && currentContext.mounted) {
-                                bool? openSettings = await showDialog<bool>(
-                                  context: currentContext,
-                                  builder: (dialogContext) => AlertDialog(
-                                    title: const Text(
-                                        'Location Services Disabled'),
-                                    content: const Text(
-                                        'Please enable location services to get your current location.'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(dialogContext)
-                                                .pop(false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(dialogContext)
-                                                .pop(true),
-                                        child: const Text('Open Settings'),
-                                      ),
-                                    ],
+                              // Show loading state (could update a global state here)
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    languageProvider
+                                        .translate('getting_current_location'),
+                                    style: GoogleFonts.poppins(),
                                   ),
-                                );
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
 
-                                // Check if still mounted after dialog
-                                if (mounted && openSettings == true) {
-                                  await Geolocator.openLocationSettings();
-                                }
-
-                                if (mounted) {
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Location services are disabled. Please enable them in settings.',
-                                        style: GoogleFonts.poppins(),
-                                      ),
-                                      backgroundColor: Colors.red,
+                              // Check if location services are enabled
+                              bool isLocationServiceEnabled =
+                                  await Geolocator.isLocationServiceEnabled();
+                              if (!isLocationServiceEnabled) {
+                                if (mounted && currentContext.mounted) {
+                                  bool? openSettings = await showDialog<bool>(
+                                    context: currentContext,
+                                    builder: (dialogContext) => AlertDialog(
+                                      title: const Text(
+                                          'Location Services Disabled'),
+                                      content: const Text(
+                                          'Please enable location services to get your current location.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(dialogContext)
+                                                  .pop(false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(dialogContext)
+                                                  .pop(true),
+                                          child: const Text('Open Settings'),
+                                        ),
+                                      ],
                                     ),
                                   );
-                                }
-                              }
-                              return;
-                            }
 
-                            // Request location permission and get current position
-                            try {
-                              LocationPermission permission =
-                                  await Geolocator.checkPermission();
-                              if (permission == LocationPermission.denied) {
-                                permission =
-                                    await Geolocator.requestPermission();
-                              }
+                                  // Check if still mounted after dialog
+                                  if (mounted && openSettings == true) {
+                                    await Geolocator.openLocationSettings();
+                                  }
 
-                              if (permission == LocationPermission.denied ||
-                                  permission ==
-                                      LocationPermission.deniedForever) {
-                                if (mounted) {
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Location permission denied. Please enable it in app settings.',
-                                        style: GoogleFonts.poppins(),
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Location services are disabled. Please enable them in settings.',
+                                          style: GoogleFonts.poppins(),
+                                        ),
+                                        backgroundColor: Colors.red,
                                       ),
-                                      backgroundColor: Colors.red,
-                                      action: SnackBarAction(
-                                        label: 'Settings',
-                                        onPressed: () =>
-                                            Geolocator.openAppSettings(),
-                                      ),
-                                    ),
-                                  );
+                                    );
+                                  }
                                 }
                                 return;
                               }
 
-                              // Get current position with timeout
-                              Position position =
-                                  await Geolocator.getCurrentPosition(
-                                desiredAccuracy: LocationAccuracy.high,
-                                timeLimit: const Duration(seconds: 15),
-                              ).timeout(
-                                const Duration(seconds: 15),
-                                onTimeout: () {
-                                  throw TimeoutException(
-                                      'Location request timed out',
-                                      const Duration(seconds: 15));
-                                },
-                              );
-
-                              // Reverse geocoding to get address
+                              // Request location permission and get current position
                               try {
-                                List<Placemark> placemarks =
-                                    await placemarkFromCoordinates(
-                                        position.latitude, position.longitude);
-
-                                Placemark place = placemarks.first;
-                                String address = '';
-
-                                if (place.street?.isNotEmpty == true) {
-                                  address = place.street!;
-                                } else if (place.name?.isNotEmpty == true) {
-                                  address = place.name!;
-                                } else if (place.locality?.isNotEmpty == true) {
-                                  address = place.locality!;
-                                } else {
-                                  address = 'Unknown Location';
+                                LocationPermission permission =
+                                    await Geolocator.checkPermission();
+                                if (permission == LocationPermission.denied) {
+                                  permission =
+                                      await Geolocator.requestPermission();
                                 }
 
-                                // Update the current location state
-                                setState(() {
-                                  _currentLocation = address;
-                                  _userLatitude = position.latitude;
-                                  _userLongitude = position.longitude;
-                                });
-
-                                // Save location to Supabase
-                                try {
-                                  final user =
-                                      Supabase.instance.client.auth.currentUser;
-                                  if (user != null) {
-                                    final area =
-                                        place.subLocality?.isNotEmpty == true
-                                            ? place.subLocality!
-                                            : place.locality?.isNotEmpty == true
-                                                ? place.locality!
-                                                : '';
-                                    final city =
-                                        place.locality?.isNotEmpty == true
-                                            ? place.locality!
-                                            : place.administrativeArea
-                                                        ?.isNotEmpty ==
-                                                    true
-                                                ? place.administrativeArea!
-                                                : '';
-                                    await Supabase.instance.client
-                                        .from('profiles')
-                                        .update({
-                                      'location': address,
-                                      'city': city,
-                                      'area': area,
-                                      'latitude': position.latitude,
-                                      'longitude': position.longitude,
-                                      'display_location': address,
-                                      'updated_at':
-                                          DateTime.now().toIso8601String(),
-                                    }).eq('user_id', user.id);
+                                if (permission == LocationPermission.denied ||
+                                    permission ==
+                                        LocationPermission.deniedForever) {
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Location permission denied. Please enable it in app settings.',
+                                          style: GoogleFonts.poppins(),
+                                        ),
+                                        backgroundColor: Colors.red,
+                                        action: SnackBarAction(
+                                          label: 'Settings',
+                                          onPressed: () =>
+                                              Geolocator.openAppSettings(),
+                                        ),
+                                      ),
+                                    );
                                   }
-                                } catch (e) {
-                                  debugPrint('Error saving location: $e');
+                                  return;
                                 }
 
+                                // Get current position with timeout
+                                Position position =
+                                    await Geolocator.getCurrentPosition(
+                                  desiredAccuracy: LocationAccuracy.high,
+                                  timeLimit: const Duration(seconds: 15),
+                                ).timeout(
+                                  const Duration(seconds: 15),
+                                  onTimeout: () {
+                                    throw TimeoutException(
+                                        'Location request timed out',
+                                        const Duration(seconds: 15));
+                                  },
+                                );
+
+                                // Reverse geocoding to get address via Nominatim
+                                try {
+                                  final geoUrl = Uri.parse(
+                                      'https://nominatim.openstreetmap.org/reverse'
+                                      '?format=json'
+                                      '&lat=${position.latitude}'
+                                      '&lon=${position.longitude}'
+                                      '&zoom=16'
+                                      '&addressdetails=1');
+
+                                  final geoResponse =
+                                      await http.get(geoUrl, headers: {
+                                    'User-Agent': 'MuawinApp/1.0',
+                                    'Accept-Language': 'en',
+                                  });
+
+                                  String address = 'My Location';
+                                  String areaName = '';
+                                  String cityName = '';
+
+                                  if (geoResponse.statusCode == 200) {
+                                    final geoData =
+                                        json.decode(geoResponse.body);
+                                    final addr = geoData['address']
+                                        as Map<String, dynamic>?;
+                                    if (addr != null) {
+                                      areaName = addr['suburb'] ??
+                                          addr['neighbourhood'] ??
+                                          addr['quarter'] ??
+                                          addr['residential'] ??
+                                          addr['road'] ??
+                                          '';
+                                      cityName = addr['city'] ??
+                                          addr['town'] ??
+                                          addr['county'] ??
+                                          'Lahore';
+                                      address = areaName.isNotEmpty
+                                          ? '$areaName, $cityName'
+                                          : cityName;
+                                    }
+                                  }
+
+                                  // Update the current location state
+                                  setState(() {
+                                    _currentLocation = address;
+                                    _userLatitude = position.latitude;
+                                    _userLongitude = position.longitude;
+                                  });
+
+                                  // Save location to Supabase
+                                  try {
+                                    final user = Supabase
+                                        .instance.client.auth.currentUser;
+                                    if (user != null) {
+                                      final area = areaName;
+                                      final city = cityName;
+                                      await Supabase.instance.client
+                                          .from('profiles')
+                                          .update({
+                                        'location': address,
+                                        'city': city,
+                                        'area': area,
+                                        'latitude': position.latitude,
+                                        'longitude': position.longitude,
+                                        'display_location': address,
+                                        'updated_at':
+                                            DateTime.now().toIso8601String(),
+                                      }).eq('user_id', user.id);
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error saving location: $e');
+                                  }
+
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Location updated: $address',
+                                          style: GoogleFonts.poppins(),
+                                        ),
+                                        backgroundColor: primaryColor,
+                                      ),
+                                    );
+                                  }
+                                } catch (geocodingError) {
+                                  // Fallback when geocoding fails — show friendly name
+                                  setState(() {
+                                    _currentLocation = 'My Location';
+                                    _userLatitude = position.latitude;
+                                    _userLongitude = position.longitude;
+                                  });
+
+                                  // Still save coordinates to Supabase even without address
+                                  try {
+                                    final user = Supabase
+                                        .instance.client.auth.currentUser;
+                                    if (user != null) {
+                                      await Supabase.instance.client
+                                          .from('profiles')
+                                          .update({
+                                        'latitude': position.latitude,
+                                        'longitude': position.longitude,
+                                        'location': 'My Location',
+                                        'updated_at':
+                                            DateTime.now().toIso8601String(),
+                                      }).eq('user_id', user.id);
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error saving location: $e');
+                                  }
+
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Location found but address unavailable',
+                                          style: GoogleFonts.poppins(),
+                                        ),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                }
+                              } on TimeoutException {
                                 if (mounted) {
                                   messenger.showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        'Location updated: $address',
+                                        'Location request timed out. Please try again.',
                                         style: GoogleFonts.poppins(),
                                       ),
-                                      backgroundColor: primaryColor,
+                                      backgroundColor: Colors.red,
                                     ),
                                   );
                                 }
-                              } catch (geocodingError) {
-                                // Fallback when geocoding fails — show friendly name
-                                setState(() {
-                                  _currentLocation = 'My Location';
-                                  _userLatitude = position.latitude;
-                                  _userLongitude = position.longitude;
-                                });
-
-                                // Still save coordinates to Supabase even without address
-                                try {
-                                  final user =
-                                      Supabase.instance.client.auth.currentUser;
-                                  if (user != null) {
-                                    await Supabase.instance.client
-                                        .from('profiles')
-                                        .update({
-                                      'latitude': position.latitude,
-                                      'longitude': position.longitude,
-                                      'location': 'My Location',
-                                      'updated_at':
-                                          DateTime.now().toIso8601String(),
-                                    }).eq('user_id', user.id);
-                                  }
-                                } catch (e) {
-                                  debugPrint('Error saving location: $e');
-                                }
-
+                              } catch (e) {
                                 if (mounted) {
                                   messenger.showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        'Location found but address unavailable',
+                                        'Failed to get location: ${e.toString()}',
                                         style: GoogleFonts.poppins(),
                                       ),
-                                      backgroundColor: Colors.orange,
+                                      backgroundColor: Colors.red,
                                     ),
                                   );
                                 }
                               }
-                            } on TimeoutException {
-                              if (mounted) {
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Location request timed out. Please try again.',
-                                      style: GoogleFonts.poppins(),
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Failed to get location: ${e.toString()}',
-                                      style: GoogleFonts.poppins(),
-                                    ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: [
-                              const SizedBox(
-                                  width: 16), // 1rem horizontal padding
-                              const Icon(
-                                Icons
-                                    .navigation, // Navigation icon (1.25rem / w-5 h-5)
-                                size: 20, // 1.25rem
-                                color: Color(0xFF088771), // Solid Primary Teal
-                              ),
-                              const SizedBox(width: 16), // 1rem gap
-                              Expanded(
-                                child: Text(
-                                  Provider.of<LanguageProvider>(context)
-                                      .translate('use_current_location'),
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16, // text-base (1rem)
-                                    fontWeight: FontWeight.w600, // Semi-bold
-                                    color: const Color(
-                                        0xFF088771), // Solid Primary Teal
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Lahore Area Search Bar
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: TextField(
-                          controller: searchController,
-                          onChanged: (val) {
-                            searchLocation(val);
-                          },
-                          decoration: InputDecoration(
-                            hintText: 'Search area in Lahore...',
-                            hintStyle: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.grey[400],
-                            ),
-                            prefixIcon:
-                                Icon(Icons.search, color: Colors.grey[400]),
-                            suffixIcon: searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: Icon(Icons.clear,
-                                        color: Colors.grey[400]),
-                                    onPressed: () {
-                                      searchController.clear();
-                                      if (searchResults.isNotEmpty) {
-                                        searchResults.clear();
-                                      }
-                                      (sheetContext as Element)
-                                          .markNeedsBuild();
-                                    },
-                                  )
-                                : null,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 14),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Search Results
-                    if (isSearching) ...[
-                      const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    ] else if (searchResults.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 4),
-                        child: Text(
-                          'Search Results',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      ...(searchResults.map((result) => ListTile(
-                            leading: Icon(Icons.location_on_outlined,
-                                color: Colors.teal[600]),
-                            title: Text(
-                              result,
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            dense: true,
-                            onTap: () async {
-                              // Use parent class's setState
-                              setState(() {
-                                _currentLocation = result;
-                              });
-                              // Close the bottom sheet
-                              Navigator.pop(sheetContext);
-
-                              // Geocode and save same as popular areas
-                              try {
-                                final user =
-                                    Supabase.instance.client.auth.currentUser;
-                                if (user != null) {
-                                  final parts = result.split(',');
-                                  final areaName = parts[0].trim();
-                                  final city = parts.length > 1
-                                      ? parts[1].trim()
-                                      : 'Lahore';
-
-                                  double? lat;
-                                  double? lng;
-                                  try {
-                                    final locs = await locationFromAddress(
-                                        '$result, Pakistan');
-                                    if (locs.isNotEmpty) {
-                                      lat = locs.first.latitude;
-                                      lng = locs.first.longitude;
-                                      if (mounted) {
-                                        setState(() {
-                                          _userLatitude = lat;
-                                          _userLongitude = lng;
-                                        });
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint('Geocoding failed: $e');
-                                  }
-
-                                  final updateData = <String, dynamic>{
-                                    'location': result,
-                                    'city': city,
-                                    'area': areaName,
-                                    'display_location': result,
-                                    'updated_at':
-                                        DateTime.now().toIso8601String(),
-                                  };
-                                  if (lat != null && lng != null) {
-                                    updateData['latitude'] = lat;
-                                    updateData['longitude'] = lng;
-                                  }
-
-                                  await Supabase.instance.client
-                                      .from('profiles')
-                                      .update(updateData)
-                                      .eq('user_id', user.id);
-                                }
-                              } catch (e) {
-                                debugPrint('Error saving location: $e');
-                              }
                             },
-                          ))),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24),
-                        child: Divider(),
-                      ),
-                    ],
-                    // Saved location section
-                    if (_currentLocation.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          'Your saved location',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ),
-                      ListTile(
-                        leading: Icon(Icons.history, color: Colors.teal[600]),
-                        title: Text(
-                          _currentLocation,
-                          style:
-                              GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                        ),
-                        subtitle: Text('Previously saved',
-                            style: GoogleFonts.poppins(fontSize: 11)),
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      const Divider(),
-                      const SizedBox(height: 8),
-                    ],
-                    // Popular Areas Header
-                    Padding(
-                      padding:
-                          const EdgeInsets.only(left: 24, right: 24, bottom: 4),
-                      child: Text(
-                        Provider.of<LanguageProvider>(context)
-                            .translate('popular_areas'),
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Areas List
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        children: [
-                          'Gulberg III, Lahore',
-                          'DHA Phase 5, Lahore',
-                          'Model Town, Lahore',
-                          'Johar Town, Lahore',
-                          'Bahria Town, Lahore',
-                          'Cantt, Lahore',
-                          'Faisal Town, Lahore',
-                          'Ichhra, Lahore',
-                          'Wapda Town, Lahore',
-                          'Valencia Town, Lahore',
-                        ].map((area) {
-                          final isSelected = area ==
-                              _currentLocation; // Show current selection
-
-                          return GestureDetector(
-                            onTap: () async {
-                              // Update the selected location directly
-                              setState(() {
-                                _currentLocation = area;
-                              });
-
-                              // Pop the bottom sheet IMMEDIATELY before any async work
-                              // to avoid using a disposed context after the await
-                              Navigator.pop(context);
-
-                              // Save selected area to Supabase (after pop is safe)
-                              try {
-                                final user =
-                                    Supabase.instance.client.auth.currentUser;
-                                if (user != null) {
-                                  final parts = area.split(',');
-                                  final areaName = parts[0].trim();
-                                  final city = parts.length > 1
-                                      ? parts[1].trim()
-                                      : parts[0].trim();
-
-                                  // Try to geocode the area to get coordinates
-                                  double? lat;
-                                  double? lng;
-                                  try {
-                                    // Add ', Pakistan' to improve geocoding accuracy
-                                    final locations = await locationFromAddress(
-                                        '$area, Pakistan');
-                                    if (locations.isNotEmpty) {
-                                      lat = locations.first.latitude;
-                                      lng = locations.first.longitude;
-                                      // Update local state with new coordinates
-                                      if (mounted) {
-                                        setState(() {
-                                          _userLatitude = lat;
-                                          _userLongitude = lng;
-                                        });
-                                      }
-                                    }
-                                  } catch (e) {
-                                    debugPrint(
-                                        'Geocoding failed for $area: $e');
-                                    // Keep existing coordinates as fallback
-                                  }
-
-                                  // Save everything to Supabase
-                                  final updateData = <String, dynamic>{
-                                    'location': area,
-                                    'city': city,
-                                    'area': areaName,
-                                    'display_location': area,
-                                    'updated_at':
-                                        DateTime.now().toIso8601String(),
-                                  };
-
-                                  // Only update coordinates if geocoding succeeded
-                                  if (lat != null && lng != null) {
-                                    updateData['latitude'] = lat;
-                                    updateData['longitude'] = lng;
-                                  }
-
-                                  await Supabase.instance.client
-                                      .from('profiles')
-                                      .update(updateData)
-                                      .eq('user_id', user.id);
-
-                                  debugPrint(
-                                      'Location saved: $area | lat: $lat | lng: $lng');
-                                }
-                              } catch (e) {
-                                debugPrint('Error saving location: $e');
-                              }
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? primary.withValues(alpha: 0.1)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              children: [
+                                const SizedBox(
+                                    width: 16), // 1rem horizontal padding
+                                const Icon(
+                                  Icons
+                                      .navigation, // Navigation icon (1.25rem / w-5 h-5)
+                                  size: 20, // 1.25rem
                                   color:
-                                      isSelected ? primary : Colors.grey[300]!,
-                                  width: 1,
+                                      Color(0xFF088771), // Solid Primary Teal
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on,
-                                    color:
-                                        isSelected ? primary : Colors.grey[600],
-                                    size: 20,
+                                const SizedBox(width: 16), // 1rem gap
+                                Expanded(
+                                  child: Text(
+                                    Provider.of<LanguageProvider>(context)
+                                        .translate('use_current_location'),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 16, // text-base (1rem)
+                                      fontWeight: FontWeight.w600, // Semi-bold
+                                      color: const Color(
+                                          0xFF088771), // Solid Primary Teal
+                                    ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      area,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 16,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Lahore Area Search Bar
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: TextField(
+                            controller: searchController,
+                            onChanged: (val) {
+                              searchLocation(val);
+                            },
+                            decoration: InputDecoration(
+                              hintText: 'Search area in Lahore...',
+                              hintStyle: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.grey[400],
+                              ),
+                              prefixIcon:
+                                  Icon(Icons.search, color: Colors.grey[400]),
+                              suffixIcon: searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: Icon(Icons.clear,
+                                          color: Colors.grey[400]),
+                                      onPressed: () {
+                                        searchController.clear();
+                                        if (searchResults.isNotEmpty) {
+                                          searchResults.clear();
+                                        }
+                                        (sheetContext as Element)
+                                            .markNeedsBuild();
+                                      },
+                                    )
+                                  : null,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Search Results
+                      if (isSearching) ...[
+                        const Padding(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      ] else if (searchController.text.isEmpty) ...[
+                        // Saved location section
+                        if (_currentLocation.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              'Your saved location',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                          ListTile(
+                            leading:
+                                Icon(Icons.history, color: Colors.teal[600]),
+                            title: Text(
+                              _currentLocation,
+                              style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: Text('Previously saved',
+                                style: GoogleFonts.poppins(fontSize: 11)),
+                            onTap: () => Navigator.pop(context),
+                          ),
+                          const Divider(),
+                          const SizedBox(height: 8),
+                        ],
+                        // Popular Areas Header
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              left: 24, right: 24, bottom: 4),
+                          child: Text(
+                            Provider.of<LanguageProvider>(context)
+                                .translate('popular_areas'),
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Areas List
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            children: [
+                              'Gulberg III, Lahore',
+                              'DHA Phase 5, Lahore',
+                              'Model Town, Lahore',
+                              'Johar Town, Lahore',
+                              'Bahria Town, Lahore',
+                              'Cantt, Lahore',
+                              'Faisal Town, Lahore',
+                              'Ichhra, Lahore',
+                              'Wapda Town, Lahore',
+                              'Valencia Town, Lahore',
+                            ].map((area) {
+                              final isSelected = area ==
+                                  _currentLocation; // Show current selection
+
+                              return GestureDetector(
+                                onTap: () async {
+                                  // Update the selected location directly
+                                  setState(() {
+                                    _currentLocation = area;
+                                  });
+
+                                  // Pop the bottom sheet IMMEDIATELY before any async work
+                                  // to avoid using a disposed context after the await
+                                  Navigator.pop(context);
+
+                                  // Save selected area to Supabase (after pop is safe)
+                                  try {
+                                    final user = Supabase
+                                        .instance.client.auth.currentUser;
+                                    if (user != null) {
+                                      final parts = area.split(',');
+                                      final areaName = parts[0].trim();
+                                      final city = parts.length > 1
+                                          ? parts[1].trim()
+                                          : parts[0].trim();
+
+                                      // Hardcoded coordinate lookup (no API calls)
+                                      const areaCoordinates = {
+                                        'gulberg': [31.5204, 74.3587],
+                                        'dha phase 1': [31.4816, 74.4014],
+                                        'dha phase 2': [31.4750, 74.4100],
+                                        'dha phase 3': [31.4700, 74.4200],
+                                        'dha phase 4': [31.4650, 74.4300],
+                                        'dha phase 5': [31.4600, 74.4400],
+                                        'dha phase 6': [31.4550, 74.4500],
+                                        'model town': [31.5091, 74.3274],
+                                        'johar town': [31.4697, 74.2728],
+                                        'bahria town': [31.3656, 74.1827],
+                                        'cantt': [31.5497, 74.3893],
+                                        'faisal town': [31.4934, 74.2831],
+                                        'garden town': [31.5147, 74.3294],
+                                        'shadman': [31.5332, 74.3219],
+                                        'township': [31.4634, 74.2559],
+                                        'iqbal town': [31.4800, 74.2900],
+                                        'valencia': [31.5300, 74.4100],
+                                        'wapda town': [31.4750, 74.2650],
+                                        'ichhra': [31.5250, 74.3100],
+                                        'samanabad': [31.5400, 74.3000],
+                                        'shahdara': [31.6100, 74.3500],
+                                        'askari': [31.5600, 74.4200],
+                                        'cavalry': [31.5500, 74.3800],
+                                        'mall road': [31.5600, 74.3200],
+                                        'anarkali': [31.5700, 74.3100],
+                                        'mozang': [31.5450, 74.3150],
+                                        'kot lakhpat': [31.4900, 74.2800],
+                                        'airport': [31.5216, 74.4036],
+                                        'thokar': [31.4200, 74.2400],
+                                        'raiwind': [31.2500, 74.2700],
+                                        'lake city': [31.5800, 74.5000],
+                                        'paragon': [31.4100, 74.2300],
+                                      };
+
+                                      double? lat;
+                                      double? lng;
+                                      final areaLower = area.toLowerCase();
+                                      for (final entry
+                                          in areaCoordinates.entries) {
+                                        if (areaLower.contains(entry.key)) {
+                                          lat = entry.value[0];
+                                          lng = entry.value[1];
+                                          break;
+                                        }
+                                      }
+                                      lat ??= 31.5204;
+                                      lng ??= 74.3587;
+
+                                      if (mounted) {
+                                        setState(() {
+                                          _userLatitude = lat;
+                                          _userLongitude = lng;
+                                        });
+                                      }
+
+                                      // Save everything to Supabase
+                                      final updateData = <String, dynamic>{
+                                        'location': area,
+                                        'city': city,
+                                        'area': areaName,
+                                        'display_location': area,
+                                        'updated_at':
+                                            DateTime.now().toIso8601String(),
+                                      };
+
+                                      // Only update coordinates if geocoding succeeded
+                                      updateData['latitude'] = lat;
+                                      updateData['longitude'] = lng;
+
+                                      await Supabase.instance.client
+                                          .from('profiles')
+                                          .update(updateData)
+                                          .eq('user_id', user.id);
+
+                                      debugPrint(
+                                          'Location saved: $area | lat: $lat | lng: $lng');
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error saving location: $e');
+                                  }
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? primary.withValues(alpha: 0.1)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? primary
+                                          : Colors.grey[300]!,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.location_on,
                                         color: isSelected
                                             ? primary
-                                            : Colors.black87,
+                                            : Colors.grey[600],
+                                        size: 20,
                                       ),
-                                    ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          area,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            fontWeight: isSelected
+                                                ? FontWeight.w600
+                                                : FontWeight.w500,
+                                            color: isSelected
+                                                ? primary
+                                                : Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                      if (isSelected)
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: primary,
+                                          size: 20,
+                                        ),
+                                    ],
                                   ),
-                                  if (isSelected)
-                                    Icon(
-                                      Icons.check_circle,
-                                      color: primary,
-                                      size: 20,
-                                    ),
-                                ],
-                              ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ] else if (searchResults.isNotEmpty) ...[
+                        // Search Results - scrollable when actively searching
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 4),
+                          child: Text(
+                            'Search Results',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[600],
                             ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ));
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            itemCount: searchResults.length,
+                            itemBuilder: (context, index) {
+                              final result = searchResults[index];
+                              return ListTile(
+                                leading: Icon(Icons.location_on_outlined,
+                                    color: Colors.teal[600]),
+                                title: Text(
+                                  result,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                dense: true,
+                                onTap: () async {
+                                  // Use parent class's setState
+                                  setState(() {
+                                    _currentLocation = result;
+                                  });
+                                  // Close the bottom sheet
+                                  Navigator.pop(sheetContext);
+
+                                  // Geocode and save same as popular areas
+                                  try {
+                                    final user = Supabase
+                                        .instance.client.auth.currentUser;
+                                    if (user != null) {
+                                      final parts = result.split(',');
+                                      final areaName = parts[0].trim();
+                                      final city = parts.length > 1
+                                          ? parts[1].trim()
+                                          : 'Lahore';
+
+                                      const areaCoordinates = {
+                                        'gulberg': [31.5204, 74.3587],
+                                        'dha phase 1': [31.4816, 74.4014],
+                                        'dha phase 2': [31.4750, 74.4100],
+                                        'dha phase 3': [31.4700, 74.4200],
+                                        'dha phase 4': [31.4650, 74.4300],
+                                        'dha phase 5': [31.4600, 74.4400],
+                                        'dha phase 6': [31.4550, 74.4500],
+                                        'model town': [31.5091, 74.3274],
+                                        'johar town': [31.4697, 74.2728],
+                                        'bahria town': [31.3656, 74.1827],
+                                        'cantt': [31.5497, 74.3893],
+                                        'faisal town': [31.4934, 74.2831],
+                                        'garden town': [31.5147, 74.3294],
+                                        'shadman': [31.5332, 74.3219],
+                                        'township': [31.4634, 74.2559],
+                                        'iqbal town': [31.4800, 74.2900],
+                                        'valencia': [31.5300, 74.4100],
+                                        'wapda town': [31.4750, 74.2650],
+                                        'ichhra': [31.5250, 74.3100],
+                                        'samanabad': [31.5400, 74.3000],
+                                        'shahdara': [31.6100, 74.3500],
+                                        'askari': [31.5600, 74.4200],
+                                        'cavalry': [31.5500, 74.3800],
+                                        'mall road': [31.5600, 74.3200],
+                                        'anarkali': [31.5700, 74.3100],
+                                        'mozang': [31.5450, 74.3150],
+                                        'kot lakhpat': [31.4900, 74.2800],
+                                        'airport': [31.5216, 74.4036],
+                                        'thokar': [31.4200, 74.2400],
+                                        'raiwind': [31.2500, 74.2700],
+                                        'lake city': [31.5800, 74.5000],
+                                        'paragon': [31.4100, 74.2300],
+                                      };
+
+                                      double? lat;
+                                      double? lng;
+                                      final areaLower = result.toLowerCase();
+                                      for (final entry
+                                          in areaCoordinates.entries) {
+                                        if (areaLower.contains(entry.key)) {
+                                          lat = entry.value[0];
+                                          lng = entry.value[1];
+                                          break;
+                                        }
+                                      }
+                                      lat ??= 31.5204;
+                                      lng ??= 74.3587;
+
+                                      if (mounted) {
+                                        setState(() {
+                                          _userLatitude = lat;
+                                          _userLongitude = lng;
+                                        });
+                                      }
+
+                                      final updateData = <String, dynamic>{
+                                        'location': result,
+                                        'city': city,
+                                        'area': areaName,
+                                        'display_location': result,
+                                        'updated_at':
+                                            DateTime.now().toIso8601String(),
+                                      };
+                                      updateData['latitude'] = lat;
+                                      updateData['longitude'] = lng;
+
+                                      await Supabase.instance.client
+                                          .from('profiles')
+                                          .update(updateData)
+                                          .eq('user_id', user.id);
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error saving location: $e');
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ] else ...[
+                        // No results found - search text present but no matches
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 4),
+                          child: Text(
+                            'Search Results',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Expanded(
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.search_off,
+                                    size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No locations found for \'${searchController.text}\'',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ]));
           },
         );
       },
@@ -1858,7 +2029,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
   List<Map<String, dynamic>> get _filteredResults {
     // Filter by search query
     var results = allResults.where((item) {
-      if (searchQuery0.isEmpty) return true;
+      if (searchQuery0.isEmpty) return false;
       final query = searchQuery0.toLowerCase();
       final name = item['name'].toString().toLowerCase();
       final category = item['category'].toString().toLowerCase();
@@ -2312,7 +2483,7 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
           Expanded(
             child: isLoadingResults
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredResults.isEmpty
+                : searchQuery0.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -2321,9 +2492,8 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                                 size: 64, color: Colors.grey[300]),
                             const SizedBox(height: 16),
                             Text(
-                              searchQuery0.isEmpty
-                                  ? 'Start typing to search'
-                                  : 'No results found',
+                              'Start typing to search for service providers and vendors',
+                              textAlign: TextAlign.center,
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 color: Colors.grey[500],
@@ -2332,15 +2502,33 @@ class _SearchResultsModalState extends State<_SearchResultsModal> {
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _filteredResults.length,
-                        itemBuilder: (context, index) {
-                          final result = _filteredResults[index];
-                          final isVendor = result['type'] == 'vendor';
-                          return buildResultCard(result, isVendor, primary);
-                        },
-                      ),
+                    : _filteredResults.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.search_off,
+                                    size: 64, color: Colors.grey[300]),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No results found',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _filteredResults.length,
+                            itemBuilder: (context, index) {
+                              final result = _filteredResults[index];
+                              final isVendor = result['type'] == 'vendor';
+                              return buildResultCard(result, isVendor, primary);
+                            },
+                          ),
           ),
         ],
       ),

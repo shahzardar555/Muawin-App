@@ -21,6 +21,8 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _messages = [];
   String _currentProfileId = '';
   bool _isLoadingMessages = true;
+  bool _isClearingChat = false;
+  final Set<String> _deletingMessageIds = {};
   RealtimeChannel? _messagesChannel;
 
   @override
@@ -269,6 +271,112 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _clearChat() async {
+    final threadId = widget.chatData['id']?.toString() ?? '';
+    if (threadId.isEmpty) return;
+
+    setState(() => _isClearingChat = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.from('messages').delete().eq('thread_id', threadId);
+
+      if (mounted) {
+        setState(() => _messages = []);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat cleared')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error clearing chat: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isClearingChat = false);
+    }
+  }
+
+  void _showClearChatDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Chat'),
+        content: const Text('Clear all messages? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _clearChat();
+            },
+            child: _isClearingChat
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteMessage(Map<String, dynamic> message) async {
+    final messageId = message['id']?.toString() ?? '';
+    if (messageId.isEmpty) return;
+
+    setState(() => _deletingMessageIds.add(messageId));
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.from('messages').delete().eq('id', messageId);
+
+      if (mounted) {
+        setState(() => _messages.removeWhere((m) => m['id'] == messageId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message deleted')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting message: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingMessageIds.remove(messageId));
+    }
+  }
+
+  void _showDeleteMessageDialog(Map<String, dynamic> message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Message'),
+        content: const Text('Delete this message? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteMessage(message);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatData = widget.chatData;
@@ -351,6 +459,23 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            color: Colors.white,
+            onSelected: (value) {
+              if (value == 'clear_chat') {
+                _showClearChatDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'clear_chat',
+                child: Text('Clear Chat'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -449,92 +574,120 @@ class _ChatScreenState extends State<ChatScreen> {
       {required Map<String, dynamic> message, required bool isMe}) {
     final text = message['text'] as String;
     final timestamp = message['timestamp'] as String;
+    final messageId = message['id']?.toString() ?? '';
+    final senderId = message['sender_id']?.toString() ?? '';
+    final isOwnMessage = senderId == _currentProfileId;
+    final isDeleting = _deletingMessageIds.contains(messageId);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        mainAxisAlignment:
-            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!isMe) ...[
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(16),
+      child: GestureDetector(
+        onLongPress: isOwnMessage && !isDeleting
+            ? () => _showDeleteMessageDialog(message)
+            : null,
+        child: Row(
+          mainAxisAlignment:
+              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            if (!isMe) ...[
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  widget.chatData['type'] == 'provider'
+                      ? Icons.cleaning_services
+                      : widget.chatData['type'] == 'customer'
+                          ? Icons.person
+                          : Icons.store,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
               ),
-              child: Icon(
-                widget.chatData['type'] == 'provider'
-                    ? Icons.cleaning_services
-                    : widget.chatData['type'] == 'customer'
-                        ? Icons.person
-                        : Icons.store,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.7,
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isMe ? const Color(0xFF088771) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: !isMe ? Border.all(color: Colors.grey[200]!) : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    text,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: isMe ? Colors.white : Colors.black87,
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment:
+                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.7,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isMe ? const Color(0xFF088771) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border:
+                          !isMe ? Border.all(color: Colors.grey[200]!) : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isDeleting) ...[
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            text,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: isMe ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  timestamp,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: Colors.grey[500],
+                  const SizedBox(height: 4),
+                  Text(
+                    timestamp,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            if (isMe) ...[
+              const SizedBox(width: 8),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF088771),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
-          ),
-          if (isMe) ...[
-            const SizedBox(width: 8),
-            Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(
-                color: Color(0xFF088771),
-                shape: BoxShape.circle,
+                child: const Icon(
+                  Icons.person,
+                  size: 16,
+                  color: Colors.white,
+                ),
               ),
-              child: const Icon(
-                Icons.person,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

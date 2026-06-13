@@ -17,7 +17,6 @@ class UserProfileService {
       }
 
       // Get user type from email
-      // TODO: Load from Supabase
       String userType = 'customer';
 
       // Get stored profile data or use defaults
@@ -90,7 +89,6 @@ class UserProfileService {
   }
 
   /// Get default profile for fallback
-  // TODO: Connect to Supabase
   static Map<String, dynamic> _getDefaultProfile() {
     return {
       'userType': 'customer',
@@ -104,7 +102,6 @@ class UserProfileService {
   }
 
   /// Get user ID based on type
-  // TODO: Connect to Supabase
   static String _getUserIdForType(String userType) {
     switch (userType) {
       case 'provider':
@@ -118,7 +115,6 @@ class UserProfileService {
   }
 
   /// Get user name based on type
-  // TODO: Connect to Supabase
   static String _getUserNameForType(String userType) {
     switch (userType) {
       case 'provider':
@@ -132,7 +128,6 @@ class UserProfileService {
   }
 
   /// Get user category based on type
-  // TODO: Connect to Supabase
   static String _getUserCategoryForType(String userType) {
     switch (userType) {
       case 'provider':
@@ -146,7 +141,6 @@ class UserProfileService {
   }
 
   /// Get user rating based on type
-  // TODO: Connect to Supabase
   static double _getUserRatingForType(String userType) {
     switch (userType) {
       case 'provider':

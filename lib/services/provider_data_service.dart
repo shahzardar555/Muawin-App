@@ -28,7 +28,6 @@ class ProviderDataService {
       final prefs = await SharedPreferences.getInstance();
 
       // Load all provider-related data
-      // TODO: Load from Supabase
       final experience = prefs.getString(_experienceKey) ?? '';
       final availability = prefs.getString(_availabilityKey) ?? '';
       final serviceAreas = prefs.getStringList(_serviceAreasKey) ?? [];
@@ -60,7 +59,6 @@ class ProviderDataService {
       };
     } catch (e) {
       debugPrint('Error loading provider data: $e');
-      // TODO: Load from Supabase
       // Return default data on error
       return {
         'id': providerId,
