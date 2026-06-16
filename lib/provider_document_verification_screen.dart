@@ -530,11 +530,31 @@ class _ProviderDocumentVerificationScreenState
             .timeout(const Duration(seconds: 120));
 
         if (faceResponse.statusCode == 200) {
-          faceData = jsonDecode(faceResponse.body) as Map<String, dynamic>;
-          faceMatched = faceData['match'] == true ||
-              faceData['verified'] == true ||
-              (faceData['confidence'] != null &&
-                  (faceData['confidence'] as num) > 0.6);
+          final responseJson = jsonDecode(faceResponse.body) as Map<String, dynamic>;
+          final result = responseJson['result'] as Map<String, dynamic>?;
+          
+          if (result != null) {
+            faceMatched = result['is_match'] == true;
+            faceData = {
+              'match': result['is_match'] ?? false,
+              'verified': result['is_match'] ?? false,
+              'confidence': result['confidence_score'] != null 
+                  ? (result['confidence_score'] as num).toDouble() / 100 
+                  : 0.0,
+              'distance': result['distance'] ?? 1.0,
+              'model': result['model_used'] ?? 'DeepFace',
+              'decision': result['decision'] ?? 'NO_MATCH',
+              'recommendation': result['recommendation'] ?? 'REJECT',
+            };
+          } else {
+            faceMatched = false;
+            faceData = {
+              'match': false,
+              'confidence': 0.0,
+              'distance': 1.0,
+              'model': 'DeepFace',
+            };
+          }
         }
       } catch (e) {
         debugPrint('Face matching error: $e');
@@ -558,8 +578,8 @@ class _ProviderDocumentVerificationScreenState
             'distance': distance,
             'is_match': faceMatched,
             'model_used': faceData['model'] ?? 'DeepFace',
-            'decision': faceMatched ? 'MATCH' : 'NO_MATCH',
-            'recommendation': faceMatched ? 'APPROVE' : 'REJECT',
+            'decision': faceData?['decision'] ?? (faceMatched ? 'MATCH' : 'NO_MATCH'),
+            'recommendation': faceData?['recommendation'] ?? (faceMatched ? 'APPROVE' : 'REJECT'),
             'cnic_url': cnicFrontUrl,
             'selfie_url': selfieUrl,
             'cnic_face_detected': true,

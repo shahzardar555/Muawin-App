@@ -485,7 +485,7 @@ class _MuawinProOverlayState extends State<MuawinProOverlay>
 
         // Security and cancellation text
         Text(
-          '🔒 Secure payment via Safepay',
+          '🔒 Secure payment via Stripe',
           style: GoogleFonts.poppins(
             fontSize: 12,
             color: Colors.white.withValues(alpha: 0.7),

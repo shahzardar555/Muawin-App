@@ -64,6 +64,11 @@ flutter:
     - imagess/water.jpg
     - imagess/maid.webp
     - imagess/muawin_m_logo.svg
+    - imagess/Auth.png
+    - imagess/man.jpg
+    - imagess/Mans.jpg
+    - imagess/Cleaner.jpg
+    - imagess/shops.jpg
 
 flutter_launcher_icons:
   android: "ic_launcher"

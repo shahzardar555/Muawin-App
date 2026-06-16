@@ -689,7 +689,7 @@ class _GetFeaturedOverlayState extends State<GetFeaturedOverlay>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                '🔒 Secure payment via Safepay',
+                '🔒 Secure payment via Stripe',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: Colors.grey.shade600,

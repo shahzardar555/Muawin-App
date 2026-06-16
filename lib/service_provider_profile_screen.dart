@@ -20,6 +20,8 @@ import 'package:fluttertoast/fluttertoast.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:http/http.dart' as http;
+
 import 'dart:convert';
 
 import 'dart:io';
@@ -5186,6 +5188,34 @@ class _ServiceProviderProfileScreenState
         'phone_number': _phoneNumber,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', _currentProfileId);
+
+      // Geocode the city/area and save coordinates
+      try {
+        final geoResponse = await http.post(
+          Uri.parse(
+              'https://muawin-nodejs-backend-production.up.railway.app/api/geo/geocode'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'city': _serviceCity.trim(),
+            'area': _serviceArea.trim(),
+          }),
+        );
+
+        if (geoResponse.statusCode == 200) {
+          final geoData = jsonDecode(geoResponse.body);
+          if (geoData['success'] == true) {
+            await supabase.from('providers').update({
+              'latitude': geoData['latitude'],
+              'longitude': geoData['longitude'],
+            }).eq('id', _currentProviderId);
+            debugPrint('Provider coordinates saved: '
+                '${geoData['latitude']}, ${geoData['longitude']}');
+          }
+        }
+      } catch (e) {
+        debugPrint('Geocoding error (non-fatal): $e');
+        // Non-fatal — profile saves even if geocoding fails
+      }
 
       setState(() => _isSaving = false);
 

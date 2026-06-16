@@ -70,6 +70,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         // Selection cards
                         _ProviderRoleCard(
                           icon: Icons.handyman,
+                          imageAsset: 'imagess/Cleaner.jpg',
                           title: 'Service Provider',
                           description:
                               'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
@@ -79,6 +80,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _ProviderRoleCard(
                           icon: Icons.store_rounded,
+                          imageAsset: 'imagess/shops.jpg',
                           title: 'Vendor',
                           description:
                               'Business or Shop (e.g SuperMarket , Milkshop , Meatshop , Water Plant)',
@@ -132,12 +134,14 @@ class ProviderServiceScreen extends StatelessWidget {
 class _ProviderRoleCard extends StatefulWidget {
   const _ProviderRoleCard({
     required this.icon,
+    this.imageAsset,
     required this.title,
     required this.description,
     required this.onTap,
   });
 
   final IconData icon;
+  final String? imageAsset;
   final String title;
   final String description;
   final VoidCallback onTap;
@@ -229,11 +233,22 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
                     borderRadius: BorderRadius.circular(
                         _ProviderRoleCard._squircleRadius),
                   ),
-                  child: Icon(
-                    widget.icon,
-                    size: _ProviderRoleCard._iconInnerSize,
-                    color: primary,
-                  ),
+                  child: widget.imageAsset != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                              _ProviderRoleCard._squircleRadius),
+                          child: Image.asset(
+                            widget.imageAsset!,
+                            width: _ProviderRoleCard._iconSize,
+                            height: _ProviderRoleCard._iconSize,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Icon(
+                          widget.icon,
+                          size: _ProviderRoleCard._iconInnerSize,
+                          color: primary,
+                        ),
                 ),
                 const SizedBox(height: 20),
                 Text(

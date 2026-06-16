@@ -126,7 +126,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
             id, title, service_category, status, scheduled_date,
             scheduled_time, location, city, area, description, created_at,
             customer_id, cancel_reason, cancel_description, cancel_date,
-            completion_date, total_amount,
+            completion_date, total_amount, direct_request_id,
             customers!inner(
               profile_id,
               profiles!inner(full_name, profile_image_url, phone_number)
@@ -180,8 +180,9 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
           'scheduledDate': scheduledDate,
           'scheduledTime': scheduledTime,
           'status': job['status']?.toString() ?? 'scheduled',
-          'price': job['total_amount'] != null
-              ? 'PKR ${job['total_amount']}'
+          'price': job['total_amount'] != null &&
+                  job['total_amount'].toString() != '0'
+              ? 'Rs. ${job['total_amount']}'
               : 'Negotiable',
           'budget': job['total_amount']?.toString() ?? '0',
           'customer': customerName,
@@ -2078,6 +2079,7 @@ class _JobCard extends StatelessWidget {
                               'description': complaintDescription,
                               'status': 'open',
                               'priority': 'medium',
+                              'filed_by': 'provider',
                             });
 
                             if (context.mounted) {

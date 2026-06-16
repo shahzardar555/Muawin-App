@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/featured_ad_manager.dart';
 import '../services/notification_manager.dart' as nm;
 import '../services/location_service.dart';
@@ -46,11 +49,12 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   // Payment form data
   String _jazzCashNumber = '';
   String _easypaisaNumber = '';
-  String _cardNumber = '';
-  String _cardExpiry = '';
-  String _cardCVV = '';
-  String _cardHolderName = '';
   String _bankTransferScreenshot = ''; // Store uploaded screenshot path
+
+  static const String _backendUrl =
+      'https://muawin-nodejs-backend-production.up.railway.app';
+
+  String? _stripeSessionId;
 
   // Featured ad specific data
   String? _featuredAdTagline;
@@ -206,7 +210,7 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
             'Visa, Mastercard all cards accepted',
             const Color(0xFF1565C0),
             'card_image', // Special indicator for card images
-            _buildCardFields(),
+            null, // No inline card form — Stripe checkout opens in browser
           ),
 
           _buildPaymentMethodCard(
@@ -641,169 +645,6 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
     );
   }
 
-  Widget _buildCardFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Card Number
-        Text(
-          'Card Number',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          onChanged: (value) {
-            // Auto-format with spaces every 4 digits
-            String formatted = value.replaceAll(RegExp(r'\s'), '');
-            if (formatted.length > 16) {
-              formatted = formatted.substring(0, 16);
-            }
-            if (formatted.length > 12) {
-              formatted =
-                  '${formatted.substring(0, 4)} ${formatted.substring(4, 8)} ${formatted.substring(8, 12)} ${formatted.substring(12)}';
-            } else if (formatted.length > 8) {
-              formatted =
-                  '${formatted.substring(0, 4)} ${formatted.substring(4, 8)} ${formatted.substring(8)}';
-            } else if (formatted.length > 4) {
-              formatted =
-                  '${formatted.substring(0, 4)} ${formatted.substring(4)}';
-            }
-            setState(() => _cardNumber = formatted);
-          },
-          keyboardType: TextInputType.number,
-          maxLength: 19, // 16 digits + 3 spaces
-          decoration: InputDecoration(
-            hintText: 'XXXX XXXX XXXX XXXX',
-            suffixIcon: _getCardTypeIcon(),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF1565C0)),
-            ),
-          ),
-          style: GoogleFonts.poppins(fontSize: 14),
-        ),
-        const SizedBox(height: 16),
-
-        // Expiry and CVV row
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Expiry Date',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    onChanged: (value) {
-                      setState(() => _cardExpiry = value);
-                    },
-                    keyboardType: TextInputType.number,
-                    maxLength: 5,
-                    decoration: InputDecoration(
-                      hintText: 'MM/YY',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF1565C0)),
-                      ),
-                    ),
-                    style: GoogleFonts.poppins(fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'CVV',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    onChanged: (value) {
-                      setState(() => _cardCVV = value);
-                    },
-                    keyboardType: TextInputType.number,
-                    maxLength: 4,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      hintText: 'XXX',
-                      suffixIcon: const Icon(Icons.help_outline_rounded,
-                          color: Colors.grey),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF1565C0)),
-                      ),
-                    ),
-                    style: GoogleFonts.poppins(fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // Card Holder Name
-        Text(
-          'Card Holder Name',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          onChanged: (value) {
-            setState(() => _cardHolderName = value);
-          },
-          keyboardType: TextInputType.text,
-          decoration: InputDecoration(
-            hintText: 'Name as on card',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF1565C0)),
-            ),
-          ),
-          style: GoogleFonts.poppins(fontSize: 14),
-        ),
-      ],
-    );
-  }
 
   Widget _buildBankTransferField() {
     return Container(
@@ -972,7 +813,7 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
                     color: Color(0xFF047A62), size: 16),
                 const SizedBox(width: 6),
                 Text(
-                  'Secured by Safepay',
+                  'Secured by Stripe',
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1050,18 +891,6 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
     );
   }
 
-  Widget _getCardTypeIcon() {
-    if (_cardNumber.startsWith('4')) {
-      return const Icon(Icons.credit_card_rounded,
-          color: Colors.grey, size: 20);
-    } else if (_cardNumber.startsWith('5')) {
-      return const Icon(Icons.credit_card_rounded,
-          color: Colors.grey, size: 20);
-    } else {
-      return const Icon(Icons.credit_card_rounded,
-          color: Colors.grey, size: 20);
-    }
-  }
 
   Future<void> _handlePurchase() async {
     try {
@@ -1083,12 +912,12 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
 
       debugPrint('Selected payment method: $_selectedPaymentMethod');
 
-      // Use Safepay for card payments
+      // Use Stripe for card payments
       if (_selectedPaymentMethod == 'card' ||
           _selectedPaymentMethod == 'Card' ||
           _selectedPaymentMethod == 'Credit/Debit Card') {
         setState(() => _isLoading = true);
-        await _processWithSafepay();
+        await _processWithStripe();
         return;
       }
 
@@ -1291,16 +1120,196 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
     }
   }
 
-  Future<void> _processWithSafepay() async {
-    // Simulate Safepay card payment processing
-    await Future.delayed(const Duration(seconds: 2));
-    await _savePaymentToSupabase();
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _isSuccess = true;
-      });
-      _successController.forward();
+  Future<void> _processWithStripe() async {
+    try {
+      final orderId =
+          'muawin_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Get plan name for display
+      final planName = '${widget.planName} - ${widget.purchaseType == 'pro' ? 'Muawin Pro' : 'Featured Ad'}';
+
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/stripe/create-checkout'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'amount': widget.planPrice,
+          'currency': 'pkr',
+          'orderId': orderId,
+          'planName': planName,
+        }),
+      );
+
+      final data = json.decode(response.body);
+
+      if (data['success'] != true) {
+        throw Exception(
+            data['message'] ?? 'Payment initialization failed');
+      }
+
+      final checkoutUrl = data['checkout_url']?.toString();
+      final sessionId = data['session_id']?.toString();
+
+      if (checkoutUrl == null) {
+        throw Exception('No checkout URL received');
+      }
+
+      _stripeSessionId = sessionId;
+
+      final uri = Uri.parse(checkoutUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (mounted) {
+          setState(() => _isLoading = false);
+          _showStripeWaitingDialog();
+        }
+      } else {
+        throw Exception('Could not open payment page');
+      }
+
+    } catch (e) {
+      debugPrint('Stripe error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showStripeWaitingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.payment, color: Color(0xFF047A62)),
+            const SizedBox(width: 8),
+            Text(
+              'Complete Payment',
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.open_in_browser,
+                size: 48, color: Colors.blue),
+            const SizedBox(height: 16),
+            Text(
+              'Stripe checkout has opened in your browser.\n\nUse test card:\n4242 4242 4242 4242\nExpiry: 12/26  CVV: 123\n\nOnce payment is done, tap "I have paid".',
+              style: GoogleFonts.poppins(fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _isLoading = false);
+            },
+            child: Text('Cancel',
+                style: GoogleFonts.poppins(
+                    color: Colors.grey[600])),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _verifyStripePayment();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF047A62),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('I have paid',
+                style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _verifyStripePayment() async {
+    setState(() => _isLoading = true);
+    try {
+      if (_stripeSessionId == null || _stripeSessionId!.isEmpty) {
+        throw Exception('No payment session found');
+      }
+
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/stripe/verify'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'session_id': _stripeSessionId}),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('Verification timed out'),
+      );
+
+      debugPrint('Verify response status: ${response.statusCode}');
+      debugPrint('Verify response body: ${response.body}');
+
+      final data = json.decode(response.body);
+      debugPrint('Payment status: ${data['payment_status']}');
+
+      if (data['success'] == true) {
+        await _savePaymentToSupabase();
+
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isSuccess = true;
+          });
+          _successController.forward();
+        }
+        return;
+      } else {
+        // If payment_status is 'unpaid', customer hasn't paid yet
+        final status = data['payment_status']?.toString() ?? 'unknown';
+        if (status == 'unpaid') {
+          throw Exception(
+            'Payment not completed. Please complete payment on Stripe first.');
+        } else {
+          throw Exception(data['message'] ?? 'Payment verification failed');
+        }
+      }
+    } on Exception catch (e) {
+      debugPrint('Stripe verify error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Unexpected error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unexpected error. Please try again.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -1371,17 +1380,14 @@ class _SubscriptionPurchaseScreenState extends State<SubscriptionPurchaseScreen>
   }
 
   bool _isPaymentValid() {
+    // Card uses Stripe checkout in browser — no inline form validation needed
+    if (_selectedPaymentMethod == 'card') return true;
     switch (_selectedPaymentMethod) {
       case 'jazzcash':
         return _jazzCashNumber.length == 11 && _jazzCashNumber.startsWith('03');
       case 'easypaisa':
         return _easypaisaNumber.length == 11 &&
             _easypaisaNumber.startsWith('03');
-      case 'card':
-        return _cardNumber.replaceAll(' ', '').length == 16 &&
-            _cardExpiry.isNotEmpty &&
-            _cardCVV.length >= 3 &&
-            _cardHolderName.isNotEmpty;
       case 'bank':
         return true; // Bank transfer always valid (screenshot upload handled separately)
       default:

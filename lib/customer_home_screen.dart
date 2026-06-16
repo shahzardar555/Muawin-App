@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -27,6 +28,24 @@ import 'widgets/muawin_pro_overlay.dart';
 import 'widgets/voice_search_overlay.dart';
 import 'widgets/bottom_navigation_bar.dart';
 import 'widgets/chat_voice_input.dart';
+
+/// Calculate distance between two lat/lng points in km using Haversine formula
+double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  const double earthRadius = 6371; // km
+  final dLat = _toRadians(lat2 - lat1);
+  final dLon = _toRadians(lon2 - lon1);
+  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+      math.cos(_toRadians(lat1)) *
+          math.cos(_toRadians(lat2)) *
+          math.sin(dLon / 2) *
+          math.sin(dLon / 2);
+  final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  return earthRadius * c;
+}
+
+double _toRadians(double degree) {
+  return degree * math.pi / 180;
+}
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -693,12 +712,20 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
           // Top Rated Pros Section - PRO only
           if (_isProUser) ...[
-            _TopRatedProsSection(primary: primary),
+            _TopRatedProsSection(
+              primary: primary,
+              userLatitude: _userLatitude,
+              userLongitude: _userLongitude,
+            ),
             const SizedBox(height: 24),
           ],
 
           // Vendors Nearby Section
-          _VendorsNearbySection(primary: primary),
+          _VendorsNearbySection(
+            primary: primary,
+            userLatitude: _userLatitude,
+            userLongitude: _userLongitude,
+          ),
           const SizedBox(height: 24),
 
           // Muawin Pro Ad Section - Hide for PRO users
@@ -3436,9 +3463,15 @@ class _LocalVendorsSectionState extends State<_LocalVendorsSection> {
 
 // Top Rated Pros Section
 class _TopRatedProsSection extends StatefulWidget {
-  const _TopRatedProsSection({required this.primary});
+  const _TopRatedProsSection({
+    required this.primary,
+    this.userLatitude,
+    this.userLongitude,
+  });
 
   final Color primary;
+  final double? userLatitude;
+  final double? userLongitude;
 
   @override
   State<_TopRatedProsSection> createState() => _TopRatedProsSectionState();
@@ -3454,20 +3487,48 @@ class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
     loadTopProviders();
   }
 
+  @override
+  void didUpdateWidget(_TopRatedProsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userLatitude != widget.userLatitude ||
+        oldWidget.userLongitude != widget.userLongitude) {
+      debugPrint('Location changed — reloading nearby providers');
+      loadTopProviders();
+    }
+  }
+
   Future<void> loadTopProviders() async {
     try {
       final supabase = Supabase.instance.client;
       final response = await supabase
           .from('providers')
-          .select('id')
+          .select('id, latitude, longitude')
           .eq('is_verified', true)
           .eq('verification_status', 'verified')
-          .gte('rating', 4.8)
+          .gte('rating', 4.0)
           .lte('rating', 5.0)
           .order('rating', ascending: false)
           .limit(10);
 
-      final ids = (response as List)
+      // Apply 5km filter if customer location is available
+      List<dynamic> filteredResponse = response;
+      if (widget.userLatitude != null && 
+          widget.userLongitude != null) {
+        filteredResponse = (response as List).where((provider) {
+          final provLat = provider['latitude'];
+          final provLng = provider['longitude'];
+          if (provLat == null || provLng == null) return false;
+          final distance = _calculateDistance(
+            widget.userLatitude!,
+            widget.userLongitude!,
+            (provLat as num).toDouble(),
+            (provLng as num).toDouble(),
+          );
+          return distance <= 5.0;
+        }).toList();
+      }
+
+      final ids = filteredResponse
           .map((p) => p['id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
           .toList();
@@ -3837,9 +3898,15 @@ class _TopRatedProCardState extends State<_TopRatedProCard> {
 
 // Vendors Nearby Section
 class _VendorsNearbySection extends StatefulWidget {
-  const _VendorsNearbySection({required this.primary});
+  const _VendorsNearbySection({
+    required this.primary,
+    this.userLatitude,
+    this.userLongitude,
+  });
 
   final Color primary;
+  final double? userLatitude;
+  final double? userLongitude;
 
   @override
   State<_VendorsNearbySection> createState() => _VendorsNearbySectionState();
@@ -3853,6 +3920,17 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
   void initState() {
     super.initState();
     loadVendors();
+  }
+
+  @override
+  void didUpdateWidget(_VendorsNearbySection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload vendors when customer location changes
+    if (oldWidget.userLatitude != widget.userLatitude ||
+        oldWidget.userLongitude != widget.userLongitude) {
+      debugPrint('Location changed — reloading nearby vendors');
+      loadVendors();
+    }
   }
 
   Future<void> loadVendors() async {
@@ -3870,6 +3948,8 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
             rating,
             status,
             is_verified,
+            latitude,
+            longitude,
             profiles!inner(
               full_name,
               profile_image_url
@@ -3879,12 +3959,46 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
           .order('rating', ascending: false)
           .limit(10);
 
+      // Apply 5km filter if customer location is available
+      List<dynamic> filteredResponse = response;
+      if (widget.userLatitude != null && widget.userLongitude != null) {
+        filteredResponse = response.where((vendor) {
+          final vendorLat = vendor['latitude'];
+          final vendorLng = vendor['longitude'];
+          // Exclude vendors without coordinates when customer has location
+          if (vendorLat == null || vendorLng == null) return false;
+          final distance = _calculateDistance(
+            widget.userLatitude!,
+            widget.userLongitude!,
+            (vendorLat as num).toDouble(),
+            (vendorLng as num).toDouble(),
+          );
+          return distance <= 5.0;
+        }).toList();
+      }
+
       final List<Map<String, dynamic>> loaded = [];
 
-      for (final v in response) {
+      for (final v in filteredResponse) {
         final rating = (v['rating'] as num?)?.toDouble() ?? 0.0;
         final status = v['status']?.toString() ?? '';
         final isOpen = status == 'active' || status == 'open';
+
+        // Calculate distance for display
+        String distanceText = 'Nearby';
+        if (widget.userLatitude != null && widget.userLongitude != null) {
+          final vendorLat = v['latitude'];
+          final vendorLng = v['longitude'];
+          if (vendorLat != null && vendorLng != null) {
+            final dist = _calculateDistance(
+              widget.userLatitude!,
+              widget.userLongitude!,
+              (vendorLat as num).toDouble(),
+              (vendorLng as num).toDouble(),
+            );
+            distanceText = '${dist.toStringAsFixed(1)} km';
+          }
+        }
 
         loaded.add({
           'id': v['id']?.toString() ?? '',
@@ -3892,7 +4006,7 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
           'category': v['business_type'] ?? 'Vendor',
           'avatar': v['profiles']?['profile_image_url'] ?? '',
           'rating': rating,
-          'distance': '2.0 km',
+          'distance': distanceText,
           'status': isOpen ? 'Open' : 'Closed',
           'statusColor':
               isOpen ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
@@ -4038,8 +4152,44 @@ class _VendorsNearbySectionState extends State<_VendorsNearbySection> {
           ),
           const SizedBox(height: 16), // 1rem gap (space-y-4)
 
-          // EMPTY STATE
-          const SizedBox.shrink(),
+          // EMPTY STATE - Show friendly message when no vendors within range
+          if (widget.userLatitude != null && widget.userLongitude != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.store_mall_directory_outlined,
+                      size: 48,
+                      color: Colors.amber.shade300,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No vendors found within 5km of your location',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            const SizedBox.shrink(),
         ],
       );
     }

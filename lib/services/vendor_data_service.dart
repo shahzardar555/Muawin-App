@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:cross_file/cross_file.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'vendor_service.dart';
 
 /// Vendor status enum for state management
@@ -131,6 +132,50 @@ class MockVendorService implements VendorService {
             .from('vendors')
             .update({column: value}).eq('id', vendorId);
         debugPrint('Vendor field updated: $field = $value');
+
+        // If address updated, geocode and save coordinates
+        // Address format is like "Lake City, Lahore"
+        if (field == 'address') {
+          try {
+            // Use the address value directly for geocoding
+            final address = value.trim();
+            if (address.isNotEmpty) {
+              // Parse address into parts
+              // "Lake City, Lahore" → area: "Lake City", city: "Lahore"
+              final parts = address.split(',');
+              final area = parts.length > 1 
+                  ? parts[0].trim() 
+                  : '';
+              final city = parts.length > 1 
+                  ? parts[parts.length - 1].trim()
+                  : parts[0].trim();
+
+              final geocodeResponse = await http.post(
+                Uri.parse(
+                    'https://muawin-nodejs-backend-production.up.railway.app/api/geo/geocode'),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({
+                  'city': city,
+                  'area': area,
+                }),
+              );
+
+              if (geocodeResponse.statusCode == 200) {
+                final geoData = jsonDecode(geocodeResponse.body);
+                if (geoData['success'] == true) {
+                  await supabase.from('vendors').update({
+                    'latitude': geoData['latitude'],
+                    'longitude': geoData['longitude'],
+                  }).eq('id', vendorId);
+                  debugPrint('Vendor coordinates saved: '
+                      '${geoData['latitude']}, ${geoData['longitude']}');
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Vendor geocoding error (non-fatal): $e');
+          }
+        }
       }
       return true;
     } catch (e) {

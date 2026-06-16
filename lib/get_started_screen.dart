@@ -64,6 +64,7 @@ class GetStartedScreen extends StatelessWidget {
                         children: [
                           _RoleCard(
                             icon: Icons.home_work_rounded,
+                            imageAsset: 'imagess/man.jpg',
                             title: 'I need household help',
                             description:
                                 'Find verified professionals for your daily household tasks',
@@ -81,6 +82,7 @@ class GetStartedScreen extends StatelessWidget {
                           const SizedBox(height: 20),
                           _RoleCard(
                             icon: Icons.engineering_rounded,
+                            imageAsset: 'imagess/Mans.jpg',
                             title: 'I\'m a service professional',
                             description:
                                 'Offer your skills and get connected with clients across Pakistan.',
@@ -112,12 +114,14 @@ class GetStartedScreen extends StatelessWidget {
 class _RoleCard extends StatefulWidget {
   const _RoleCard({
     required this.icon,
+    this.imageAsset,
     required this.title,
     required this.description,
     required this.onTap,
   });
 
   final IconData icon;
+  final String? imageAsset;
   final String title;
   final String description;
   final VoidCallback onTap;
@@ -206,11 +210,22 @@ class _RoleCardState extends State<_RoleCard>
                   borderRadius:
                       BorderRadius.circular(_RoleCard._squircleRadius),
                 ),
-                child: Icon(
-                  widget.icon,
-                  size: _RoleCard._iconSize,
-                  color: primary,
-                ),
+                child: widget.imageAsset != null
+                    ? ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(_RoleCard._squircleRadius),
+                        child: Image.asset(
+                          widget.imageAsset!,
+                          width: _RoleCard._iconWrapperSize,
+                          height: _RoleCard._iconWrapperSize,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : Icon(
+                        widget.icon,
+                        size: _RoleCard._iconSize,
+                        color: primary,
+                      ),
               ),
 
               const SizedBox(height: 20),
