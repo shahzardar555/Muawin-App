@@ -532,6 +532,9 @@ class _ProviderDocumentVerificationScreenState
         if (faceResponse.statusCode == 200) {
           final responseJson = jsonDecode(faceResponse.body) as Map<String, dynamic>;
           final result = responseJson['result'] as Map<String, dynamic>?;
+          final auditData = responseJson['audit_data'] as Map<String, dynamic>?;
+          final faceExtraction = auditData?['face_extraction'] as Map<String, dynamic>?;
+          final imageQuality = auditData?['image_quality'] as Map<String, dynamic>?;
           
           if (result != null) {
             faceMatched = result['is_match'] == true;
@@ -545,6 +548,13 @@ class _ProviderDocumentVerificationScreenState
               'model': result['model_used'] ?? 'DeepFace',
               'decision': result['decision'] ?? 'NO_MATCH',
               'recommendation': result['recommendation'] ?? 'REJECT',
+              'cnic_face_detected': faceExtraction?['cnic_face_detected'] ?? false,
+              'selfie_face_detected': faceExtraction?['selfie_face_detected'] ?? false,
+              'cnic_face_confidence': faceExtraction?['cnic_face_confidence'] ?? 0.0,
+              'selfie_face_confidence': faceExtraction?['selfie_face_confidence'] ?? 0.0,
+              'cnic_face_location': faceExtraction?['cnic_face_location'],
+              'image_quality': imageQuality,
+              'processing_time_ms': result['processing_time_ms'] ?? auditData?['total_processing_time_ms'] ?? 0,
             };
           } else {
             faceMatched = false;
@@ -553,6 +563,10 @@ class _ProviderDocumentVerificationScreenState
               'confidence': 0.0,
               'distance': 1.0,
               'model': 'DeepFace',
+              'cnic_face_detected': false,
+              'selfie_face_detected': false,
+              'cnic_face_confidence': 0.0,
+              'selfie_face_confidence': 0.0,
             };
           }
         }
@@ -582,8 +596,13 @@ class _ProviderDocumentVerificationScreenState
             'recommendation': faceData?['recommendation'] ?? (faceMatched ? 'APPROVE' : 'REJECT'),
             'cnic_url': cnicFrontUrl,
             'selfie_url': selfieUrl,
-            'cnic_face_detected': true,
-            'selfie_face_detected': true,
+            'cnic_face_detected': faceData?['cnic_face_detected'] ?? false,
+            'selfie_face_detected': faceData?['selfie_face_detected'] ?? false,
+            'cnic_face_confidence': faceData?['cnic_face_confidence'] ?? 0.0,
+            'selfie_face_confidence': faceData?['selfie_face_confidence'] ?? 0.0,
+            'cnic_face_location': faceData?['cnic_face_location'],
+            'image_quality': faceData?['image_quality'],
+            'processing_time_ms': faceData?['processing_time_ms'],
             'created_at': DateTime.now().toIso8601String(),
           });
 
