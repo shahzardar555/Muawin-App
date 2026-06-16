@@ -76,6 +76,11 @@ class _SplashScreenState extends State<SplashScreen>
     GoogleFonts.poppins(fontWeight: FontWeight.bold);
     GoogleFonts.notoSansArabic(fontWeight: FontWeight.w400);
 
+    // Precache registration flow images after first frame (needs context)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheRegistrationImages();
+    });
+
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -190,6 +195,20 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _initializeApp() async {
     // Session restoration is now handled in _navigateToNextScreen
     // via Supabase SDK's built-in session persistence
+  }
+
+  Future<void> _precacheRegistrationImages() async {
+    try {
+      await Future.wait([
+        precacheImage(const AssetImage('imagess/Auth.png'), context),
+        precacheImage(const AssetImage('imagess/man.png'), context),
+        precacheImage(const AssetImage('imagess/Mans.png'), context),
+        precacheImage(const AssetImage('imagess/Cleaner.png'), context),
+        precacheImage(const AssetImage('imagess/shops.png'), context),
+      ]);
+    } catch (e) {
+      debugPrint('Image precache error: $e');
+    }
   }
 
   void _navigateToNextScreen() async {

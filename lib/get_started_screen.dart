@@ -64,7 +64,7 @@ class GetStartedScreen extends StatelessWidget {
                         children: [
                           _RoleCard(
                             icon: Icons.home_work_rounded,
-                            imageAsset: 'imagess/man.jpg',
+                            imageAsset: 'imagess/man.png',
                             title: 'I need household help',
                             description:
                                 'Find verified professionals for your daily household tasks',
@@ -82,7 +82,7 @@ class GetStartedScreen extends StatelessWidget {
                           const SizedBox(height: 20),
                           _RoleCard(
                             icon: Icons.engineering_rounded,
-                            imageAsset: 'imagess/Mans.jpg',
+                            imageAsset: 'imagess/Mans.png',
                             title: 'I\'m a service professional',
                             description:
                                 'Offer your skills and get connected with clients across Pakistan.',

@@ -572,6 +572,15 @@ class _ProviderDocumentVerificationScreenState
         }
       } catch (e) {
         debugPrint('Face matching error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Face match error: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        }
       }
 
       // Step 4: Save face match result
@@ -613,6 +622,15 @@ class _ProviderDocumentVerificationScreenState
           }).eq('id', verificationId);
         } catch (e) {
           debugPrint('Failed to save face match result: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Save match result error: $e'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 8),
+              ),
+            );
+          }
         }
       }
 

@@ -70,7 +70,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         // Selection cards
                         _ProviderRoleCard(
                           icon: Icons.handyman,
-                          imageAsset: 'imagess/Cleaner.jpg',
+                           imageAsset: 'imagess/Cleaner.png',
                           title: 'Service Provider',
                           description:
                               'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
@@ -80,7 +80,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _ProviderRoleCard(
                           icon: Icons.store_rounded,
-                          imageAsset: 'imagess/shops.jpg',
+                           imageAsset: 'imagess/shops.png',
                           title: 'Vendor',
                           description:
                               'Business or Shop (e.g SuperMarket , Milkshop , Meatshop , Water Plant)',
