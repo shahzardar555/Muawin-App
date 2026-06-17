@@ -29,10 +29,10 @@ class AuthScreen extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Auth image - capped at 40% of screen height for mobile fit
+                      // Auth image - capped at 70% of screen height for mobile fit
                       ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxHeight: screenHeight * 0.55,
+                          maxHeight: screenHeight * 0.70,
                         ),
                         child: Image.asset(
                           'imagess/Auth.png',

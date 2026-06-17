@@ -611,7 +611,9 @@ class _ProviderDocumentVerificationScreenState
             'selfie_face_confidence': faceData?['selfie_face_confidence'] ?? 0.0,
             'cnic_face_location': faceData?['cnic_face_location'],
             'image_quality': faceData?['image_quality'],
-            'processing_time_ms': faceData?['processing_time_ms'],
+            'processing_time_ms': faceData?['processing_time_ms'] != null
+                ? (faceData!['processing_time_ms'] as num).round()
+                : null,
             'created_at': DateTime.now().toIso8601String(),
           });
 
