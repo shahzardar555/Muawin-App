@@ -2983,7 +2983,6 @@ class _FeaturedPartnerCard extends StatelessWidget {
     final userName = partner.userName;
     final userCategory = partner.userCategory;
     final userRating = partner.userRating;
-    final userDistance = partner.userDistance;
 
     // Cycle through different base colors for variety
     final baseColors = [
@@ -3191,36 +3190,6 @@ class _FeaturedPartnerCard extends StatelessWidget {
                             const SizedBox(width: 3),
                             Text(
                               userRating.toString(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // text-[10px]
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12), // 0.75rem gap
-                      // Distance Pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black
-                              .withValues(alpha: 0.3), // bg-black/30
-                          borderRadius:
-                              BorderRadius.circular(4), // 0.5rem radius
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.location_pin,
-                              color: Colors.white, // White
-                              size: 12, // 0.75rem
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${userDistance.toStringAsFixed(1)} km',
                               style: GoogleFonts.poppins(
                                 fontSize: 10, // text-[10px]
                                 fontWeight: FontWeight.bold,
@@ -3512,8 +3481,7 @@ class _TopRatedProsSectionState extends State<_TopRatedProsSection> {
 
       // Apply 5km filter if customer location is available
       List<dynamic> filteredResponse = response;
-      if (widget.userLatitude != null && 
-          widget.userLongitude != null) {
+      if (widget.userLatitude != null && widget.userLongitude != null) {
         filteredResponse = (response as List).where((provider) {
           final provLat = provider['latitude'];
           final provLng = provider['longitude'];

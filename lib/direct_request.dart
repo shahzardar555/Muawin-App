@@ -39,6 +39,8 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   String selectedPackage = 'basic';
   DateTime? selectedDate;
   String selectedTime = '';
+  int _selectedHour = 8;
+  int _selectedMinute = 0;
   double proposedPrice = 800;
   String specialInstructions = '';
   String negotiationNote = '';
@@ -62,6 +64,9 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   // Loading states
   bool isLoading = false;
   bool isSuccess = false;
+
+  // Scroll controller for auto-scrolling to top on step change
+  final ScrollController _scrollController = ScrollController();
 
   // Fetched packages loaded from Supabase
   List<Map<String, dynamic>> fetchedPackages = [];
@@ -167,6 +172,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   void dispose() {
     _pulseController.dispose();
     _confettiController.dispose();
+    _scrollController.dispose();
     _cityController.dispose();
     _areaController.dispose();
     super.dispose();
@@ -207,23 +213,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       days.add(now.add(Duration(days: i)));
     }
     return days;
-  }
-
-  List<String> _getTimeSlots() {
-    return [
-      '8:00 AM',
-      '9:00 AM',
-      '10:00 AM',
-      '11:00 AM',
-      '12:00 PM',
-      '1:00 PM',
-      '2:00 PM',
-      '3:00 PM',
-      '4:00 PM',
-      '5:00 PM',
-      '6:00 PM',
-      '7:00 PM',
-    ];
   }
 
   String _formatDate(DateTime date) {
@@ -275,13 +264,23 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
   void _nextStep() {
     if (currentStep < 4) {
       setState(() => currentStep++);
+      _scrollToTop();
     }
   }
 
   void _previousStep() {
     if (currentStep > 0) {
       setState(() => currentStep--);
+      _scrollToTop();
     }
+  }
+
+  void _scrollToTop() {
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
   }
 
   bool _isCurrentStepValid() {
@@ -541,65 +540,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Provider info card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF047A62).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(
-                  Icons.person_rounded,
-                  color: Color(0xFF047A62),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.providerData['name']?.toString() ?? '',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.providerData['category']?.toString() ?? '',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 32),
-
-        // Package title
         Text(
           'Choose a Package',
           style: GoogleFonts.poppins(
@@ -617,8 +557,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 24),
-
-        // Loading, Error, Empty, or Package cards
         if (_isLoadingPackages)
           const Center(
             child: Padding(
@@ -750,7 +688,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header with badge
                           Row(
                             children: [
                               Expanded(
@@ -785,8 +722,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                             ],
                           ),
                           const SizedBox(height: 12),
-
-                          // Price
                           Text(
                             'Rs. ${pkgPrice.toStringAsFixed(0)}/visit',
                             style: GoogleFonts.poppins(
@@ -796,8 +731,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                             ),
                           ),
                           const SizedBox(height: 8),
-
-                          // Description
                           if (pkgDescription.isNotEmpty)
                             Text(
                               pkgDescription,
@@ -808,8 +741,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                             ),
                           if (pkgDescription.isNotEmpty)
                             const SizedBox(height: 12),
-
-                          // Duration badge
                           if (pkgDuration.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -831,8 +762,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                             ),
                           if (pkgDuration.isNotEmpty)
                             const SizedBox(height: 12),
-
-                          // Features
                           ...features.map<Widget>((feature) {
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 4),
@@ -866,8 +795,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             );
           }),
         const SizedBox(height: 32),
-
-        // PRO-Only Options Section
         if (_isProUser) ...[
           _buildProOptionsSection(),
           const SizedBox(height: 32),
@@ -897,7 +824,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // PRO Header
           Row(
             children: [
               const MuawinProBadge(size: MuawinProBadgeSize.small),
@@ -913,8 +839,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             ],
           ),
           const SizedBox(height: 16),
-
-          // Job Type Selection (One-time Job / Hiring)
           Row(
             children: [
               _buildDurationOption(
@@ -940,8 +864,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               ),
             ],
           ),
-
-          // Show Duration Type only when Hiring is selected
           if (_selectedJobType == 'hiring') ...[
             const SizedBox(height: 16),
             Text(
@@ -1031,7 +953,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
 
   Widget _buildStep2() {
     final dates = _getNext14Days();
-    final timeSlots = _getTimeSlots();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1053,8 +974,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // Date selection
         Text(
           'Select Date',
           style: GoogleFonts.poppins(
@@ -1064,7 +983,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 16),
-
         SizedBox(
           height: 60,
           child: ListView.builder(
@@ -1139,8 +1057,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // Time selection
         Text(
           'Select Time',
           style: GoogleFonts.poppins(
@@ -1150,59 +1066,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 16),
-
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 2.5,
-          ),
-          itemCount: timeSlots.length,
-          itemBuilder: (context, index) {
-            final time = timeSlots[index];
-            final isSelected = selectedTime == time;
-
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              decoration: BoxDecoration(
-                color:
-                    isSelected ? const Color(0xFF047A62) : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: isSelected
-                        ? const Color(0xFF047A62).withValues(alpha: 0.2)
-                        : Colors.black.withValues(alpha: 0.05),
-                    blurRadius: isSelected ? 6 : 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() => selectedTime = time);
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: Center(
-                    child: Text(
-                      time,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+        _buildCustomTimePicker(),
         const SizedBox(height: 24),
         Text(
           'Your Location',
@@ -1221,7 +1085,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 12),
-        // City field
         TextField(
           controller: _cityController,
           decoration: InputDecoration(
@@ -1242,7 +1105,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 12),
-        // Area field
         TextField(
           controller: _areaController,
           decoration: InputDecoration(
@@ -1262,7 +1124,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 12),
-        // Full address / landmark
         TextField(
           onChanged: (value) => setState(() => _selectedLocation = value),
           decoration: InputDecoration(
@@ -1282,8 +1143,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // Special instructions
         Text(
           'Special Instructions',
           style: GoogleFonts.poppins(
@@ -1293,7 +1152,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 12),
-
         TextField(
           onChanged: (value) {
             setState(() => specialInstructions = value);
@@ -1322,6 +1180,382 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     );
   }
 
+  Widget _buildCustomTimePicker() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF047A62).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF047A62).withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showHourPicker(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color:
+                                const Color(0xFF047A62).withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        _selectedHour.toString().padLeft(2, '0'),
+                        style: GoogleFonts.poppins(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF047A62),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      ':',
+                      style: GoogleFonts.poppins(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF047A62),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _showMinutePicker(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color:
+                                const Color(0xFF047A62).withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        _selectedMinute.toString().padLeft(2, '0'),
+                        style: GoogleFonts.poppins(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF047A62),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _selectedHour >= 12 ? 'PM' : 'AM',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF047A62),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                '6:00 AM',
+                '7:00 AM',
+                '8:00 AM',
+                '9:00 AM',
+                '10:00 AM',
+                '11:00 AM',
+                '12:00 PM',
+                '1:00 PM',
+                '2:00 PM',
+                '3:00 PM',
+                '4:00 PM',
+                '5:00 PM',
+                '6:00 PM',
+                '7:00 PM',
+                '8:00 PM',
+              ].map((time) {
+                final isSelected = selectedTime == time;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      selectedTime = time;
+                      _updateHourMinute(time);
+                    });
+                  },
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF047A62)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF047A62)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Text(
+                      time,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected ? Colors.white : Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _showCustomTimePicker,
+                icon: const Icon(Icons.access_time_rounded, size: 18),
+                label: Text(
+                  'Choose Custom Time',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF047A62),
+                  side: const BorderSide(color: Color(0xFF047A62)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _updateHourMinute(String time) {
+    try {
+      final parts = time.trim().split(' ');
+      if (parts.length == 2) {
+        final timeParts = parts[0].split(':');
+        int hour = int.parse(timeParts[0]);
+        final minute = timeParts.length > 1 ? int.parse(timeParts[1]) : 0;
+        final period = parts[1].toUpperCase();
+        if (period == 'PM' && hour != 12) hour += 12;
+        if (period == 'AM' && hour == 12) hour = 0;
+        _selectedHour = hour;
+        _selectedMinute = minute;
+      }
+    } catch (_) {}
+  }
+
+  void _showHourPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildScrollPicker(
+        title: 'Select Hour',
+        min: 1,
+        max: 12,
+        initial: _selectedHour > 12
+            ? _selectedHour - 12
+            : (_selectedHour == 0 ? 12 : _selectedHour),
+        onSelected: (value) {
+          final isPM = _selectedHour >= 12;
+          setState(() {
+            _selectedHour = isPM ? value + 12 : (value == 12 ? 0 : value);
+            _updateSelectedTime();
+          });
+          Navigator.pop(context);
+        },
+        suffix: _selectedHour >= 12 ? 'PM' : 'AM',
+      ),
+    );
+  }
+
+  void _showMinutePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildScrollPicker(
+        title: 'Select Minute',
+        min: 0,
+        max: 59,
+        initial: _selectedMinute,
+        step: 5,
+        onSelected: (value) {
+          setState(() {
+            _selectedMinute = value;
+            _updateSelectedTime();
+          });
+          Navigator.pop(context);
+        },
+        suffix: 'min',
+      ),
+    );
+  }
+
+  Widget _buildScrollPicker({
+    required String title,
+    required int min,
+    required int max,
+    required int initial,
+    required Function(int) onSelected,
+    int step = 1,
+    String? suffix,
+  }) {
+    final items = <int>[];
+    for (int i = min; i <= max; i += step) {
+      items.add(i);
+    }
+
+    final initialIndex = items.indexOf(initial);
+    final controller = FixedExtentScrollController(
+        initialItem: initialIndex > 0 ? initialIndex : 0);
+
+    return Container(
+      height: 280,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    onSelected(items[controller.selectedItem]);
+                  },
+                  child: Text(
+                    'Done',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF047A62),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListWheelScrollView.useDelegate(
+              controller: controller,
+              itemExtent: 44,
+              perspective: 0.005,
+              diameterRatio: 1.5,
+              childDelegate: ListWheelChildBuilderDelegate(
+                childCount: items.length,
+                builder: (context, index) {
+                  final value = items[index];
+                  final isSelected = value == items[controller.selectedItem];
+                  return Center(
+                    child: Text(
+                      value.toString().padLeft(2, '0'),
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w400,
+                        color: isSelected
+                            ? const Color(0xFF047A62)
+                            : Colors.grey.shade500,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCustomTimePicker() async {
+    final initialTime = TimeOfDay(
+      hour: _selectedHour,
+      minute: _selectedMinute,
+    );
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF047A62),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedHour = picked.hour;
+        _selectedMinute = picked.minute;
+        _updateSelectedTime();
+      });
+    }
+  }
+
+  void _updateSelectedTime() {
+    final hour = _selectedHour;
+    final minute = _selectedMinute;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    selectedTime = '$hour12:${minute.toString().padLeft(2, '0')} $period';
+  }
+
   Widget _buildStep3() {
     final providerPrice = _selectedPackagePrice;
     final minPrice = providerPrice * 0.5;
@@ -1347,8 +1581,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // Provider's price card
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1387,8 +1619,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // Price input section
         Text(
           'Your Proposed Price',
           style: GoogleFonts.poppins(
@@ -1398,7 +1628,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 16),
-
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1447,7 +1676,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       ),
                     ),
                   ),
-                  // Increment/Decrement buttons
                   Column(
                     children: [
                       GestureDetector(
@@ -1496,8 +1724,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                 ],
               ),
               const SizedBox(height: 16),
-
-              // Price validation messages
               if (proposedPrice < minPrice)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -1552,8 +1778,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 24),
-
-        // Custom bar-style slider
         Container(
           height: 40,
           decoration: BoxDecoration(
@@ -1562,7 +1786,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
           child: Stack(
             children: [
-              // Animated fill bar
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 width: max(
@@ -1576,7 +1799,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),
-              // Price text on the bar
               if ((proposedPrice / maxPrice) *
                       (MediaQuery.of(context).size.width - 64) >
                   60)
@@ -1592,16 +1814,13 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     ),
                   ),
                 ),
-              // Draggable thumb
               Positioned(
                 left: (proposedPrice / maxPrice) *
                         (MediaQuery.of(context).size.width - 64) -
-                    12, // Center thumb on bar
+                    12,
                 top: 8,
                 child: GestureDetector(
-                  onPanStart: (details) {
-                    // Start drag
-                  },
+                  onPanStart: (details) {},
                   onPanUpdate: (details) {
                     final RenderBox box =
                         context.findRenderObject() as RenderBox;
@@ -1618,9 +1837,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                           roundedValue.clamp(minPrice, maxPrice).toDouble();
                     });
                   },
-                  onPanEnd: (details) {
-                    // End drag
-                  },
+                  onPanEnd: (details) {},
                   child: Container(
                     width: 24,
                     height: 24,
@@ -1642,7 +1859,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   ),
                 ),
               ),
-              // Price text outside bar (when bar is too small)
               if ((proposedPrice / maxPrice) *
                       (MediaQuery.of(context).size.width - 64) <=
                   60)
@@ -1690,8 +1906,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ],
         ),
         const SizedBox(height: 32),
-
-        // Negotiation note
         Text(
           'Negotiation Note (Optional)',
           style: GoogleFonts.poppins(
@@ -1701,7 +1915,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 12),
-
         TextField(
           onChanged: (value) {
             setState(() => negotiationNote = value);
@@ -1731,7 +1944,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Title
         Text(
           'How will you pay?',
           style: GoogleFonts.poppins(
@@ -1749,8 +1961,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ),
         ),
         const SizedBox(height: 32),
-
-        // SECTION 1 - Payment Method Selection
         ...[
           _buildPaymentCard(
             'jazzcash',
@@ -1785,10 +1995,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             null,
           ),
         ],
-
         const SizedBox(height: 32),
-
-        // SECTION 2 - Payment Summary
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -1806,7 +2013,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
               Row(
                 children: [
                   const Icon(Icons.account_balance_wallet_rounded,
@@ -1823,8 +2029,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                 ],
               ),
               const SizedBox(height: 16),
-
-              // Summary details
               _buildSummaryRow(
                   'Service Fee:', 'Rs. ${proposedPrice.toStringAsFixed(0)}'),
               _buildSummaryRow(
@@ -1837,7 +2041,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                 color: const Color(0xFF047A62),
               ),
               const SizedBox(height: 16),
-
               const SizedBox(height: 24),
             ],
           ),
@@ -1896,7 +2099,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header with checkmark
                   Row(
                     children: [
                       Container(
@@ -1937,8 +2139,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                     ],
                   ),
                   const SizedBox(height: 12),
-
-                  // Title and subtitle
                   Text(
                     title,
                     style: GoogleFonts.poppins(
@@ -1955,8 +2155,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                       color: Colors.grey.shade600,
                     ),
                   ),
-
-                  // Expanded form fields
                   if (isSelected) ...[
                     const SizedBox(height: 16),
                     if (method == 'jazzcash') _buildJazzCashField(),
@@ -2051,7 +2249,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Card Number
         Text(
           'Card Number',
           style: GoogleFonts.poppins(
@@ -2063,7 +2260,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
         const SizedBox(height: 8),
         TextField(
           onChanged: (value) {
-            // Auto-format with spaces every 4 digits
             String formatted = value.replaceAll(RegExp(r'\s'), '');
             if (formatted.length > 4 && formatted.length <= 8) {
               formatted =
@@ -2078,7 +2274,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
             setState(() => cardNumber = formatted);
           },
           keyboardType: TextInputType.number,
-          maxLength: 19, // 16 digits + 3 spaces
+          maxLength: 19,
           decoration: InputDecoration(
             hintText: 'XXXX XXXX XXXX XXXX',
             suffixIcon: _getCardTypeIcon(),
@@ -2094,8 +2290,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           style: GoogleFonts.poppins(fontSize: 14),
         ),
         const SizedBox(height: 16),
-
-        // Expiry and CVV row
         Row(
           children: [
             Expanded(
@@ -2175,8 +2369,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           ],
         ),
         const SizedBox(height: 16),
-
-        // Card Holder Name
         Text(
           'Card Holder Name',
           style: GoogleFonts.poppins(
@@ -2295,7 +2487,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     final pkg = _selectedPackageMap;
     final pkgName =
         pkg?['package_name']?.toString() ?? selectedPackage.toUpperCase();
-    final pkgStyle = _getPackageStyle(selectedPackage);
+    _getPackageStyle(selectedPackage);
     final providerPrice = _selectedPackagePrice;
     final priceDifference = proposedPrice - providerPrice;
     final platformFee = proposedPrice * 0.1;
@@ -2303,7 +2495,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     final paymentMethodText = _getPaymentMethodDisplayText();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           'Review Your Request',
@@ -2339,256 +2531,186 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Provider info
-                Builder(
-                  builder: (context) {
-                    final double rating =
-                        (widget.providerData['average_rating'] as num?)
-                                ?.toDouble() ??
-                            0.0;
-                    final int reviewCount =
-                        (widget.providerData['total_reviews'] as num?)
-                                ?.toInt() ??
-                            0;
-                    final String? imageUrl =
-                        widget.providerData['profile_image_url']?.toString();
-                    final bool hasImage =
-                        imageUrl != null && imageUrl.isNotEmpty;
+                const SizedBox(height: 20),
 
-                    return Row(
+                // Two-column layout: icons column (fixed) + details column
+                Center(
+                  child: IntrinsicHeight(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
-                          radius: 25,
-                          backgroundColor:
-                              const Color(0xFF047A62).withValues(alpha: 0.1),
-                          backgroundImage:
-                              hasImage ? NetworkImage(imageUrl) : null,
-                          child: hasImage
-                              ? null
-                              : const Icon(
-                                  Icons.person_rounded,
-                                  color: Color(0xFF047A62),
-                                  size: 25,
-                                ),
+                        // Icons column (fixed width)
+                        Column(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF047A62)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.workspace_premium_rounded,
+                                color: Color(0xFF047A62),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF047A62)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.schedule_rounded,
+                                color: Color(0xFF047A62),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF047A62)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.account_balance_wallet_rounded,
+                                color: Color(0xFF047A62),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF047A62)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.attach_money_rounded,
+                                color: Color(0xFF047A62),
+                                size: 20,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.providerData['name']?.toString() ?? '',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(Icons.star_rounded,
-                                      color: Color(0xFFFFD700), size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${rating.toStringAsFixed(1)} ($reviewCount reviews)',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade600,
-                                    ),
+                        const SizedBox(width: 12),
+                        // Details column
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Package details
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  pkgName,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
                                   ),
-                                ],
-                              ),
-                            ],
-                          ),
+                                ),
+                                Text(
+                                  '⏱ ${pkg?['duration'] ?? ''}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Date and time details
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedDate != null
+                                      ? _formatDate(selectedDate!)
+                                      : 'Date not selected',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  selectedTime.isNotEmpty
+                                      ? selectedTime
+                                      : 'Time not selected',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Payment method details
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  paymentMethodText,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  'Total: Rs. ${totalAmount.toStringAsFixed(0)} (inc. fee)',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: const Color(0xFFFF9800),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Price comparison details
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Rs. ${proposedPrice.toStringAsFixed(0)}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  priceDifference >= 0
+                                      ? 'Rs. ${priceDifference.toStringAsFixed(0)} above standard'
+                                      : 'Rs. ${priceDifference.abs().toStringAsFixed(0)} below standard',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: priceDifference >= 0
+                                        ? const Color(0xFFFF9800)
+                                        : const Color(0xFF4CAF50),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                const Divider(color: Colors.grey, height: 1),
-                const SizedBox(height: 20),
-
-                // Package
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: pkgStyle['color'],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        Icons.workspace_premium_rounded,
-                        color: pkgStyle['borderColor'],
-                        size: 20,
-                      ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$pkgName Package',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            '⏱ ${pkg?['duration'] ?? ''}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Date and time
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.schedule_rounded,
-                        color: Color(0xFF2196F3),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            selectedDate != null
-                                ? _formatDate(selectedDate!)
-                                : 'Date not selected',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            selectedTime.isNotEmpty
-                                ? selectedTime
-                                : 'Time not selected',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Payment method - NEW
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8E1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.account_balance_wallet_rounded,
-                        color: Color(0xFFFF9800),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            paymentMethodText,
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            'Total: Rs. ${totalAmount.toStringAsFixed(0)} (inc. fee)',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: const Color(0xFFFF9800),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Price comparison
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8E1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.attach_money_rounded,
-                        color: Color(0xFFFF9800),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Rs. ${proposedPrice.toStringAsFixed(0)}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            priceDifference >= 0
-                                ? 'Rs. ${priceDifference.toStringAsFixed(0)} above standard'
-                                : 'Rs. ${priceDifference.abs().toStringAsFixed(0)} below standard',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: priceDifference >= 0
-                                  ? const Color(0xFFFF9800)
-                                  : const Color(0xFF4CAF50),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
 
                 // Special instructions
@@ -2614,39 +2736,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                   ),
                 ],
 
-                // PRO Options Summary
-                if (_isProUser) ...[
-                  const SizedBox(height: 20),
-                  const Divider(color: Colors.grey, height: 1),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const MuawinProBadge(size: MuawinProBadgeSize.small),
-                      const SizedBox(width: 8),
-                      Text(
-                        'PRO Options',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF047A62),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (_selectedDurationType != null) ...[
-                    Text(
-                      'Duration Type: ${_selectedDurationType!.toUpperCase()}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ],
-
-                // Special instructions
+                // Special instructions (duplicate)
                 if (specialInstructions.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const Divider(color: Colors.grey, height: 1),
@@ -2756,7 +2846,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Success animation
         AnimatedBuilder(
           animation: _confettiController,
           builder: (context, child) {
@@ -2776,7 +2865,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           },
         ),
         const SizedBox(height: 32),
-
         Text(
           'Request Sent!',
           style: GoogleFonts.poppins(
@@ -2787,7 +2875,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
-
         Text(
           '${widget.providerData['name']?.toString() ?? 'Provider'} will respond within 24 hours',
           style: GoogleFonts.poppins(
@@ -2797,7 +2884,6 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 32),
-
         Center(
           child: ElevatedButton(
             onPressed: () {
@@ -2841,7 +2927,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
               ? () {
                   setState(() {
                     isSuccess = false;
-                    currentStep = 4; // Go back to review step
+                    currentStep = 4;
                   });
                 }
               : _previousStep,
@@ -2881,20 +2967,17 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                 _buildStepIndicator(),
                 Expanded(
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: [
-                        _buildStep1(),
-                        _buildStep2(),
-                        _buildStep3(),
-                        _buildStep4(),
-                        _buildStep5(),
-                      ][currentStep],
-                    ),
+                    child: [
+                      _buildStep1(),
+                      _buildStep2(),
+                      _buildStep3(),
+                      _buildStep4(),
+                      _buildStep5(),
+                    ][currentStep],
                   ),
                 ),
-                // Bottom navigation buttons
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
@@ -2921,7 +3004,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                               side: const BorderSide(color: Color(0xFF047A62)),
                             ),
                             child: Text(
-                              'Edit Request',
+                              'Previous Step',
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -2961,7 +3044,7 @@ class _DirectRequestScreenState extends State<DirectRequestScreen>
                                     'Select Time →',
                                     'Review Offer →',
                                     'Select Payment →',
-                                    'Send Request 🚀'
+                                    'Send Request'
                                   ][currentStep],
                                   style: GoogleFonts.poppins(
                                     fontSize: 16,

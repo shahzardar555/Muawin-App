@@ -65,10 +65,10 @@ flutter:
     - imagess/maid.webp
     - imagess/muawin_m_logo.svg
     - imagess/Auth.png
-    - imagess/man.png
-    - imagess/Mans.png
-    - imagess/Cleaner.png
-    - imagess/shops.png
+    - imagess/man.webp
+    - imagess/Mans.webp
+    - imagess/Cleaner.webp
+    - imagess/shops.webp
 
 flutter_launcher_icons:
   android: "ic_launcher"

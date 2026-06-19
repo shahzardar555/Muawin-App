@@ -58,6 +58,8 @@ class _CustomerVendorProfileScreenState
         _vendorData = data;
         _isLoadingVendorData = false;
       });
+      debugPrint(
+          '=== VENDOR IMAGE URL: ${_vendorData?['profiles']?['profile_image_url']} ===');
 
       // Also load reviews
       await _loadReviews(vendorId);

@@ -37,11 +37,10 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   @override
   void initState() {
     super.initState();
-    onShowDetails = null; // Initialize to null
+    onShowDetails = null;
     _tabController = TabController(length: 3, vsync: this);
-    _loadJobs(); // Add this line
+    _loadJobs();
 
-    // Check job status every 60 seconds
     _jobStatusTimer = Timer.periodic(
       const Duration(seconds: 60),
       (_) => _checkAndActivateJobs(),
@@ -99,7 +98,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       final now = DateTime.now();
       final supabase = Supabase.instance.client;
 
-      // Get all scheduled jobs for this customer
       final scheduledJobs = await supabase
           .from('jobs')
           .select('id, scheduled_date, scheduled_time')
@@ -116,7 +114,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         DateTime? scheduledDateTime;
         try {
           if (timeStr.isNotEmpty) {
-            // Parse date + time together
             final timeParts = timeStr.split(':');
             final hour = int.tryParse(timeParts[0]) ?? 0;
             final minute =
@@ -130,7 +127,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
               minute,
             );
           } else {
-            // No time — activate at start of scheduled date
             final dateParts = dateStr.split('-');
             scheduledDateTime = DateTime(
               int.parse(dateParts[0]),
@@ -142,7 +138,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           continue;
         }
 
-        // Only activate if scheduled datetime has passed
         if (now.isAfter(scheduledDateTime)) {
           await supabase.from('jobs').update({
             'status': 'active',
@@ -151,7 +146,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         }
       }
 
-      // Refresh UI after any updates
       await _loadJobs();
     } catch (e) {
       debugPrint('Error checking job activation: $e');
@@ -186,7 +180,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     try {
       final supabase = Supabase.instance.client;
 
-      // Get provider_id from the job
       final job = _ongoingJobs.firstWhere(
         (j) => j['id'] == jobId,
         orElse: () => _historyJobs.firstWhere(
@@ -203,7 +196,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         return;
       }
 
-      // Insert review into Supabase
       await supabase.from('reviews').insert({
         'job_id': jobId,
         'customer_id': _customerId,
@@ -226,7 +218,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         _hasError = false;
       });
 
-      // Get customer ID first
       _customerId = await _getCustomerId();
 
       if (_customerId == null) {
@@ -237,10 +228,8 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         return;
       }
 
-      // Subscribe to real-time job updates (safe to call multiple times)
       _subscribeToJobUpdates();
 
-      // Load all jobs for this customer
       final allJobs = await Supabase.instance.client
           .from('jobs')
           .select("""
@@ -263,7 +252,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           .eq('customer_id', _customerId!)
           .order('created_at', ascending: false);
 
-      // Load negotiating direct job requests
       final negotiatingRequests = await Supabase.instance.client
           .from('direct_job_requests')
           .select('''
@@ -281,7 +269,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           .eq('status', 'negotiating')
           .order('created_at', ascending: false);
 
-      // Map negotiating requests to job-like format
       final negotiatingJobs = (negotiatingRequests as List).map((req) {
         return {
           'id': req['id'],
@@ -299,7 +286,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         };
       }).toList();
 
-      // Split into ongoing, future, and history
       final ongoing = <Map<String, dynamic>>[];
       final future = <Map<String, dynamic>>[];
       final history = <Map<String, dynamic>>[];
@@ -307,7 +293,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       for (final job in allJobs) {
         final status = job['status'] as String? ?? '';
 
-        // Add providerCategory mapping from service_category
         (job)['providerCategory'] = job['service_category']?.toString() ??
             job['providers']?['service_category']?.toString() ??
             '';
@@ -323,7 +308,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         }
       }
 
-      // Add negotiating requests to future list
       future.addAll(
           negotiatingJobs.map((j) => Map<String, dynamic>.from(j)).toList());
 
@@ -347,7 +331,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   }
 
   void _cancelJob(String jobId) async {
-    // Show confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -394,7 +377,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', jobId);
 
-        // Reload jobs after cancel
         _loadJobs();
 
         if (mounted) {
@@ -446,22 +428,16 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF088771), // Muawin Primary Teal
-              Color(0xFF064e3b), // Tailwind Emerald 900
+              Color(0xFF088771),
+              Color(0xFF064e3b),
             ],
           ),
         ),
         child: Column(
           children: [
-            // 1. PREMIUM VISUAL HEADER
             _buildHeader(primary),
-
             const SizedBox(height: 16),
-
-            // 2. TAB NAVIGATION
             _buildTabBar(),
-
-            // 3. CONTENT AREA
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _loadJobs,
@@ -512,123 +488,104 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           ],
         ),
       ),
-      // Bottom Navigation Bar
       bottomNavigationBar: MuawinBottomNavigationBar(
-        currentIndex: 1, // Jobs is index 1
+        currentIndex: 1,
         onItemTapped: (index) {
           if (index == 0) {
-            // Navigate to Home
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => const CustomerHomeScreen()),
               (route) => false,
             );
           } else if (index == 2) {
-            // Navigate to Post Job
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const PostJobScreen()),
             );
           } else if (index == 3) {
-            // Navigate to Messages
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const CustomerMessagesScreen()),
             );
           } else if (index == 4) {
-            // Navigate to Profile
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const CustomerProfileScreen()),
             );
           }
-          // Jobs (index 1) is current screen, no navigation needed
         },
       ),
     );
   }
 
-  // 1. PREMIUM VISUAL HEADER
   Widget _buildHeader(Color primary) {
     return Container(
-      width: double.infinity, // Full width
+      width: double.infinity,
       padding: const EdgeInsets.only(
-        top: 32, // Reduced from 64 to 32
+        top: 32,
         left: 24,
         right: 24,
-        bottom: 20, // Reduced from 40 to 20
+        bottom: 20,
       ),
       decoration: BoxDecoration(
-        // Backdrop: Gradient fill of Muawin Primary Teal
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF088771), // Muawin Primary Teal
-            Color(0xFF064e3b), // Tailwind Emerald 900
+            Color(0xFF088771),
+            Color(0xFF064e3b),
           ],
         ),
-        // Geometry: Bottom corner radius of 2.5rem (rounded-b-[40px])
         borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(20), // Reduced from 40 to 20
-          bottomRight: Radius.circular(20), // Reduced from 40 to 20
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black
-                .withValues(alpha: 0.25), // Large shadow (shadow-lg)
-            blurRadius: 12, // Reduced from 20 to 12
-            spreadRadius: 3, // Reduced from 5 to 3
-            offset: const Offset(0, 4), // Reduced from 0,8 to 0,4
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Visual Depth: Massive background ClipboardList icon at 8rem, 10% opacity, rotated -12 degrees
           Positioned(
-            top: -15, // Reduced from -20 to -15
-            right: -15, // Reduced from -20 to -15
+            top: -15,
+            right: -15,
             child: Transform.rotate(
-              angle: -0.21, // -12 degrees in radians
+              angle: -0.21,
               child: Icon(
                 Icons.work_outline,
-                size: 80, // Reduced from 128 to 80
+                size: 80,
                 color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
           ),
-          // Header Content
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title row without back button
               Row(
                 children: [
-                  // Title and subtitle
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Screen Title: "My Jobs"
                         Text(
                           'My Jobs',
                           style: GoogleFonts.poppins(
-                            fontSize: 36, // Reduced from 60 to 36
-                            fontWeight: FontWeight
-                                .w700, // Reduced from w900 to w700 (bold)
-                            color: Colors.white, // text-white (#FFFFFF)
-                            letterSpacing: -0.025, // tracking-tight (-0.025em)
-                            height: 1, // leading-none (line height: 1)
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.025,
+                            height: 1,
                           ),
                         ),
-                        const SizedBox(height: 8), // Reduced from 12 to 8
-                        // Subtitle: Status overview
+                        const SizedBox(height: 8),
                         Text(
                           'Track your ongoing and completed service requests',
                           style: GoogleFonts.inter(
-                            // Inter font family
-                            fontSize: 16, // Reduced from 24 to 16
-                            fontWeight: FontWeight.w500, // font-medium (500)
-                            color: const Color.fromRGBO(
-                                248, 255, 248, 0.8), // hsl(168 100% 98% / 0.8)
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: const Color.fromRGBO(248, 255, 248, 0.8),
                           ),
                         ),
                       ],
@@ -643,7 +600,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     );
   }
 
-  // 2. NON-STICKY TAB NAVIGATION
   Widget _buildTabBar() {
     final primary = Theme.of(context).colorScheme.primary;
     return Container(
@@ -656,8 +612,8 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         indicator: BoxDecoration(
           gradient: const LinearGradient(
             colors: [
-              Color(0xFF088771), // Muawin Primary Teal
-              Color(0xFF064e3b), // Tailwind Emerald 900
+              Color(0xFF088771),
+              Color(0xFF064e3b),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -667,7 +623,7 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
         indicatorWeight: 0,
         indicatorSize: TabBarIndicatorSize.tab,
         labelColor: Colors.white,
-        unselectedLabelColor: primary, // Use primary color for unselected text
+        unselectedLabelColor: primary,
         labelStyle: GoogleFonts.poppins(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -721,7 +677,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
     );
   }
 
-  // 4. JOB DETAILS DIALOG
   void _showJobDetailsDialog(
       BuildContext context, Map<String, dynamic> job, Color primary) {
     showDialog(
@@ -740,7 +695,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: Row(
@@ -762,8 +716,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
                 ),
               ),
               const Divider(),
-
-              // Job Info
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -780,8 +732,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
                   ],
                 ),
               ),
-
-              // Actions
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: SizedBox(
@@ -814,7 +764,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
   }
 
   String _getValidCategory(Map<String, dynamic> job) {
-    // List of valid categories from customer home screen
     const validCategories = [
       'Maid',
       'Gardener',
@@ -827,15 +776,12 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       'Tutor',
     ];
 
-    // Check providerCategory first, then category
     String categoryToCheck = job['providerCategory']?.toString() ?? '';
 
-    // Return the category if it's valid, otherwise return a default
     if (validCategories.contains(categoryToCheck)) {
       return categoryToCheck;
     }
 
-    // Try to find a close match or return a default
     String lowerCategory = categoryToCheck.toLowerCase();
     for (String validCategory in validCategories) {
       if (validCategory.toLowerCase().contains(lowerCategory) ||
@@ -844,7 +790,6 @@ class _CustomerJobsScreenState extends State<CustomerJobsScreen>
       }
     }
 
-    // Return a default category if no match found
     return 'General Service';
   }
 
@@ -905,7 +850,6 @@ class _OngoingJobsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Separate jobs by status
     final activeJobs = jobs.where((job) => job['status'] == 'active').toList();
     final scheduledJobs = jobs
         .where(
@@ -915,7 +859,6 @@ class _OngoingJobsView extends StatelessWidget {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Active Jobs Section
           if (activeJobs.isNotEmpty) ...[
             _buildSectionHeader('Active Jobs', Icons.circle, Colors.green),
             ...activeJobs.map((job) => _JobCard(
@@ -929,8 +872,6 @@ class _OngoingJobsView extends StatelessWidget {
                   onRefresh: onRefresh,
                 )),
           ],
-
-          // Scheduled Jobs Section
           if (scheduledJobs.isNotEmpty) ...[
             const SizedBox(height: 24),
             _buildSectionHeader('Scheduled Jobs', Icons.schedule, Colors.blue),
@@ -975,7 +916,6 @@ class _OngoingJobsView extends StatelessWidget {
   }
 }
 
-// Future Jobs View
 class _FutureJobsView extends StatelessWidget {
   const _FutureJobsView({
     required this.jobs,
@@ -1017,7 +957,6 @@ class _FutureJobsView extends StatelessWidget {
   }
 }
 
-// History Jobs View
 class _HistoryJobsView extends StatelessWidget {
   const _HistoryJobsView({
     required this.jobs,
@@ -1059,7 +998,6 @@ class _HistoryJobsView extends StatelessWidget {
   }
 }
 
-// Job Card Component
 class _JobCard extends StatelessWidget {
   const _JobCard({
     required this.job,
@@ -1086,7 +1024,6 @@ class _JobCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = job['status']?.toString() ?? '';
 
-    // Show enhanced design for active, scheduled, pending, completed, and cancelled jobs
     if (status == 'active') {
       return _buildInProgressCard(context);
     } else if (status == 'scheduled') {
@@ -1107,7 +1044,6 @@ class _JobCard extends StatelessWidget {
   Widget _buildInProgressCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Physics-based tap compression handled by GestureDetector
         if (onShowDetails != null) {
           onShowDetails!(context, job, primary);
         }
@@ -1116,7 +1052,7 @@ class _JobCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28), // 1.75rem = 28px
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.15),
@@ -1128,95 +1064,80 @@ class _JobCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // 1. VISUAL HEADER ROW
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left side: Avatar with Category and Job ID
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Category Icon Circle
-                      Container(
-                        width: 56, // 3.5rem = 56px
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: primary.withValues(
-                              alpha: 0.1), // Primary Teal at 10% opacity
-                          borderRadius: BorderRadius.circular(
-                              28), // Circle shape (56px/2 = 28px)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(
+                            Icons.cleaning_services,
+                            size: 28,
+                            color: primary,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.cleaning_services, // Cleaning Services icon
-                          size: 28, // 1.75rem = 28px
-                          color: primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Category and Job ID parallel to icon
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Name
-                            Text(
-                              job['service_category'] ?? 'Service',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18, // 1.125rem = 18px
-                                fontWeight: FontWeight.bold,
-                                height: 1, // leading-none
-                                color: Colors.black,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                job['service_category'] ?? 'Service',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                  color: Colors.black,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            const SizedBox(height: 2),
-                            // Job ID
-                            Text(
-                              job['id']?.toString() ?? '',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // 0.625rem = 10px
-                                fontWeight:
-                                    FontWeight.w900, // Black (900) weight
-                                color: Colors.grey[600], // muted gray
-                                letterSpacing: 2.0, // tracking-widest
+                              const SizedBox(height: 2),
+                              Text(
+                                job['id']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 2.0,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  // Right side: In Progress Status Pill
                   Container(
-                    height: 24, // Exactly 1.5rem = 24px (h-6)
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 0), // Exactly 0.75rem = 12px (px-3)
+                    height: 24,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                     decoration: BoxDecoration(
-                      color: primary, // Muawin Primary Teal (bg-primary)
-                      borderRadius:
-                          BorderRadius.circular(12), // Full-round pill shape
-                      // No border (border-none)
+                      color: primary,
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Text(
                         'In Progress',
                         style: GoogleFonts.inter(
-                          // Inter font (Standard UI font)
-                          fontSize: 9, // Exactly 0.56rem = 9px (text-[9px])
-                          fontWeight: FontWeight.w900, // Black / 900 weight
-                          color: Colors
-                              .white, // Primary Foreground (text-primary-foreground)
-                          letterSpacing:
-                              0.9, // Exactly 0.1em tracking (tracking-[0.1em])
-                          height: 1, // Prevents extra line height
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.9,
+                          height: 1,
                         ),
                       ),
                     ),
@@ -1224,12 +1145,10 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 2. ASSIGNED PROFESSIONAL SECTION
             Container(
-              padding: const EdgeInsets.all(16), // 1rem padding
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50], // bg-surface
+                color: Colors.grey[50],
                 border: Border(
                   top: BorderSide(
                     color: Colors.grey.withValues(alpha: 0.1),
@@ -1239,13 +1158,11 @@ class _JobCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  // Profile Picture of Service Provider
                   Container(
-                    width: 48, // 3rem = 48px
-                    height: 48, // 3rem = 48px
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(
-                          24), // Circle shape (48px/2 = 24px)
+                      borderRadius: BorderRadius.circular(24),
                       border: Border.all(
                         color: Colors.white,
                         width: 2,
@@ -1261,35 +1178,30 @@ class _JobCard extends StatelessWidget {
                     child: _buildProviderProfileImage(job),
                   ),
                   const SizedBox(width: 12),
-
-                  // Meta Block
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title
                         Text(
                           'Assigned Helper',
                           style: GoogleFonts.poppins(
-                            fontSize: 9, // 0.56rem = 9px
-                            fontWeight: FontWeight.w900, // extra-bold
-                            color: Colors.grey[600], // muted gray
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.grey[600],
                             letterSpacing: 1.0,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Name
                         Text(
                           job['providers']?['profiles']?['full_name'] ??
                               'Provider',
                           style: GoogleFonts.poppins(
-                            fontSize: 14, // 0.875rem = 14px
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Rating
                         Row(
                           children: [
                             const Icon(Icons.star,
@@ -1308,16 +1220,13 @@ class _JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Action Group
                   Row(
                     children: [
-                      // Phone Button
                       GestureDetector(
                         onTap: () => _makePhoneCall(context),
                         child: Container(
-                          width: 40, // 2.5rem = 40px
-                          height: 40, // 2.5rem = 40px
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(8),
@@ -1334,7 +1243,6 @@ class _JobCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Message Button
                       GestureDetector(
                         onTap: () async {
                           try {
@@ -1342,7 +1250,6 @@ class _JobCard extends StatelessWidget {
                             final currentUser = supabase.auth.currentUser;
                             if (currentUser == null) return;
 
-                            // Get current user profile_id
                             final myProfile = await supabase
                                 .from('profiles')
                                 .select('id')
@@ -1350,7 +1257,6 @@ class _JobCard extends StatelessWidget {
                                 .single();
                             final myProfileId = myProfile['id'].toString();
 
-                            // Get provider's profile_id
                             final providerProfileId = await supabase
                                 .from('providers')
                                 .select('profile_id')
@@ -1360,7 +1266,6 @@ class _JobCard extends StatelessWidget {
                             final otherProfileId =
                                 providerProfileId['profile_id'].toString();
 
-                            // Find or create thread
                             String? threadId;
                             final existing1 = await supabase
                                 .from('message_threads')
@@ -1429,8 +1334,8 @@ class _JobCard extends StatelessWidget {
                           }
                         },
                         child: Container(
-                          width: 40, // 2.5rem = 40px
-                          height: 40, // 2.5rem = 40px
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(8),
@@ -1451,24 +1356,19 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 3. METADATA GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Time Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.grey
-                              .withValues(alpha: 0.1), // border-secondary/10
+                          color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
@@ -1476,16 +1376,16 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.access_time,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             job['postedDate']?.toString() ?? '',
                             style: GoogleFonts.poppins(
-                              fontSize: 11, // 0.68rem = 11px
+                              fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: Colors.grey[600], // muted gray
+                              color: Colors.grey[600],
                             ),
                           ),
                         ],
@@ -1493,18 +1393,15 @@ class _JobCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Location Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.grey
-                              .withValues(alpha: 0.1), // border-secondary/10
+                          color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
@@ -1512,17 +1409,17 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.location_on,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               job['location']?.toString() ?? 'Location',
                               style: GoogleFonts.poppins(
-                                fontSize: 11, // 0.68rem = 11px
+                                fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.grey[600], // muted gray
+                                color: Colors.grey[600],
                               ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
@@ -1535,14 +1432,11 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 4. FOOTER & BUDGET ROW
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Price Anchor
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1558,15 +1452,13 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
-                          fontSize: 16, // 1rem = 16px
-                          fontWeight: FontWeight.w900, // Black (900) weight
-                          color: primary, // Primary Teal
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: primary,
                         ),
                       ),
                     ],
                   ),
-
-                  // View Details Button
                   GestureDetector(
                     onTap: () {
                       if (onShowDetails != null) {
@@ -1608,27 +1500,20 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 5. CANCEL JOB BUTTON
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: GestureDetector(
                 onTap: () {
-                  // Show cancel job confirmation
                   _showCancelJobDialog(context);
                 },
                 child: Container(
-                  width: MediaQuery.of(context).size.width *
-                      0.8, // 80% of card horizontal length
-                  height: 48, // 3rem = 48px
+                  width: MediaQuery.of(context).size.width * 0.8,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: const Color(
-                        0xFFDADC85), // Light yellow-green background
-                    borderRadius:
-                        BorderRadius.circular(24), // Pill shape (48px/2 = 24px)
+                    color: const Color(0xFFDADC85),
+                    borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color:
-                          const Color(0xFFC8C875), // Darker yellow-green border
+                      color: const Color(0xFFC8C875),
                       width: 1,
                     ),
                   ),
@@ -1638,53 +1523,44 @@ class _JobCard extends StatelessWidget {
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black, // Black text color
+                        color: Colors.black,
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8), // Vertical space between buttons
-
-            // 6. HIGH-IMPACT SOS BUTTON
+            const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: GestureDetector(
                 onTap: () => _triggerSOSAlert(context),
                 child: Container(
-                  width: MediaQuery.of(context).size.width *
-                      0.8, // 80% of card horizontal length
-                  height: 56, // 3.5rem = 56px
+                  width: MediaQuery.of(context).size.width * 0.8,
+                  height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.red[600], // High-saturation Red-600
+                    color: Colors.red[600],
                     boxShadow: [
-                      // Outer glow layer
                       BoxShadow(
-                        color: Colors.red
-                            .withValues(alpha: 0.6), // Stronger red glow
+                        color: Colors.red.withValues(alpha: 0.6),
                         blurRadius: 20,
                         spreadRadius: 4,
                         offset: const Offset(0, 0),
                       ),
-                      // Middle glow layer
                       BoxShadow(
-                        color: Colors.red
-                            .withValues(alpha: 0.4), // Medium red glow
+                        color: Colors.red.withValues(alpha: 0.4),
                         blurRadius: 15,
                         spreadRadius: 2,
                         offset: const Offset(0, 2),
                       ),
-                      // Inner shadow for depth
                       BoxShadow(
-                        color: Colors.red
-                            .withValues(alpha: 0.3), // Subtle red glow
+                        color: Colors.red.withValues(alpha: 0.3),
                         blurRadius: 10,
                         spreadRadius: 1,
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    borderRadius: BorderRadius.circular(28), // Squircle shape
+                    borderRadius: BorderRadius.circular(28),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1698,12 +1574,10 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'SOS EMERGENCY',
                         style: GoogleFonts.poppins(
-                          fontSize: 12, // 0.75rem = 12px
-                          fontWeight:
-                              FontWeight.w700, // bold (less bold than w900)
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          letterSpacing:
-                              2.4, // extreme wide tracking (0.2em for 12px = 2.4px)
+                          letterSpacing: 2.4,
                         ),
                       ),
                     ],
@@ -1720,7 +1594,6 @@ class _JobCard extends StatelessWidget {
   Widget _buildScheduledCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Physics-based tap compression handled by GestureDetector
         if (onShowDetails != null) {
           onShowDetails!(context, job, primary);
         }
@@ -1729,10 +1602,10 @@ class _JobCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28), // 1.75rem = 28px
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08), // shadow-lg
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -1740,88 +1613,78 @@ class _JobCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // 1. VISUAL HEADER ROW
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left side: Avatar with Category and Job ID
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Category Icon Circle
-                      Container(
-                        width: 56, // 3.5rem = 56px
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: primary.withValues(
-                              alpha: 0.1), // Primary Teal at 10% opacity
-                          borderRadius: BorderRadius.circular(
-                              28), // Circle shape (56px/2 = 28px)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(
+                            Icons.directions_car,
+                            size: 28,
+                            color: primary,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.directions_car, // Driver icon for scheduled job
-                          size: 28, // 1.75rem = 28px
-                          color: primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Category and Job ID parallel to icon
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Name
-                            Text(
-                              job['service_category'] ?? 'Service',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18, // 1.125rem = 18px
-                                fontWeight: FontWeight.bold,
-                                height: 1, // leading-none
-                                color: Colors.black,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                job['service_category'] ?? 'Service',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                  color: Colors.black,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            const SizedBox(height: 2),
-                            // Job ID
-                            Text(
-                              job['id']?.toString() ?? '',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // 0.625rem = 10px
-                                fontWeight:
-                                    FontWeight.w900, // Black (900) weight
-                                color: Colors.grey[600], // muted gray
-                                letterSpacing: 2.0, // tracking-widest
+                              const SizedBox(height: 2),
+                              Text(
+                                job['id']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 2.0,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  // Right side: Status pill
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6), // px-3 py-1.5
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.orange[600], // Orange for scheduled status
-                      borderRadius:
-                          BorderRadius.circular(12), // full-round pill shape
+                      color: Colors.orange[600],
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Text(
                         'SCHEDULED',
                         style: GoogleFonts.inter(
-                          fontSize: 9, // text-xs (9px)
-                          fontWeight: FontWeight.w900, // font-black (900)
-                          color: Colors.white, // text-white
-                          letterSpacing: 0.1, // tracking-wide (0.1em)
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.1,
                         ),
                       ),
                     ),
@@ -1829,22 +1692,16 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 2. ASSIGNED PROFESSIONAL SECTION
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 children: [
-                  // Profile Picture Circle
                   _buildProviderProfileImage(job),
                   const SizedBox(width: 12),
-
-                  // Meta Block
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Role label
                         Text(
                           'Assigned helper',
                           style: GoogleFonts.poppins(
@@ -1855,7 +1712,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Name
                         Text(
                           job['providers']?['profiles']?['full_name'] ??
                               'Provider',
@@ -1866,7 +1722,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Rating
                         Row(
                           children: [
                             const Icon(Icons.star,
@@ -1885,61 +1740,56 @@ class _JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Action Icons
-                  Row(
-                    children: [
-                      // Message Button
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to specific chat with assigned service provider
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider']?.toString() ??
-                                    'Service Provider',
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => CustomerMessagesScreen(
+                                  providerName: job['provider']?.toString() ??
+                                      'Service Provider',
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.grey.withValues(alpha: 0.2),
+                                width: 1,
                               ),
                             ),
-                          );
-                        },
-                        child: Container(
-                          width: 40, // 2.5rem = 40px
-                          height: 40, // 2.5rem = 40px
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.grey.withValues(alpha: 0.2),
-                              width: 1,
+                            child: Icon(
+                              Icons.message,
+                              size: 18,
+                              color: primary,
                             ),
                           ),
-                          child: Icon(
-                            Icons.message,
-                            size: 18,
-                            color: primary,
-                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // 3. METADATA GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Time Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -1949,7 +1799,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.calendar_today,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
@@ -1966,15 +1816,13 @@ class _JobCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Location Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -1984,11 +1832,11 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.location_on,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               job['location']?.toString() ?? 'Location',
                               style: GoogleFonts.poppins(
@@ -2007,14 +1855,11 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 4. FOOTER & BUDGET ROW
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Price Anchor
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2030,15 +1875,13 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
-                          fontSize: 16, // 1rem = 16px
-                          fontWeight: FontWeight.w900, // Black (900) weight
-                          color: primary, // Primary Teal
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: primary,
                         ),
                       ),
                     ],
                   ),
-
-                  // View Details Button
                   GestureDetector(
                     onTap: () {
                       if (onShowDetails != null) {
@@ -2080,29 +1923,22 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 5. CANCEL JOB BUTTON (NO SOS BUTTON)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Transform.translate(
-                offset: const Offset(0, -8), // Move button 8 pixels upwards
+                offset: const Offset(0, -8),
                 child: GestureDetector(
                   onTap: () {
-                    // Show cancel job confirmation
                     _showCancelJobDialog(context);
                   },
                   child: Container(
-                    width: MediaQuery.of(context).size.width *
-                        0.8, // 80% of card horizontal length
-                    height: 48, // 3rem = 48px
+                    width: MediaQuery.of(context).size.width * 0.8,
+                    height: 48,
                     decoration: BoxDecoration(
-                      color: const Color(
-                          0xFFDADC85), // Light yellow-green background
-                      borderRadius: BorderRadius.circular(
-                          24), // Pill shape (48px/2 = 24px)
+                      color: const Color(0xFFDADC85),
+                      borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: const Color(
-                            0xFFC8C875), // Darker yellow-green border
+                        color: const Color(0xFFC8C875),
                         width: 1,
                       ),
                     ),
@@ -2112,7 +1948,7 @@ class _JobCard extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black, // Black text color
+                          color: Colors.black,
                         ),
                       ),
                     ),
@@ -2129,7 +1965,6 @@ class _JobCard extends StatelessWidget {
   Widget _buildPendingCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Physics-based tap compression handled by GestureDetector
         if (onShowDetails != null) {
           onShowDetails!(context, job, primary);
         }
@@ -2138,10 +1973,10 @@ class _JobCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28), // 1.75rem = 28px
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08), // shadow-lg
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -2149,88 +1984,78 @@ class _JobCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // 1. VISUAL HEADER ROW
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left side: Avatar with Category and Job ID
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Category Icon Circle
-                      Container(
-                        width: 56, // 3.5rem = 56px
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: primary.withValues(
-                              alpha: 0.1), // Primary Teal at 10% opacity
-                          borderRadius: BorderRadius.circular(
-                              28), // Circle shape (56px/2 = 28px)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(
+                            Icons.directions_car,
+                            size: 28,
+                            color: primary,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.directions_car, // Driver icon for pending job
-                          size: 28, // 1.75rem = 28px
-                          color: primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Category and Job ID parallel to icon
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Name
-                            Text(
-                              job['service_category'] ?? 'Service',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18, // 1.125rem = 18px
-                                fontWeight: FontWeight.bold,
-                                height: 1, // leading-none
-                                color: Colors.black,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                job['service_category'] ?? 'Service',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                  color: Colors.black,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            const SizedBox(height: 2),
-                            // Job ID
-                            Text(
-                              job['id']?.toString() ?? '',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // 0.625rem = 10px
-                                fontWeight:
-                                    FontWeight.w900, // Black (900) weight
-                                color: Colors.grey[600], // muted gray
-                                letterSpacing: 2.0, // tracking-widest
+                              const SizedBox(height: 2),
+                              Text(
+                                job['id']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 2.0,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  // Right side: Status pill
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6), // px-3 py-1.5
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.orange[600], // Orange for pending status
-                      borderRadius:
-                          BorderRadius.circular(12), // full-round pill shape
+                      color: Colors.orange[600],
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Text(
                         'SCHEDULED',
                         style: GoogleFonts.inter(
-                          fontSize: 9, // text-xs (9px)
-                          fontWeight: FontWeight.w900, // font-black (900)
-                          color: Colors.white, // text-white
-                          letterSpacing: 0.1, // tracking-wide (0.1em)
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.1,
                         ),
                       ),
                     ),
@@ -2238,22 +2063,16 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 2. ASSIGNED PROFESSIONAL SECTION
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 children: [
-                  // Profile Picture Circle
                   _buildProviderProfileImage(job),
                   const SizedBox(width: 12),
-
-                  // Meta Block
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Role label
                         Text(
                           'Assigned helper',
                           style: GoogleFonts.poppins(
@@ -2264,7 +2083,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Name
                         Text(
                           job['providers']?['profiles']?['full_name'] ??
                               'Provider',
@@ -2275,7 +2093,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Rating
                         Row(
                           children: [
                             const Icon(Icons.star,
@@ -2294,61 +2111,56 @@ class _JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Action Icons
-                  Row(
-                    children: [
-                      // Message Button
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to specific chat with assigned service provider
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => CustomerMessagesScreen(
-                                providerName: job['provider']?.toString() ??
-                                    'Service Provider',
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => CustomerMessagesScreen(
+                                  providerName: job['provider']?.toString() ??
+                                      'Service Provider',
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.grey.withValues(alpha: 0.2),
+                                width: 1,
                               ),
                             ),
-                          );
-                        },
-                        child: Container(
-                          width: 40, // 2.5rem = 40px
-                          height: 40, // 2.5rem = 40px
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.grey.withValues(alpha: 0.2),
-                              width: 1,
+                            child: Icon(
+                              Icons.message,
+                              size: 18,
+                              color: primary,
                             ),
                           ),
-                          child: Icon(
-                            Icons.message,
-                            size: 18,
-                            color: primary,
-                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // 3. METADATA GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Time Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -2358,7 +2170,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.calendar_today,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
@@ -2375,15 +2187,13 @@ class _JobCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Location Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -2393,11 +2203,11 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.location_on,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               job['location']?.toString() ?? 'Location',
                               style: GoogleFonts.poppins(
@@ -2416,14 +2226,11 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 4. FOOTER & BUDGET ROW
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Price Anchor
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2439,15 +2246,13 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
-                          fontSize: 16, // 1rem = 16px
-                          fontWeight: FontWeight.w900, // Black (900) weight
-                          color: primary, // Primary Teal
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: primary,
                         ),
                       ),
                     ],
                   ),
-
-                  // View Details Button
                   GestureDetector(
                     onTap: () {
                       if (onShowDetails != null) {
@@ -2489,35 +2294,29 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 5. CANCEL JOB BUTTON WITH GRADIENT
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Transform.translate(
-                offset: const Offset(0, -8), // Move button 8 pixels upwards
+                offset: const Offset(0, -8),
                 child: GestureDetector(
                   onTap: () {
-                    // Show cancel job confirmation
                     _showCancelJobDialog(context);
                   },
                   child: Container(
-                    width: MediaQuery.of(context).size.width *
-                        0.8, // 80% of card horizontal length
-                    height: 48, // 3rem = 48px
+                    width: MediaQuery.of(context).size.width * 0.8,
+                    height: 48,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [
-                          Color(0xFFDADC85), // Light yellow-green start
-                          Color(0xFFC8C875), // Darker yellow-green end
+                          Color(0xFFDADC85),
+                          Color(0xFFC8C875),
                         ],
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
                       ),
-                      borderRadius: BorderRadius.circular(
-                          24), // Pill shape (48px/2 = 24px)
+                      borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: const Color(
-                            0xFFC8C875), // Darker yellow-green border
+                        color: const Color(0xFFC8C875),
                         width: 1,
                       ),
                     ),
@@ -2527,7 +2326,7 @@ class _JobCard extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black, // Black text color
+                          color: Colors.black,
                         ),
                       ),
                     ),
@@ -2544,7 +2343,6 @@ class _JobCard extends StatelessWidget {
   Widget _buildCompletedCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Physics-based tap compression handled by GestureDetector
         if (onShowDetails != null) {
           onShowDetails!(context, job, primary);
         }
@@ -2553,10 +2351,10 @@ class _JobCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28), // 1.75rem = 28px
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08), // shadow-lg
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -2564,92 +2362,82 @@ class _JobCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // 1. VISUAL HEADER ROW
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left side: Avatar with Category and Job ID
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Category Icon Circle
-                      Container(
-                        width: 56, // 3.5rem = 56px
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: primary.withValues(
-                              alpha: 0.1), // Primary Teal at 10% opacity
-                          borderRadius: BorderRadius.circular(
-                              28), // Circle shape (56px/2 = 28px)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(
+                            job['service_category'] == 'Baby Sitter'
+                                ? Icons.child_care
+                                : job['service_category'] == 'Domestic Helper'
+                                    ? Icons.cleaning_services
+                                    : Icons.build,
+                            size: 28,
+                            color: primary,
+                          ),
                         ),
-                        child: Icon(
-                          job['service_category'] == 'Baby Sitter'
-                              ? Icons.child_care
-                              : job['service_category'] == 'Domestic Helper'
-                                  ? Icons.cleaning_services
-                                  : Icons.build, // Default icon
-                          size: 28, // 1.75rem = 28px
-                          color: primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Category and Job ID parallel to icon
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Name
-                            Text(
-                              job['service_category'] ?? 'Service',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18, // 1.125rem = 18px
-                                fontWeight: FontWeight.bold,
-                                height: 1, // leading-none
-                                color: Colors.black,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                job['service_category'] ?? 'Service',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                  color: Colors.black,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            const SizedBox(height: 2),
-                            // Job ID
-                            Text(
-                              job['id']?.toString() ?? '',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // 0.625rem = 10px
-                                fontWeight:
-                                    FontWeight.w900, // Black (900) weight
-                                color: Colors.grey[600], // muted gray
-                                letterSpacing: 2.0, // tracking-widest
+                              const SizedBox(height: 2),
+                              Text(
+                                job['id']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 2.0,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  // Right side: Status pill
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6), // px-3 py-1.5
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.green[600], // Green for completed status
-                      borderRadius:
-                          BorderRadius.circular(12), // full-round pill shape
+                      color: Colors.green[600],
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Text(
                         'COMPLETED',
                         style: GoogleFonts.inter(
-                          fontSize: 9, // text-xs (9px)
-                          fontWeight: FontWeight.w900, // font-black (900)
-                          color: Colors.white, // text-white
-                          letterSpacing: 0.1, // tracking-wide (0.1em)
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.1,
                         ),
                       ),
                     ),
@@ -2657,22 +2445,16 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 2. ASSIGNED PROFESSIONAL SECTION
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 children: [
-                  // Profile Picture Circle
                   _buildProviderProfileImage(job),
                   const SizedBox(width: 12),
-
-                  // Meta Block
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Role label
                         Text(
                           'Completed by',
                           style: GoogleFonts.poppins(
@@ -2683,10 +2465,8 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Name and Review Button Row
                         Row(
                           children: [
-                            // Name
                             Expanded(
                               child: Text(
                                 job['providers']?['profiles']?['full_name'] ??
@@ -2699,7 +2479,6 @@ class _JobCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Give a Review Button
                             GestureDetector(
                               onTap: () => _showReviewDialog(context),
                               child: Container(
@@ -2726,7 +2505,6 @@ class _JobCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 2),
-                        // Rating
                         Row(
                           children: [
                             const Icon(Icons.star,
@@ -2745,26 +2523,20 @@ class _JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Action Icons removed for completed jobs
                 ],
               ),
             ),
-
-            // 3. METADATA GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Time Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -2774,7 +2546,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.calendar_today,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
@@ -2791,15 +2563,13 @@ class _JobCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Location Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -2809,11 +2579,11 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.location_on,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: primary,
                           ),
                           const SizedBox(width: 6),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               job['location']?.toString() ?? 'Location',
                               style: GoogleFonts.poppins(
@@ -2832,14 +2602,11 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 4. FOOTER & BUDGET ROW
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Price Anchor
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2855,15 +2622,13 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
-                          fontSize: 16, // 1rem = 16px
-                          fontWeight: FontWeight.w900, // Black (900) weight
-                          color: primary, // Primary Teal
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: primary,
                         ),
                       ),
                     ],
                   ),
-
-                  // View Details Button
                   GestureDetector(
                     onTap: () {
                       if (onShowDetails != null) {
@@ -2905,33 +2670,27 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            const SizedBox(height: 8), // Vertical space between buttons
-
-            // 6. REGISTER COMPLAINT BUTTON
+            const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: GestureDetector(
                 onTap: () {
-                  // Show complaint dialog
                   _showComplaintDialog(context);
                 },
                 child: Container(
-                  width: MediaQuery.of(context).size.width *
-                      0.8, // 80% of card horizontal length
-                  height: 56, // 3.5rem = 56px
+                  width: MediaQuery.of(context).size.width * 0.8,
+                  height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.grey[600], // Grey background for complaint
+                    color: Colors.grey[600],
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            Colors.grey.withValues(alpha: 0.3), // Grey shadow
+                        color: Colors.grey.withValues(alpha: 0.3),
                         blurRadius: 12,
                         spreadRadius: 2,
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    borderRadius: BorderRadius.circular(28), // Squircle shape
+                    borderRadius: BorderRadius.circular(28),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2945,10 +2704,10 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'Register Complaint',
                         style: GoogleFonts.poppins(
-                          fontSize: 12, // 0.75rem = 12px
-                          fontWeight: FontWeight.w700, // bold
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          letterSpacing: 1.2, // tracking
+                          letterSpacing: 1.2,
                         ),
                       ),
                     ],
@@ -2965,7 +2724,6 @@ class _JobCard extends StatelessWidget {
   Widget _buildCancelledCard(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Physics-based tap compression handled by GestureDetector
         if (onShowDetails != null) {
           onShowDetails!(context, job, primary);
         }
@@ -2974,10 +2732,10 @@ class _JobCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28), // 1.75rem = 28px
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08), // shadow-lg
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -2985,95 +2743,84 @@ class _JobCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // 1. VISUAL HEADER ROW
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left side: Avatar with Category and Job ID
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Category Icon Circle
-                      Container(
-                        width: 56, // 3.5rem = 56px
-                        height: 56, // 3.5rem = 56px
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(
-                              alpha: 0.1), // Red background for cancelled
-                          borderRadius: BorderRadius.circular(
-                              28), // Circle shape (56px/2 = 28px)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(
+                            job['service_category'] == 'Baby Sitter'
+                                ? Icons.child_care
+                                : job['service_category'] == 'Domestic Helper'
+                                    ? Icons.cleaning_services
+                                    : job['service_category'] == 'Driver'
+                                        ? Icons.drive_eta
+                                        : Icons.cancel,
+                            size: 28,
+                            color: Colors.red[600],
+                          ),
                         ),
-                        child: Icon(
-                          job['service_category'] == 'Baby Sitter'
-                              ? Icons.child_care
-                              : job['service_category'] == 'Domestic Helper'
-                                  ? Icons.cleaning_services
-                                  : job['service_category'] == 'Driver'
-                                      ? Icons.drive_eta
-                                      : Icons
-                                          .cancel, // Cancel icon for cancelled jobs
-                          size: 28, // 1.75rem = 28px
-                          color: Colors.red[600],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Category and Job ID parallel to icon
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Name
-                            Text(
-                              job['service_category'] ?? 'Service',
-                              style: GoogleFonts.poppins(
-                                fontSize: 18, // 1.125rem = 18px
-                                fontWeight: FontWeight.bold,
-                                height: 1, // leading-none
-                                color: Colors.black,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                job['service_category'] ?? 'Service',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                  color: Colors.black,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                            const SizedBox(height: 2),
-                            // Job ID
-                            Text(
-                              job['id']?.toString() ?? '',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, // 0.625rem = 10px
-                                fontWeight:
-                                    FontWeight.w900, // Black (900) weight
-                                color: Colors.grey[600], // muted gray
-                                letterSpacing: 2.0, // tracking-widest
+                              const SizedBox(height: 2),
+                              Text(
+                                job['id']?.toString() ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.grey[600],
+                                  letterSpacing: 2.0,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-
-                  // Right side: Status pill
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6), // px-3 py-1.5
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.red[600], // Red for cancelled status
-                      borderRadius:
-                          BorderRadius.circular(12), // full-round pill shape
+                      color: Colors.red[600],
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Text(
                         'CANCELLED',
                         style: GoogleFonts.inter(
-                          fontSize: 9, // text-xs (9px)
-                          fontWeight: FontWeight.w900, // font-black (900)
-                          color: Colors.white, // text-white
-                          letterSpacing: 0.1, // tracking-wide (0.1em)
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.1,
                         ),
                       ),
                     ),
@@ -3081,22 +2828,16 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 2. ASSIGNED PROFESSIONAL SECTION
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 children: [
-                  // Profile Picture Circle
                   _buildProviderProfileImage(job),
                   const SizedBox(width: 12),
-
-                  // Meta Block
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Role label
                         Text(
                           'Cancelled by',
                           style: GoogleFonts.poppins(
@@ -3107,7 +2848,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Name
                         Text(
                           job['providers']?['profiles']?['full_name'] ??
                               'Provider',
@@ -3118,7 +2858,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        // Rating (greyed out for cancelled)
                         Row(
                           children: [
                             Icon(Icons.star, size: 12, color: Colors.grey[400]),
@@ -3136,26 +2875,20 @@ class _JobCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // No action icons for cancelled jobs
                 ],
               ),
             ),
-
-            // 3. METADATA GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Time Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -3165,7 +2898,7 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.calendar_today,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: Colors.grey[400],
                           ),
                           const SizedBox(width: 6),
@@ -3182,15 +2915,13 @@ class _JobCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Location Capsule
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50], // bg-surface
-                        borderRadius:
-                            BorderRadius.circular(12), // 0.75rem = 12px
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.grey.withValues(alpha: 0.1),
                           width: 1,
@@ -3200,11 +2931,11 @@ class _JobCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.location_on,
-                            size: 14, // 0.875rem = 14px
+                            size: 14,
                             color: Colors.grey[400],
                           ),
                           const SizedBox(width: 6),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               job['location']?.toString() ?? 'Location',
                               style: GoogleFonts.poppins(
@@ -3223,14 +2954,11 @@ class _JobCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 4. FOOTER & BUDGET ROW
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Price Anchor
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -3246,15 +2974,13 @@ class _JobCard extends StatelessWidget {
                       Text(
                         'PKR ${job['total_amount'] ?? 'N/A'}',
                         style: GoogleFonts.poppins(
-                          fontSize: 16, // 1rem = 16px
-                          fontWeight: FontWeight.w900, // Black (900) weight
-                          color: Colors.grey[400], // Greyed out for cancelled
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.grey[400],
                         ),
                       ),
                     ],
                   ),
-
-                  // View Details Button
                   GestureDetector(
                     onTap: () {
                       if (onShowDetails != null) {
@@ -3302,7 +3028,6 @@ class _JobCard extends StatelessWidget {
     );
   }
 
-  /// ─── NEW: Negotiating Card ───
   Widget _buildNegotiatingCard(BuildContext context) {
     final provider = job['providers'];
     final providerProfile = provider?['profiles'];
@@ -3581,7 +3306,6 @@ class _JobCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -3611,10 +3335,7 @@ class _JobCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
-          // Category and Provider
           Text(
             job['category']?.toString() ?? '',
             style: GoogleFonts.poppins(
@@ -3623,7 +3344,6 @@ class _JobCard extends StatelessWidget {
               color: Colors.grey[600],
             ),
           ),
-
           if (job['provider'] != null) ...[
             const SizedBox(height: 4),
             Text(
@@ -3634,10 +3354,7 @@ class _JobCard extends StatelessWidget {
               ),
             ),
           ],
-
           const SizedBox(height: 12),
-
-          // Details Row
           Row(
             children: [
               Icon(Icons.calendar_today, size: 16, color: Colors.grey[500]),
@@ -3661,10 +3378,7 @@ class _JobCard extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // Action Buttons
           Row(
             children: [
               if (onShowDetails != null)
@@ -3691,9 +3405,7 @@ class _JobCard extends StatelessWidget {
               if (onShowDetails != null) const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () {
-                    // Add contact functionality
-                  },
+                  onPressed: () {},
                   style: OutlinedButton.styleFrom(
                     foregroundColor: primary,
                     side: BorderSide(color: primary),
@@ -3752,7 +3464,6 @@ class _JobCard extends StatelessWidget {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              // Actually cancel the job
               if (onCancelJob != null) {
                 onCancelJob!(job['id']?.toString() ?? '');
               }
@@ -3785,16 +3496,13 @@ class _JobCard extends StatelessWidget {
   }
 
   void _triggerSOSAlert(BuildContext context) async {
-    // Store context-dependent values before async gap
     final messenger = ScaffoldMessenger.of(context);
 
-    // First check if there are any emergency contacts
     final emergencyContacts = onGetEmergencyContacts != null
         ? await onGetEmergencyContacts!()
         : <Map<String, String>>[];
 
     if (emergencyContacts.isEmpty) {
-      // Show error message for no contacts
       try {
         messenger.showSnackBar(
           SnackBar(
@@ -3820,7 +3528,6 @@ class _JobCard extends StatelessWidget {
               label: 'ADD CONTACTS',
               textColor: Colors.white,
               onPressed: () {
-                // Navigate to profile screen to add emergency contacts
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const CustomerProfileScreen(),
@@ -3831,32 +3538,27 @@ class _JobCard extends StatelessWidget {
           ),
         );
       } catch (e) {
-        // Context might be disposed, silently ignore
+        debugPrint('Error showing no contacts snackbar: $e');
       }
       return;
     }
 
     try {
-      // Show loader while getting location - synchronous call before async operations
       if (context.mounted) {
         _showLocationLoadingDialog(context);
       }
 
-      // Get current location
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 10),
       );
 
-      // Reverse geocode to get readable address name
       String addressName = await LocationService.getAddressFromLatLng(
           position.latitude, position.longitude);
 
-      // Create Google Maps URL
       final mapsUrl =
           'https://www.google.com/maps?q=${position.latitude},${position.longitude}';
 
-      // Create emergency message with location name
       final emergencyMessage = '🚨 EMERGENCY ALERT 🚨\n\n'
           'I need immediate help!\n\n'
           'My current location:\n'
@@ -3865,22 +3567,17 @@ class _JobCard extends StatelessWidget {
           'Time: ${DateTime.now().toString()}\n\n'
           'Sent from Muawin App Emergency SOS';
 
-      // Send alert to emergency contacts
       await _sendEmergencyAlert(emergencyMessage, position);
 
-      // Use _launchMaps to process location (this makes the function referenced)
-      // Generate location URL for sharing
       final locationUrl =
           'https://maps.google.com/?q=${position.latitude},${position.longitude}';
 
-      // Only use context if widget is still mounted
       if (context.mounted) {
         _launchMaps(context, locationUrl);
       }
 
-      // Close loading dialog and show success
       if (context.mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop();
         messenger.showSnackBar(
           SnackBar(
             backgroundColor: Colors.green[600],
@@ -3905,9 +3602,8 @@ class _JobCard extends StatelessWidget {
         );
       }
     } catch (e) {
-      // Close loading dialog and show error
       if (context.mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop();
         messenger.showSnackBar(
           SnackBar(
             backgroundColor: Colors.red[600],
@@ -3934,13 +3630,11 @@ class _JobCard extends StatelessWidget {
   }
 
   Future<void> _sendEmergencyAlert(String message, Position position) async {
-    // Get emergency contacts from callback
     final emergencyContacts = onGetEmergencyContacts != null
         ? await onGetEmergencyContacts!()
         : <Map<String, String>>[];
 
     for (final contact in emergencyContacts) {
-      // Send WhatsApp message with location
       await _sendWhatsAppToContact(contact['phone']!, message);
     }
   }
@@ -3956,7 +3650,7 @@ class _JobCard extends StatelessWidget {
             children: [
               Icon(
                 Icons.location_on,
-                size: 14, // 0.875rem = 14px
+                size: 14,
                 color: primary,
               ),
               const SizedBox(width: 6),
@@ -3981,20 +3675,14 @@ class _JobCard extends StatelessWidget {
 
   Future<void> _sendWhatsAppToContact(String phone, String message) async {
     try {
-      // Clean phone number — keep digits only
       String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
 
-      // Normalize Pakistani numbers to international format
-      // 03XXXXXXXXX → 923XXXXXXXXX
       if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
         cleanPhone = '92${cleanPhone.substring(1)}';
       }
-      // If already has 92 prefix, keep as is
-      // If starts with +92, the + was already stripped
 
       final encodedMessage = Uri.encodeComponent(message);
 
-      // Try whatsapp:// scheme first (works on Android)
       final whatsappUri = Uri.parse(
         'whatsapp://send?phone=$cleanPhone&text=$encodedMessage',
       );
@@ -4005,7 +3693,6 @@ class _JobCard extends StatelessWidget {
           mode: LaunchMode.externalApplication,
         );
       } else {
-        // Fallback to wa.me link
         final fallbackUri = Uri.parse(
           'https://wa.me/$cleanPhone?text=$encodedMessage',
         );
@@ -4044,11 +3731,9 @@ class _JobCard extends StatelessWidget {
   }
 
   void _makePhoneCall(BuildContext context) {
-    // Get provider phone number from job data
     final providerPhone = _getProviderPhone();
 
     if (providerPhone.isEmpty) {
-      // Show error if no phone number available
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4062,7 +3747,6 @@ class _JobCard extends StatelessWidget {
       return;
     }
 
-    // Show confirmation dialog before making call
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -4138,10 +3822,8 @@ class _JobCard extends StatelessWidget {
 
   void _initiatePhoneCall(String phoneNumber, BuildContext context) async {
     try {
-      // Clean phone number
       String cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
 
-      // Normalize Pakistani numbers
       if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
         cleanPhone = '+92${cleanPhone.substring(1)}';
       }
@@ -4180,7 +3862,6 @@ class _JobCard extends StatelessWidget {
 
   void _submitReview(
       BuildContext context, String jobId, int rating, String review) {
-    // Save the review data to SharedPreferences for retrieval by service provider
     onSaveReviewData?.call(jobId, rating, review);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -4203,9 +3884,7 @@ class _JobCard extends StatelessWidget {
     );
   }
 
-  // Helper method to build provider profile image with cross-platform support
   Widget _buildProviderProfileImage(Map<String, dynamic> job) {
-    // Use provider image already loaded with job data from Supabase
     final imageUrl =
         job['providers']?['profiles']?['profile_image_url']?.toString();
 
@@ -4244,7 +3923,6 @@ class _JobCard extends StatelessWidget {
   }
 }
 
-// Complaint Dialog Widget
 class _ComplaintDialog extends StatefulWidget {
   const _ComplaintDialog({required this.job});
 
@@ -4320,7 +3998,6 @@ class _ComplaintDialogState extends State<_ComplaintDialog> {
                     final user = supabase.auth.currentUser;
                     if (user == null) return;
 
-                    // Get customer ID
                     final profile = await supabase
                         .from('profiles')
                         .select('id')
@@ -4336,7 +4013,6 @@ class _ComplaintDialogState extends State<_ComplaintDialog> {
                     final providerId = widget.job['provider_id']?.toString() ??
                         widget.job['providers']?['id']?.toString();
 
-                    // Insert complaint into Supabase
                     await supabase.from('complaints').insert({
                       'customer_id': customer['id'],
                       'provider_id': providerId,
@@ -4392,7 +4068,6 @@ class _ComplaintDialogState extends State<_ComplaintDialog> {
   }
 }
 
-// Review Dialog Widget
 class _ReviewDialog extends StatefulWidget {
   const _ReviewDialog({
     required this.providerName,
@@ -4449,8 +4124,6 @@ class _ReviewDialogState extends State<_ReviewDialog> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Star Rating
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(5, (index) {
@@ -4474,8 +4147,6 @@ class _ReviewDialogState extends State<_ReviewDialog> {
               }),
             ),
             const SizedBox(height: 16),
-
-            // Review Text Field
             Text(
               'Write a review (optional)',
               style: GoogleFonts.poppins(

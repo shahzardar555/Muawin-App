@@ -70,7 +70,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         // Selection cards
                         _ProviderRoleCard(
                           icon: Icons.handyman,
-                           imageAsset: 'imagess/Cleaner.png',
+                          imageAsset: 'imagess/Cleaner.webp',
                           title: 'Service Provider',
                           description:
                               'Individual Professional (e.g Maid , Driver , Cook , Gardener)',
@@ -80,7 +80,7 @@ class ProviderServiceScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _ProviderRoleCard(
                           icon: Icons.store_rounded,
-                           imageAsset: 'imagess/shops.png',
+                          imageAsset: 'imagess/shops.webp',
                           title: 'Vendor',
                           description:
                               'Business or Shop (e.g SuperMarket , Milkshop , Meatshop , Water Plant)',
@@ -172,6 +172,11 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
     _scaleAnimation = Tween<double>(begin: 1, end: 0.95).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      precacheImage(const AssetImage('imagess/Cleaner.webp'), context);
+      precacheImage(const AssetImage('imagess/shops.webp'), context);
+    });
   }
 
   @override
@@ -241,6 +246,8 @@ class _ProviderRoleCardState extends State<_ProviderRoleCard>
                             widget.imageAsset!,
                             width: _ProviderRoleCard._iconSize,
                             height: _ProviderRoleCard._iconSize,
+                            cacheWidth: 160,
+                            cacheHeight: 160,
                             fit: BoxFit.cover,
                           ),
                         )

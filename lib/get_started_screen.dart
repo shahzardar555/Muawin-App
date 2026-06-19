@@ -64,7 +64,7 @@ class GetStartedScreen extends StatelessWidget {
                         children: [
                           _RoleCard(
                             icon: Icons.home_work_rounded,
-                            imageAsset: 'imagess/man.png',
+                            imageAsset: 'imagess/man.webp',
                             title: 'I need household help',
                             description:
                                 'Find verified professionals for your daily household tasks',
@@ -82,7 +82,7 @@ class GetStartedScreen extends StatelessWidget {
                           const SizedBox(height: 20),
                           _RoleCard(
                             icon: Icons.engineering_rounded,
-                            imageAsset: 'imagess/Mans.png',
+                            imageAsset: 'imagess/Mans.webp',
                             title: 'I\'m a service professional',
                             description:
                                 'Offer your skills and get connected with clients across Pakistan.',
@@ -154,6 +154,13 @@ class _RoleCardState extends State<_RoleCard>
     _scaleAnimation = Tween<double>(begin: 1, end: 0.95).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      precacheImage(const AssetImage('imagess/man.webp'), context);
+      precacheImage(const AssetImage('imagess/Mans.webp'), context);
+      precacheImage(const AssetImage('imagess/Cleaner.webp'), context);
+      precacheImage(const AssetImage('imagess/shops.webp'), context);
+    });
   }
 
   @override
@@ -218,6 +225,8 @@ class _RoleCardState extends State<_RoleCard>
                           widget.imageAsset!,
                           width: _RoleCard._iconWrapperSize,
                           height: _RoleCard._iconWrapperSize,
+                          cacheWidth: 160,
+                          cacheHeight: 160,
                           fit: BoxFit.cover,
                         ),
                       )

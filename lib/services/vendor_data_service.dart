@@ -143,10 +143,8 @@ class MockVendorService implements VendorService {
               // Parse address into parts
               // "Lake City, Lahore" → area: "Lake City", city: "Lahore"
               final parts = address.split(',');
-              final area = parts.length > 1 
-                  ? parts[0].trim() 
-                  : '';
-              final city = parts.length > 1 
+              final area = parts.length > 1 ? parts[0].trim() : '';
+              final city = parts.length > 1
                   ? parts[parts.length - 1].trim()
                   : parts[0].trim();
 
@@ -255,20 +253,24 @@ class MockVendorService implements VendorService {
           final xfile = XFile(imageUrl);
           final bytes = await xfile.readAsBytes();
 
-          await supabase.storage
+          debugPrint('=== UPLOADING VENDOR AVATAR (WEB) ===');
+          final webUploadResult = await supabase.storage
               .from('vendor-avatars')
               .uploadBinary(fileName, bytes,
                   fileOptions: const FileOptions(
                     upsert: true,
                     contentType: 'image/jpeg',
                   ));
+          debugPrint('=== UPLOAD RESULT: $webUploadResult ===');
 
           final publicUrl =
               supabase.storage.from('vendor-avatars').getPublicUrl(fileName);
+          debugPrint('=== PUBLIC URL: $publicUrl ===');
 
           await supabase
               .from('profiles')
               .update({'profile_image_url': publicUrl}).eq('id', profileId);
+          debugPrint('=== PROFILE UPDATED ===');
 
           // Also update local cache
           final prefs = await SharedPreferences.getInstance();
@@ -281,22 +283,26 @@ class MockVendorService implements VendorService {
 
           debugPrint('Vendor web avatar uploaded: $publicUrl');
         } catch (e) {
-          debugPrint('Web upload error: $e');
+          debugPrint('=== UPLOAD ERROR: $e ===');
         }
         return true;
       }
 
+      debugPrint('=== UPLOADING VENDOR AVATAR (MOBILE) ===');
       final file = File(imageUrl);
-      await supabase.storage
+      final uploadResult = await supabase.storage
           .from('vendor-avatars')
           .upload(fileName, file, fileOptions: const FileOptions(upsert: true));
+      debugPrint('=== UPLOAD RESULT: $uploadResult ===');
 
       final publicUrl =
           supabase.storage.from('vendor-avatars').getPublicUrl(fileName);
+      debugPrint('=== PUBLIC URL: $publicUrl ===');
 
       await supabase
           .from('profiles')
           .update({'profile_image_url': publicUrl}).eq('id', profileId);
+      debugPrint('=== PROFILE UPDATED ===');
 
       // Also update local cache
       final prefs = await SharedPreferences.getInstance();
@@ -310,7 +316,7 @@ class MockVendorService implements VendorService {
       debugPrint('Vendor profile picture uploaded: $publicUrl');
       return true;
     } catch (e) {
-      debugPrint('Error updating vendor profile picture: $e');
+      debugPrint('=== UPLOAD ERROR: $e ===');
       return false;
     }
   }

@@ -518,6 +518,7 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
           'package': req['package_type']?.toString() ?? 'basic',
           'budget': req['proposed_price']?.toString() ?? '0',
           'price': req['proposed_price']?.toString() ?? '0',
+          'proposed_price': req['proposed_price']?.toString() ?? '0',
           'details': req['title']?.toString() ??
               req['special_instructions']?.toString() ??
               'Service request',
@@ -581,6 +582,19 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
       final serviceCategory = provider['service_category']?.toString() ?? '';
       if (serviceCategory.isEmpty) return;
 
+      // Get dismissed job IDs for this provider
+      List<String> dismissedJobIds = [];
+      try {
+        final dismissed = await supabase
+            .from('provider_dismissed_jobs')
+            .select('job_id')
+            .eq('provider_id', _currentProviderId);
+        dismissedJobIds =
+            (dismissed as List).map((d) => d['job_id'].toString()).toList();
+      } catch (e) {
+        debugPrint('Error fetching dismissed jobs: $e');
+      }
+
       // Get open jobs matching provider's category
       final response = await supabase
           .from('jobs')
@@ -610,7 +624,15 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
           .isFilter('provider_id', null)
           .order('created_at', ascending: false);
 
-      final jobs = List<Map<String, dynamic>>.from(response);
+      // Filter out dismissed jobs client-side
+      final allJobs = List<Map<String, dynamic>>.from(response);
+      final filteredJobs = dismissedJobIds.isEmpty
+          ? allJobs
+          : allJobs
+              .where((job) => !dismissedJobIds.contains(job['id']?.toString()))
+              .toList();
+
+      final jobs = filteredJobs;
 
       final mapped = jobs.map((job) {
         final customerName =
@@ -1079,8 +1101,23 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                                 .update({
                                               'status': 'cancelled'
                                             }).eq('id', supabaseId);
+                                          } else {
+                                            // Save dismissal for open jobs so they don't reappear
+                                            try {
+                                              await Supabase.instance.client
+                                                  .from(
+                                                      'provider_dismissed_jobs')
+                                                  .insert({
+                                                'provider_id':
+                                                    _currentProviderId,
+                                                'job_id': supabaseId,
+                                              });
+                                            } catch (e) {
+                                              debugPrint(
+                                                  'Error saving dismissal: $e');
+                                              // Still remove locally even if DB write fails
+                                            }
                                           }
-                                          // For open jobs, just remove from this provider's feed locally
                                         } catch (e) {
                                           debugPrint('Error declining job: $e');
                                         }
@@ -1201,6 +1238,14 @@ class _ServiceProviderFeedScreenState extends State<ServiceProviderFeedScreen> {
                                           } catch (e) {
                                             debugPrint(
                                                 'Error updating job status: $e');
+                                            if (mounted) {
+                                              messenger.showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      'Failed to apply: $e'),
+                                                ),
+                                              );
+                                            }
                                           }
                                         }
 

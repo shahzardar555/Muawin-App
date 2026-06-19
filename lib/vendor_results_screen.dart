@@ -348,22 +348,14 @@ class _VendorResultsScreenState extends State<VendorResultsScreen> {
                                                 ],
                                               ),
                                               const SizedBox(height: 4),
-                                              Row(
-                                                children: [
-                                                  const Icon(Icons.location_on,
-                                                      size: 16,
-                                                      color: Colors.grey),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    vendor['area'] ??
-                                                        vendor['city'] ??
-                                                        '',
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 14,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                ],
+                                              Text(
+                                                vendor['area'] ??
+                                                    vendor['city'] ??
+                                                    '',
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 14,
+                                                  color: Colors.grey[600],
+                                                ),
                                               ),
                                             ],
                                           ),

@@ -4114,6 +4114,7 @@ class _ServiceProviderProfileScreenState
 
                   _buildMenuItem(Icons.badge_outlined, 'Service Details',
                       '$_email • Experience: $_experience', onSurface, primary,
+                      iconColor: Colors.blue,
                       onTap: () => _showServiceDetailsDialog()),
 
                   _buildMenuItem(
@@ -4124,6 +4125,7 @@ class _ServiceProviderProfileScreenState
                           : 'Set your profile cover photo',
                       onSurface,
                       primary,
+                      iconColor: Colors.purple,
                       onTap: () => _pickCoverPhoto()),
 
                   _buildMenuItem(
@@ -4132,10 +4134,12 @@ class _ServiceProviderProfileScreenState
                       'Set rates for different services',
                       onSurface,
                       primary,
+                      iconColor: Colors.green,
                       onTap: () => _showManageServicesRatesDialog()),
 
                   _buildMenuItem(Icons.description_outlined, 'CNIC & Documents',
                       'Verified', onSurface, primary,
+                      iconColor: Colors.orange,
                       onTap: () => _showDocumentsDialog()),
 
                   _buildMenuItem(
@@ -4144,6 +4148,7 @@ class _ServiceProviderProfileScreenState
                       'Rs. $_currentMonthEarnings this month',
                       onSurface,
                       primary,
+                      iconColor: Colors.teal,
                       onTap: () => _showEarningsDialog()),
 
                   // Priority Earnings Highlight Card
@@ -4256,10 +4261,12 @@ class _ServiceProviderProfileScreenState
 
                   _buildMenuItem(Icons.security_outlined, 'Security',
                       'Password & Biometrics', onSurface, primary,
+                      iconColor: Colors.red,
                       onTap: () => _showSecurityDialog()),
 
                   _buildMenuItem(Icons.language_outlined, 'Language', 'English',
                       onSurface, primary,
+                      iconColor: Colors.purple,
                       onTap: () => _showLanguageDialog()),
 
                   SizedBox(height: _responsiveMajorSpacing),
@@ -4268,10 +4275,12 @@ class _ServiceProviderProfileScreenState
 
                   _buildMenuItem(Icons.help_outline_rounded, 'Help Center',
                       'FAQs & Guides', onSurface, primary,
+                      iconColor: Colors.green,
                       onTap: () => _showHelpSupportDialog()),
 
                   _buildMenuItem(Icons.contact_emergency, 'Emergency Contacts',
                       'Manage contacts for SOS alerts', onSurface, primary,
+                      iconColor: Colors.red,
                       onTap: () => _showEmergencyContactsDialog()),
 
                   SizedBox(height: _responsiveMajorSpacing),
@@ -4436,7 +4445,7 @@ class _ServiceProviderProfileScreenState
 
   Widget _buildMenuItem(IconData icon, String title, String subtitle,
       Color onSurface, Color primary,
-      {VoidCallback? onTap}) {
+      {VoidCallback? onTap, Color? iconColor}) {
     return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: _isMobile ? 16 : 24, vertical: _responsiveCompactSpacing),
@@ -4490,7 +4499,7 @@ class _ServiceProviderProfileScreenState
                   child: Icon(
                     icon,
                     size: _isMobile ? 22 : 24,
-                    color: primary,
+                    color: iconColor ?? primary,
                   ),
                 ),
                 SizedBox(width: _responsiveCompactSpacing),
